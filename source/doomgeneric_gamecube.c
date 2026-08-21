@@ -4,6 +4,7 @@
 
 #include "doomkeys.h"
 #include "doomgeneric.h"
+#include "m_controls.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -25,7 +26,8 @@ static unsigned int keyWrite;
 static unsigned int keyRead;
 
 static int gcUp, gcDown, gcLeft, gcRight;
-static int gcFire, gcUse, gcRun, gcEnter, gcEscape, gcStrafe;
+static int gcFire, gcUse, gcRun, gcEnter, gcEscape, gcTab;
+static int gcStrafeLeft, gcStrafeRight;
 
 static void queueKey(int pressed, unsigned char key)
 {
@@ -83,29 +85,21 @@ static void handleGameCubeInput(void)
     int cRight =
         cstickX > CSTICK_DEADZONE;
 
-    int strafe =
-        (held & PAD_TRIGGER_Z) ||
-        cLeft ||
-        cRight;
-
-    if (cLeft)
-        left = 1;
-
-    if (cRight)
-        right = 1;
-
     setKeyState(up,    &gcUp,    KEY_UPARROW);
     setKeyState(down,  &gcDown,  KEY_DOWNARROW);
     setKeyState(left,  &gcLeft,  KEY_LEFTARROW);
     setKeyState(right, &gcRight, KEY_RIGHTARROW);
 
-    setKeyState(held & PAD_BUTTON_A,     &gcFire,   KEY_FIRE);
-    setKeyState(held & PAD_BUTTON_B,     &gcUse,    KEY_USE);
-    setKeyState(held & PAD_BUTTON_Y,     &gcRun,    KEY_RSHIFT);
-    setKeyState(held & PAD_BUTTON_X,     &gcEnter,  KEY_ENTER);
+    setKeyState(cLeft,  &gcStrafeLeft,  KEY_STRAFE_L);
+    setKeyState(cRight, &gcStrafeRight, KEY_STRAFE_R);
+
+    setKeyState(held & PAD_TRIGGER_R,    &gcFire,   KEY_FIRE);
+    setKeyState(held & PAD_BUTTON_A,     &gcUse,    KEY_USE);
+    setKeyState(held & PAD_BUTTON_B,     &gcRun,    KEY_RSHIFT);
+    setKeyState(held & PAD_BUTTON_A,     &gcEnter,  KEY_ENTER);
     setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
 
-    setKeyState(strafe, &gcStrafe, KEY_LALT);
+    setKeyState(held & PAD_TRIGGER_Z, &gcTab,KEY_TAB);
 }
 
 void DG_Init(void)
