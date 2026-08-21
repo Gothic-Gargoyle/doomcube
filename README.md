@@ -1,67 +1,38 @@
-# doomgeneric
-The purpose of doomgeneric is to make porting Doom easier.
-Of course Doom is already portable but with doomgeneric it is possible with just a few functions.
+# DoomCube
+Since there wasn't a version of DOOM on the Gamecube with access to the source, i decided to fill in this gap! 
 
-To try it you will need a WAD file (game data). If you don't own the game, shareware version is freely available (doom1.wad).
+To try it you will need a WAD file (game data) on your If you don't own the game, shareware version is freely available (doom1.wad).
 
-# porting
-Create a file named doomgeneric_yourplatform.c and just implement these functions to suit your platform.
-* DG_Init
-* DG_DrawFrame
-* DG_SleepMs
-* DG_GetTicksMs
-* DG_GetKey
+## Dolphin
 
-|Functions            |Description|
-|---------------------|-----------|
-|DG_Init              |Initialize your platfrom (create window, framebuffer, etc...).
-|DG_DrawFrame         |Frame is ready in DG_ScreenBuffer. Copy it to your platform's screen.
-|DG_SleepMs           |Sleep in milliseconds.
-|DG_GetTicksMs        |The ticks passed since launch in milliseconds.
-|DG_GetKey            |Provide keyboard events.
-|DG_SetWindowTitle    |Not required. This is for setting the window title as Doom sets this from WAD file.
 
-### main loop
-At start, call doomgeneric_Create().
+## Real hardware
 
-In a loop, call doomgeneric_Tick().
 
-In simplest form:
-```
-int main(int argc, char **argv)
-{
-    doomgeneric_Create(argc, argv);
+# Controls
+* Forward = Left analog stick up
+* Strafe Left = Left analog stick left
+* Strafe Right = Left analog stick right
+* backpedal = Left analog stick down
+* Run = Left trigger
+* Fire = Right trigger
+* Use = A button
+* Turn Left = C stick
 
-    while (1)
-    {
-        doomgeneric_Tick();
-    }
-    
-    return 0;
-}
-```
+# Features
+## Must have
+* genericdoom running on gamecube
+* sound effects and music
 
-# sound
-Sound is much harder to implement! If you need sound, take a look at SDL port. It fully supports sound and music! Where to start? Define FEATURE_SOUND, assign DG_sound_module and DG_music_module.
+## Should have
 
-# platforms
-Ported platforms include Windows, X11, SDL, emscripten. Just look at (doomgeneric_win.c, doomgeneric_xlib.c, doomgeneric_sdl.c).
-Makefiles provided for each platform.
+## Could have
+* Gameboy cable support for displaying map on gameboy
 
-## emscripten
-You can try it directly here:
-https://ozkl.github.io/doomgeneric/
+## Wont have
 
-emscripten port is based on SDL port, so it supports sound and music! For music, timidity backend is used.
+## Dolphin
+![Dolphin](screenshots/dolphin.png)
 
-## Windows
-![Windows](screenshots/windows.png)
-
-## X11 - Ubuntu
-![Ubuntu](screenshots/ubuntu.png)
-
-## X11 - FreeBSD
-![FreeBSD](screenshots/freebsd.png)
-
-## SDL
-![SDL](screenshots/sdl.png)
+## Real Gamecube
+![Real Gamecube](screenshots/Real Gamecube.png)
