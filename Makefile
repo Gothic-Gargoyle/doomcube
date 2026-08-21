@@ -1,54 +1,138 @@
-################################################################
-#
-# $Id:$
-#
-# $Log:$
-#
-
-ifeq ($(V),1)
-	VB=''
-else
-	VB=@
+#---------------------------------------------------------------------------------
+# Clear the implicit built in rules
+#---------------------------------------------------------------------------------
+.SUFFIXES:
+#---------------------------------------------------------------------------------
+ifeq ($(strip $(DEVKITPPC)),)
+$(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
 endif
 
+include $(DEVKITPRO)/libogc2/gamecube_rules
 
-CC=clang  # gcc or g++
-CFLAGS+=-ggdb3 -Os
-LDFLAGS+=-Wl,--gc-sections
-CFLAGS+=-ggdb3 -Wall -DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE # -DUSEASM
-LIBS+=-lm -lc -lX11
+#---------------------------------------------------------------------------------
+# TARGET is the name of the output
+# BUILD is the directory where object files & intermediate files will be placed
+# SOURCES is a list of directories containing source code
+# INCLUDES is a list of directories containing extra header files
+#---------------------------------------------------------------------------------
+TARGET		:=	$(notdir $(CURDIR))
+BUILD		:=	build
+SOURCES		:=	. source
+DATA		:=	data
+INCLUDES	:=
 
-# subdirectory for objects
-OBJDIR=build
-OUTPUT=doomgeneric
+#---------------------------------------------------------------------------------
+# options for code generation
+#---------------------------------------------------------------------------------
 
-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_xlib.o
-OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+CFLAGS		= -g -O2 -Wall $(MACHDEP) $(INCLUDE)
+CXXFLAGS	= $(CFLAGS)
 
-all:	 $(OUTPUT)
+LDFLAGS		= -g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 
+#---------------------------------------------------------------------------------
+# any extra libraries we wish to link with the project
+#---------------------------------------------------------------------------------
+LIBS	:=	-logc -lm
+
+#---------------------------------------------------------------------------------
+# list of directories containing libraries, this must be the top level containing
+# include and lib
+#---------------------------------------------------------------------------------
+LIBDIRS	:=
+
+#---------------------------------------------------------------------------------
+# no real need to edit anything past this point unless you need to add additional
+# rules for different file extensions
+#---------------------------------------------------------------------------------
+ifneq ($(BUILD),$(notdir $(CURDIR)))
+#---------------------------------------------------------------------------------
+
+export OUTPUT	:=	$(CURDIR)/$(TARGET)
+
+export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
+			$(foreach dir,$(DATA),$(CURDIR)/$(dir))
+
+export DEPSDIR	:=	$(CURDIR)/$(BUILD)
+
+#---------------------------------------------------------------------------------
+# automatically build a list of object files for our project
+#---------------------------------------------------------------------------------
+CFILES      :=  $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+sFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+
+#---------------------------------------------------------------------------------
+# use CXX for linking C++ projects, CC for standard C
+#---------------------------------------------------------------------------------
+ifeq ($(strip $(CPPFILES)),)
+	export LD	:=	$(CC)
+else
+	export LD	:=	$(CXX)
+endif
+
+export OFILES_BIN	:=	$(addsuffix .o,$(BINFILES))
+export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(sFILES:.s=.o) $(SFILES:.S=.o)
+export OFILES := $(OFILES_BIN) $(OFILES_SOURCES)
+
+export HFILES := $(addsuffix .h,$(subst .,_,$(BINFILES)))
+
+#---------------------------------------------------------------------------------
+# build a list of include paths
+#---------------------------------------------------------------------------------
+export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+			-I$(CURDIR)/$(BUILD) \
+			-I$(LIBOGC_INC)
+
+#---------------------------------------------------------------------------------
+# build a list of library paths
+#---------------------------------------------------------------------------------
+export LIBPATHS	:=	-L$(LIBOGC_LIB) $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+
+export OUTPUT	:=	$(CURDIR)/$(TARGET)
+.PHONY: $(BUILD) clean
+
+#---------------------------------------------------------------------------------
+$(BUILD):
+	@[ -d $@ ] || mkdir -p $@
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+#---------------------------------------------------------------------------------
 clean:
-	rm -rf $(OBJDIR)
-	rm -f $(OUTPUT)
-	rm -f $(OUTPUT).gdb
-	rm -f $(OUTPUT).map
+	@echo clean ...
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol
 
-$(OUTPUT):	$(OBJS)
-	@echo [Linking $@]
-	$(VB)$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) \
-	-o $(OUTPUT) $(LIBS) -Wl,-Map,$(OUTPUT).map
-	@echo [Size]
-	-$(CROSS_COMPILE)size $(OUTPUT)
+#---------------------------------------------------------------------------------
+run:
+	wiiload $(TARGET).dol
 
-$(OBJS): | $(OBJDIR)
 
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
+#---------------------------------------------------------------------------------
+else
 
-$(OBJDIR)/%.o:	%.c
-	@echo [Compiling $<]
-	$(VB)$(CC) $(CFLAGS) -c $< -o $@
+DEPENDS	:=	$(OFILES:.o=.d)
 
-print:
-	@echo OBJS: $(OBJS)
+#---------------------------------------------------------------------------------
+# main targets
+#---------------------------------------------------------------------------------
+$(OUTPUT).dol: $(OUTPUT).elf
+$(OUTPUT).elf: $(OFILES)
 
+$(OFILES_SOURCES) : $(HFILES)
+
+#---------------------------------------------------------------------------------
+# This rule links in binary data with the .jpg extension
+#---------------------------------------------------------------------------------
+%.jpg.o	%_jpg.h :	%.jpg
+#---------------------------------------------------------------------------------
+	@echo $(notdir $<)
+	$(bin2o)
+
+-include $(DEPENDS)
+
+#---------------------------------------------------------------------------------
+endif
+#---------------------------------------------------------------------------------
