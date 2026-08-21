@@ -1,85 +1,181 @@
+//
 // doomgeneric_gamecube.c
 //
-// GameCube SDL2 framebuffer test.
+// GameCube DoomGeneric platform backend.
 //
-// ONLY this file needs to be compiled.
+// GameCube-specific responsibilities only:
+//   - SDL2 video
+//   - timing
+//   - input
+//   - application entry point
 //
-// Purpose:
-//   CPU 320x200 framebuffer
-//          -> SDL texture
-//          -> SDL renderer
-//          -> GameCube display
+// No upstream Doom source is modified.
+//
 
 #define SDL_MAIN_HANDLED
 
 #include <SDL2/SDL.h>
 
+#include "doomkeys.h"
+#include "doomgeneric.h"
+
+#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 
 #include <ogcsys.h>
 #include <gccore.h>
 
-#define SCREEN_WIDTH  320
-#define SCREEN_HEIGHT 200
 
 static SDL_Window   *window   = NULL;
 static SDL_Renderer *renderer = NULL;
 static SDL_Texture  *texture  = NULL;
 
-static uint32_t testFramebuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-static void DrawTestPattern(uint32_t frame)
+#define KEYQUEUE_SIZE 16
+
+static unsigned short s_KeyQueue[KEYQUEUE_SIZE];
+static unsigned int s_KeyQueueWriteIndex = 0;
+static unsigned int s_KeyQueueReadIndex  = 0;
+
+
+static unsigned char convertToDoomKey(unsigned int key)
 {
-    for (int y = 0; y < SCREEN_HEIGHT; y++)
+    switch (key)
     {
-        for (int x = 0; x < SCREEN_WIDTH; x++)
-        {
-            uint8_t r = (uint8_t)(x + frame);
-            uint8_t g = (uint8_t)(y + frame);
-            uint8_t b = (uint8_t)(x + y + frame);
+        case SDLK_RETURN: return KEY_ENTER;
+        case SDLK_ESCAPE: return KEY_ESCAPE;
 
-            testFramebuffer[y * SCREEN_WIDTH + x] =
-                ((uint32_t)r << 16) |
-                ((uint32_t)g << 8)  |
-                ((uint32_t)b);
+        case SDLK_LEFT:  return KEY_LEFTARROW;
+        case SDLK_RIGHT: return KEY_RIGHTARROW;
+        case SDLK_UP:    return KEY_UPARROW;
+        case SDLK_DOWN:  return KEY_DOWNARROW;
+
+        case SDLK_LCTRL:
+        case SDLK_RCTRL:
+            return KEY_FIRE;
+
+        case SDLK_SPACE:
+            return KEY_USE;
+
+        case SDLK_LSHIFT:
+        case SDLK_RSHIFT:
+            return KEY_RSHIFT;
+
+        case SDLK_LALT:
+        case SDLK_RALT:
+            return KEY_LALT;
+
+        case SDLK_F2:  return KEY_F2;
+        case SDLK_F3:  return KEY_F3;
+        case SDLK_F4:  return KEY_F4;
+        case SDLK_F5:  return KEY_F5;
+        case SDLK_F6:  return KEY_F6;
+        case SDLK_F7:  return KEY_F7;
+        case SDLK_F8:  return KEY_F8;
+        case SDLK_F9:  return KEY_F9;
+        case SDLK_F10: return KEY_F10;
+        case SDLK_F11: return KEY_F11;
+
+        case SDLK_EQUALS:
+            return KEY_EQUALS;
+
+        case SDLK_MINUS:
+            return KEY_MINUS;
+
+        default:
+            return (unsigned char)tolower((int)key);
+    }
+}
+
+
+static void addKeyToQueue(int pressed, unsigned int keyCode)
+{
+    unsigned char key = convertToDoomKey(keyCode);
+
+    s_KeyQueue[s_KeyQueueWriteIndex] =
+        ((pressed ? 1 : 0) << 8) | key;
+
+    s_KeyQueueWriteIndex =
+        (s_KeyQueueWriteIndex + 1)
+        % KEYQUEUE_SIZE;
+}
+
+
+static void handleInput(void)
+{
+    SDL_Event event;
+
+    while (SDL_PollEvent(&event))
+    {
+        switch (event.type)
+        {
+            case SDL_QUIT:
+                exit(0);
+                break;
+
+            case SDL_KEYDOWN:
+                if (!event.key.repeat)
+                {
+                    addKeyToQueue(
+                        1,
+                        event.key.keysym.sym
+                    );
+                }
+                break;
+
+            case SDL_KEYUP:
+                addKeyToQueue(
+                    0,
+                    event.key.keysym.sym
+                );
+                break;
+
+            default:
+                break;
         }
     }
 }
 
-static int InitialiseSDL(void)
+
+void DG_Init(void)
 {
-    printf("Calling SDL_Init...\n");
+    PAD_Init();
+
+    printf("DoomCube: SDL_Init\n");
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        printf("SDL_Init failed: %s\n", SDL_GetError());
-        return 0;
+        printf(
+            "SDL_Init failed: %s\n",
+            SDL_GetError()
+        );
+
+        exit(1);
     }
 
-    printf("SDL_Init succeeded.\n");
-
-    printf("Creating SDL window...\n");
 
     window = SDL_CreateWindow(
-        "DOOMCUBE",
+        "DOOM",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
+        DOOMGENERIC_RESX,
+        DOOMGENERIC_RESY,
         SDL_WINDOW_SHOWN
     );
 
+
     if (window == NULL)
     {
-        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-        return 0;
+        printf(
+            "SDL_CreateWindow failed: %s\n",
+            SDL_GetError()
+        );
+
+        exit(1);
     }
 
-    printf("SDL_CreateWindow succeeded.\n");
-
-    printf("Creating SDL renderer...\n");
 
     renderer = SDL_CreateRenderer(
         window,
@@ -87,154 +183,148 @@ static int InitialiseSDL(void)
         0
     );
 
+
     if (renderer == NULL)
     {
-        printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        return 0;
+        printf(
+            "SDL_CreateRenderer failed: %s\n",
+            SDL_GetError()
+        );
+
+        exit(1);
     }
 
-    printf("SDL_CreateRenderer succeeded.\n");
-
-    printf("Creating 320x200 streaming texture...\n");
 
     texture = SDL_CreateTexture(
         renderer,
         SDL_PIXELFORMAT_RGB888,
         SDL_TEXTUREACCESS_STREAMING,
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT
+        DOOMGENERIC_RESX,
+        DOOMGENERIC_RESY
     );
+
 
     if (texture == NULL)
     {
-        printf("SDL_CreateTexture failed: %s\n", SDL_GetError());
-        return 0;
+        printf(
+            "SDL_CreateTexture failed: %s\n",
+            SDL_GetError()
+        );
+
+        exit(1);
     }
 
-    printf("SDL_CreateTexture succeeded.\n");
 
-    return 1;
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
+
+    printf("DoomCube: video ready\n");
 }
 
-static int RenderFrame(void)
+
+void DG_DrawFrame(void)
 {
-    if (SDL_UpdateTexture(
-            texture,
-            NULL,
-            testFramebuffer,
-            SCREEN_WIDTH * sizeof(uint32_t)
-        ) < 0)
-    {
-        printf("SDL_UpdateTexture failed: %s\n", SDL_GetError());
-        return 0;
-    }
+    SDL_UpdateTexture(
+        texture,
+        NULL,
+        DG_ScreenBuffer,
+        DOOMGENERIC_RESX * sizeof(uint32_t)
+    );
 
-    if (SDL_RenderClear(renderer) < 0)
-    {
-        printf("SDL_RenderClear failed: %s\n", SDL_GetError());
-        return 0;
-    }
+    SDL_RenderClear(renderer);
 
-    if (SDL_RenderCopy(
-            renderer,
-            texture,
-            NULL,
-            NULL
-        ) < 0)
-    {
-        printf("SDL_RenderCopy failed: %s\n", SDL_GetError());
-        return 0;
-    }
+    SDL_RenderCopy(
+        renderer,
+        texture,
+        NULL,
+        NULL
+    );
 
     SDL_RenderPresent(renderer);
 
+    handleInput();
+}
+
+
+void DG_SleepMs(uint32_t ms)
+{
+    SDL_Delay(ms);
+}
+
+
+uint32_t DG_GetTicksMs(void)
+{
+    return SDL_GetTicks();
+}
+
+
+int DG_GetKey(int *pressed, unsigned char *doomKey)
+{
+    unsigned short keyData;
+
+    if (s_KeyQueueReadIndex == s_KeyQueueWriteIndex)
+    {
+        return 0;
+    }
+
+
+    keyData =
+        s_KeyQueue[s_KeyQueueReadIndex];
+
+
+    s_KeyQueueReadIndex =
+        (s_KeyQueueReadIndex + 1)
+        % KEYQUEUE_SIZE;
+
+
+    *pressed = keyData >> 8;
+    *doomKey = keyData & 0xff;
+
+
     return 1;
 }
 
-static void ShutdownSDL(void)
+
+void DG_SetWindowTitle(const char *title)
 {
-    if (texture != NULL)
-    {
-        SDL_DestroyTexture(texture);
-        texture = NULL;
-    }
-
-    if (renderer != NULL)
-    {
-        SDL_DestroyRenderer(renderer);
-        renderer = NULL;
-    }
-
     if (window != NULL)
     {
-        SDL_DestroyWindow(window);
-        window = NULL;
+        SDL_SetWindowTitle(window, title);
     }
-
-    SDL_Quit();
 }
+
 
 int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
 
-    PAD_Init();
 
-    printf("\n");
-    printf("================================\n");
-    printf("DOOMCUBE SDL FRAMEBUFFER TEST\n");
-    printf("================================\n");
-    printf("\n");
-
-    if (!InitialiseSDL())
+    char *doomArgv[] =
     {
-        printf("SDL initialisation failed.\n");
+        "doomcube",
+        "-iwad",
+        "doom1.wad"
+    };
 
-        while (SYS_MainLoop())
-        {
-            PAD_ScanPads();
 
-            if (PAD_ButtonsDown(0) & PAD_BUTTON_START)
-            {
-                break;
-            }
-        }
+    printf("DoomCube: starting DoomGeneric\n");
 
-        ShutdownSDL();
-        return 1;
-    }
 
-    printf("\n");
-    printf("Rendering test framebuffer.\n");
-    printf("Press START to exit.\n");
-    printf("\n");
+    doomgeneric_Create(
+        3,
+        doomArgv
+    );
 
-    uint32_t frame = 0;
+
+    printf("DoomCube: DoomGeneric initialized\n");
+
 
     while (SYS_MainLoop())
     {
-        SDL_PumpEvents();
-
-        DrawTestPattern(frame++);
-
-        if (!RenderFrame())
-        {
-            printf("Rendering failed.\n");
-            break;
-        }
-
-        PAD_ScanPads();
-
-        if (PAD_ButtonsDown(0) & PAD_BUTTON_START)
-        {
-            break;
-        }
-
-        SDL_Delay(16);
+        doomgeneric_Tick();
     }
 
-    ShutdownSDL();
 
     return 0;
 }
