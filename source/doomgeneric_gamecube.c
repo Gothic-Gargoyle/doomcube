@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <ogcsys.h>
 #include <gccore.h>
@@ -22,8 +21,9 @@
 #define STICK_DEADZONE     24
 #define CSTICK_DEADZONE    24
 #define TRIGGER_THRESHOLD  40
-#define GC_KEY_PREVWEAPON 0xa4
-#define GC_KEY_NEXTWEAPON 0xa5
+
+#define GC_KEY_PREVWEAPON  0xa4
+#define GC_KEY_NEXTWEAPON  0xa5
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -137,6 +137,11 @@ static bool mountIsoFilesystem(void)
 {
     printf("DoomCube: mounting ISO9660...\n");
 
+    /*
+     * Do NOT call DVD_Init() or DVD_Mount().
+     *
+     * ISO9660_Mount() directly against __io_gcdvd is the working path.
+     */
     if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
         printf("DoomCube: ISO9660_Mount FAILED\n");
@@ -148,171 +153,6 @@ static bool mountIsoFilesystem(void)
     printf("DoomCube: mounted dvd:/\n");
 
     return true;
-}
-
-
-/* ------------------------------------------------------------------------- */
-/* DVD WAD probe                                                             */
-/* ------------------------------------------------------------------------- */
-
-static uint32_t readLE32(const unsigned char *p)
-{
-    return ((uint32_t)p[0])
-         | ((uint32_t)p[1] << 8)
-         | ((uint32_t)p[2] << 16)
-         | ((uint32_t)p[3] << 24);
-}
-
-static void probeDvdWad(void)
-{
-    FILE *file;
-    long fileSize;
-
-    unsigned char header[12];
-    unsigned char entry[16];
-
-    uint32_t numLumps;
-    uint32_t directoryOffset;
-
-    printf("\n");
-    printf("DoomCube: ---- DVD WAD PROBE ----\n");
-
-    file = fopen("dvd:/doom1.wad", "rb");
-
-    if (!file)
-    {
-        printf("DoomCube: fopen FAILED\n");
-        return;
-    }
-
-    printf("DoomCube: fopen OK\n");
-
-    if (fseek(file, 0, SEEK_END) != 0)
-    {
-        printf("DoomCube: SEEK_END FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    fileSize = ftell(file);
-
-    if (fileSize < 0)
-    {
-        printf("DoomCube: ftell FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    printf("DoomCube: file size = %ld bytes\n", fileSize);
-
-    if (fseek(file, 0, SEEK_SET) != 0)
-    {
-        printf("DoomCube: SEEK_SET(0) FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    if (fread(header, 1, sizeof(header), file) != sizeof(header))
-    {
-        printf("DoomCube: header fread FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    printf("DoomCube: identification = %.4s\n", header);
-
-    if (memcmp(header, "IWAD", 4) != 0
-     && memcmp(header, "PWAD", 4) != 0)
-    {
-        printf("DoomCube: invalid WAD identification\n");
-        fclose(file);
-        return;
-    }
-
-    numLumps = readLE32(header + 4);
-    directoryOffset = readLE32(header + 8);
-
-    printf("DoomCube: numlumps = %u\n", (unsigned int)numLumps);
-    printf(
-        "DoomCube: directory offset = 0x%08x\n",
-        (unsigned int)directoryOffset
-    );
-
-    if (numLumps == 0)
-    {
-        printf("DoomCube: invalid zero-lump WAD\n");
-        fclose(file);
-        return;
-    }
-
-    if ((long)directoryOffset >= fileSize)
-    {
-        printf("DoomCube: directory offset outside file\n");
-        fclose(file);
-        return;
-    }
-
-    if (fseek(file, (long)directoryOffset, SEEK_SET) != 0)
-    {
-        printf("DoomCube: directory fseek FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    if (fread(entry, 1, sizeof(entry), file) != sizeof(entry))
-    {
-        printf("DoomCube: directory fread FAILED\n");
-        fclose(file);
-        return;
-    }
-
-    printf("DoomCube: first lump: %.8s\n", entry + 8);
-
-    printf(
-        "DoomCube: first lump offset = 0x%08x\n",
-        (unsigned int)readLE32(entry)
-    );
-
-    printf(
-        "DoomCube: first lump size = %u\n",
-        (unsigned int)readLE32(entry + 4)
-    );
-
-    {
-        uint32_t lastEntryOffset =
-            directoryOffset + ((numLumps - 1) * 16);
-
-        if (fseek(file, (long)lastEntryOffset, SEEK_SET) != 0)
-        {
-            printf("DoomCube: last-entry fseek FAILED\n");
-            fclose(file);
-            return;
-        }
-
-        if (fread(entry, 1, sizeof(entry), file) != sizeof(entry))
-        {
-            printf("DoomCube: last-entry fread FAILED\n");
-            fclose(file);
-            return;
-        }
-
-        printf("DoomCube: last lump: %.8s\n", entry + 8);
-
-        printf(
-            "DoomCube: last lump offset = 0x%08x\n",
-            (unsigned int)readLE32(entry)
-        );
-
-        printf(
-            "DoomCube: last lump size = %u\n",
-            (unsigned int)readLE32(entry + 4)
-        );
-    }
-
-    fclose(file);
-
-    printf("DoomCube: DVD WAD PROBE SUCCESS\n");
-    printf("DoomCube: -----------------------\n\n");
 }
 
 
@@ -370,13 +210,14 @@ void DG_Init(void)
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
+    /*
+     * Mount only after SDL/video is initialized.
+     */
     if (!mountIsoFilesystem())
     {
         printf("DoomCube: disc mount unavailable\n");
-        return;
+        exit(1);
     }
-
-    probeDvdWad();
 }
 
 
@@ -446,12 +287,14 @@ int main(int argc, char **argv)
     {
         "doomcube",
         "-iwad",
-        "doom1.wad"
+        "dvd:/doom1.wad"
     };
 
     doomgeneric_Create(3, doomArgv);
 
-
+    /*
+     * Preserve your working prev/next weapon assignments.
+     */
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
 

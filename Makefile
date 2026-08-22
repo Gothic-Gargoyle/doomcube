@@ -17,8 +17,6 @@ SOURCES     := . source
 INCLUDES    :=
 LIBDIRS     :=
 
-EMBED_WAD ?= 0
-
 ISO_DIR := $(CURDIR)/build-iso
 ISO_OUT := $(CURDIR)/doomcube.iso
 
@@ -46,20 +44,12 @@ CFLAGS := \
 	$(MACHDEP) \
 	$(INCLUDE)
 
-ifeq ($(EMBED_WAD),1)
-	CFLAGS += -DDOOMCUBE_EMBED_ASSETS
-endif
-
 CXXFLAGS := $(CFLAGS)
 
 LDFLAGS := \
 	-g \
 	$(MACHDEP) \
 	-Wl,-Map,$(notdir $@).map
-
-ifeq ($(EMBED_WAD),1)
-	LDFLAGS += -Wl,--wrap=M_FileExists
-endif
 
 #---------------------------------------------------------------------------------
 # Libraries
@@ -96,8 +86,7 @@ export OUTPUT := $(CURDIR)/$(TARGET)
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 export VPATH := \
-	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-	$(CURDIR)/data
+	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 
 #---------------------------------------------------------------------------------
 # Sources
@@ -181,40 +170,12 @@ CFILES := \
 	w_file.c \
 	w_main.c \
 	w_wad.c \
+	w_file_stdc.c \
 	z_zone.c \
 	i_input.c \
 	i_video.c \
 	doomgeneric.c \
 	doomgeneric_gamecube.c
-
-#---------------------------------------------------------------------------------
-# WAD backend
-#
-# Test build:
-#   WAD embedded
-#
-# Music:
-#   never embedded; streamed from dvd:/music/
-#---------------------------------------------------------------------------------
-
-ifeq ($(EMBED_WAD),1)
-
-CFILES += \
-	w_file_embedded.c
-
-BINFILES := \
-	doom1.wad
-
-else
-
-CFILES += \
-	w_file_stdc.c
-
-BINFILES :=
-
-endif
-
-#---------------------------------------------------------------------------------
 
 CPPFILES := \
 	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
@@ -226,6 +187,8 @@ SFILES := \
 	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
 
 #---------------------------------------------------------------------------------
+# Linker
+#---------------------------------------------------------------------------------
 
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
@@ -234,23 +197,17 @@ else
 endif
 
 #---------------------------------------------------------------------------------
+# Objects
+#---------------------------------------------------------------------------------
 
-export OFILES_BIN := \
-	$(addsuffix .o,$(BINFILES))
-
-export OFILES_SOURCES := \
+export OFILES := \
 	$(CPPFILES:.cpp=.o) \
 	$(CFILES:.c=.o) \
 	$(sFILES:.s=.o) \
 	$(SFILES:.S=.o)
 
-export OFILES := \
-	$(OFILES_BIN) \
-	$(OFILES_SOURCES)
-
-export HFILES := \
-	$(addsuffix .h,$(subst .,_,$(BINFILES)))
-
+#---------------------------------------------------------------------------------
+# Includes
 #---------------------------------------------------------------------------------
 
 export INCLUDE := \
@@ -263,6 +220,10 @@ export INCLUDE := \
 	-I$(DEVKITPRO)/portlibs/ppc/include \
 	-I$(LIBOGC_INC)
 
+#---------------------------------------------------------------------------------
+# Library paths
+#---------------------------------------------------------------------------------
+
 export LIBPATHS := \
 	-L$(DEVKITPRO)/libogc2/gamecube/lib \
 	-L$(DEVKITPRO)/portlibs/ppc/lib \
@@ -273,8 +234,12 @@ export LIBPATHS := \
 
 .PHONY: all $(BUILD) clean run iso test
 
+#---------------------------------------------------------------------------------
+
 all: $(BUILD)
 
+#---------------------------------------------------------------------------------
+# Build
 #---------------------------------------------------------------------------------
 
 $(BUILD):
@@ -284,9 +249,10 @@ $(BUILD):
 		--no-print-directory \
 		-C $(BUILD) \
 		-f $(CURDIR)/Makefile \
-		EMBED_WAD=$(EMBED_WAD) \
 		$(CURDIR)/$(TARGET).dol
 
+#---------------------------------------------------------------------------------
+# Clean
 #---------------------------------------------------------------------------------
 
 clean:
@@ -304,6 +270,8 @@ clean:
 run:
 	wiiload $(TARGET).dol
 
+#---------------------------------------------------------------------------------
+# ISO
 #---------------------------------------------------------------------------------
 
 iso:
@@ -331,7 +299,7 @@ iso:
 	@cp "$(CURDIR)"/data/music/*.ogg "$(ISO_DIR)/music/"
 
 	@echo
-	@echo "ISO data:"
+	@echo "ISO contents:"
 	@du -sh "$(ISO_DIR)"
 	@echo
 
@@ -351,14 +319,28 @@ iso:
 	@echo
 
 #---------------------------------------------------------------------------------
+# Test
+#
+# IWAD:
+#   dvd:/doom1.wad
+#
+# Music:
+#   dvd:/music/*.ogg
+#
+# Nothing large is embedded in doomcube.dol.
+#---------------------------------------------------------------------------------
 
 test:
 	$(MAKE) clean
-	$(MAKE) EMBED_WAD=1
+	$(MAKE)
 	$(MAKE) iso
 
 	@echo
-	@echo "Launching DVD WAD I/O probe..."
+	@echo "Launching fully DVD-backed DoomCube..."
+	@echo
+
+	@echo "DOL:"
+	@ls -lh "$(CURDIR)/$(TARGET).dol"
 	@echo
 
 	/usr/bin/flatpak run \
@@ -384,12 +366,6 @@ all: $(OUTPUT).dol
 $(OUTPUT).dol: $(OUTPUT).elf
 
 $(OUTPUT).elf: $(OFILES)
-
-$(OFILES_SOURCES): $(HFILES)
-
-%_wad.h %.wad.o : %.wad
-	@echo $(notdir $<)
-	@$(bin2o)
 
 -include $(DEPENDS)
 
