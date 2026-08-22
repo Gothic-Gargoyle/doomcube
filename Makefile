@@ -1,10 +1,15 @@
 .SUFFIXES:
+.DEFAULT_GOAL := all
 
 ifeq ($(strip $(DEVKITPPC)),)
-$(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
+$(error "Please set DEVKITPPC in your environment.")
 endif
 
 include $(DEVKITPRO)/libogc2/gamecube_rules
+
+#---------------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------------
 
 TARGET      := doomcube
 BUILD       := build
@@ -14,7 +19,26 @@ LIBDIRS     :=
 
 EMBED_WAD ?= 0
 
-CFLAGS = \
+ISO_DIR := $(CURDIR)/build-iso
+ISO_OUT := $(CURDIR)/doomcube.iso
+
+GBI_HDR ?= $(CURDIR)/tools/gbi.hdr
+
+MKISOFS := $(shell \
+	if command -v genisoimage >/dev/null 2>&1; then \
+		command -v genisoimage; \
+	elif command -v mkisofs >/dev/null 2>&1; then \
+		command -v mkisofs; \
+	elif command -v xorriso >/dev/null 2>&1; then \
+		echo "xorriso -as mkisofs"; \
+	fi \
+)
+
+#---------------------------------------------------------------------------------
+# Compiler
+#---------------------------------------------------------------------------------
+
+CFLAGS := \
 	-g \
 	-O2 \
 	-Wall \
@@ -26,9 +50,9 @@ ifeq ($(EMBED_WAD),1)
 	CFLAGS += -DDOOMCUBE_EMBED_ASSETS
 endif
 
-CXXFLAGS = $(CFLAGS)
+CXXFLAGS := $(CFLAGS)
 
-LDFLAGS = \
+LDFLAGS := \
 	-g \
 	$(MACHDEP) \
 	-Wl,-Map,$(notdir $@).map
@@ -36,6 +60,10 @@ LDFLAGS = \
 ifeq ($(EMBED_WAD),1)
 	LDFLAGS += -Wl,--wrap=M_FileExists
 endif
+
+#---------------------------------------------------------------------------------
+# Libraries
+#---------------------------------------------------------------------------------
 
 LIBS := \
 	-lSDL2_mixer \
@@ -57,6 +85,10 @@ LIBS := \
 	-lstdc++ \
 	-lm
 
+#---------------------------------------------------------------------------------
+# Outer build
+#---------------------------------------------------------------------------------
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
@@ -66,6 +98,10 @@ export VPATH := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 	$(CURDIR)/data \
 	$(CURDIR)/data/music
+
+#---------------------------------------------------------------------------------
+# Doom sources
+#---------------------------------------------------------------------------------
 
 CFILES := \
 	dummy.c \
@@ -151,17 +187,14 @@ CFILES := \
 	doomgeneric.c \
 	doomgeneric_gamecube.c
 
-ifeq ($(EMBED_WAD),1)
-	CFILES += w_file_embedded.c
-else
-	CFILES += w_file_stdc.c
-endif
-
-CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-sFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+#---------------------------------------------------------------------------------
+# WAD backend
+#---------------------------------------------------------------------------------
 
 ifeq ($(EMBED_WAD),1)
+
+CFILES += \
+	w_file_embedded.c
 
 BINFILES := \
 	doom1.wad \
@@ -169,15 +202,39 @@ BINFILES := \
 
 else
 
+CFILES += \
+	w_file_stdc.c
+
 BINFILES :=
 
 endif
+
+#---------------------------------------------------------------------------------
+# Other sources
+#---------------------------------------------------------------------------------
+
+CPPFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+
+sFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+
+SFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+
+#---------------------------------------------------------------------------------
+# Linker
+#---------------------------------------------------------------------------------
 
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
 else
 	export LD := $(CXX)
 endif
+
+#---------------------------------------------------------------------------------
+# Objects
+#---------------------------------------------------------------------------------
 
 export OFILES_BIN := \
 	$(addsuffix .o,$(BINFILES))
@@ -195,6 +252,10 @@ export OFILES := \
 export HFILES := \
 	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
+#---------------------------------------------------------------------------------
+# Includes
+#---------------------------------------------------------------------------------
+
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -205,13 +266,35 @@ export INCLUDE := \
 	-I$(DEVKITPRO)/portlibs/ppc/include \
 	-I$(LIBOGC_INC)
 
+#---------------------------------------------------------------------------------
+# Library paths
+#---------------------------------------------------------------------------------
+
 export LIBPATHS := \
 	-L$(DEVKITPRO)/libogc2/gamecube/lib \
 	-L$(DEVKITPRO)/portlibs/ppc/lib \
 	-L$(LIBOGC_LIB) \
 	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean run test
+#---------------------------------------------------------------------------------
+
+.PHONY: \
+	all \
+	$(BUILD) \
+	clean \
+	run \
+	iso \
+	test
+
+#---------------------------------------------------------------------------------
+# Default
+#---------------------------------------------------------------------------------
+
+all: $(BUILD)
+
+#---------------------------------------------------------------------------------
+# Build
+#---------------------------------------------------------------------------------
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -220,33 +303,118 @@ $(BUILD):
 		--no-print-directory \
 		-C $(BUILD) \
 		-f $(CURDIR)/Makefile \
-		EMBED_WAD=$(EMBED_WAD)
+		EMBED_WAD=$(EMBED_WAD) \
+		$(CURDIR)/$(TARGET).dol
+
+#---------------------------------------------------------------------------------
+# Clean
+#---------------------------------------------------------------------------------
 
 clean:
 	@echo clean ...
+
 	@rm -rf \
 		$(BUILD) \
+		$(ISO_DIR) \
 		$(CURDIR)/$(TARGET).elf \
-		$(CURDIR)/$(TARGET).dol
+		$(CURDIR)/$(TARGET).dol \
+		$(ISO_OUT)
+
+#---------------------------------------------------------------------------------
+# Real hardware
+#---------------------------------------------------------------------------------
 
 run:
 	wiiload $(TARGET).dol
 
+#---------------------------------------------------------------------------------
+# ISO
+#
+# At this stage the DOL deliberately DOES NOT access the ISO filesystem.
+#
+# doom1.wad and d_e1m1.ogg are embedded in the executable during `make test`.
+#
+# We still put the WAD and complete OGG directory onto the ISO so that the
+# filesystem layout is ready for the next stage.
+#---------------------------------------------------------------------------------
+
+iso:
+	@test -n "$(MKISOFS)" || \
+		( echo "ERROR: genisoimage, mkisofs or xorriso is required." && false )
+
+	@test -f "$(GBI_HDR)" || \
+		( echo "ERROR: missing $(GBI_HDR)" && false )
+
+	@test -f "$(CURDIR)/$(TARGET).dol" || \
+		( echo "ERROR: $(TARGET).dol is missing." && false )
+
+	@test -f "$(CURDIR)/data/doom1.wad" || \
+		( echo "ERROR: data/doom1.wad is missing." && false )
+
+	@test -d "$(CURDIR)/data/music" || \
+		( echo "ERROR: data/music is missing." && false )
+
+	@rm -rf "$(ISO_DIR)"
+
+	@mkdir -p \
+		"$(ISO_DIR)/music"
+
+	@cp \
+		"$(CURDIR)/$(TARGET).dol" \
+		"$(ISO_DIR)/bootldr.dol"
+
+	@cp \
+		"$(CURDIR)/data/doom1.wad" \
+		"$(ISO_DIR)/doom1.wad"
+
+	@cp \
+		"$(CURDIR)"/data/music/*.ogg \
+		"$(ISO_DIR)/music/"
+
+	@echo
+	@echo "ISO data:"
+	@du -sh "$(ISO_DIR)"
+	@echo
+
+	$(MKISOFS) \
+		-R \
+		-J \
+		-G "$(GBI_HDR)" \
+		-no-emul-boot \
+		-eltorito-platform PPC \
+		-b bootldr.dol \
+		-o "$(ISO_OUT)" \
+		"$(ISO_DIR)"
+
+	@echo
+	@echo "Built ISO:"
+	@ls -lh "$(ISO_OUT)"
+	@echo
+
+#---------------------------------------------------------------------------------
+# Dolphin test
+#
+# IMPORTANT:
+#
+# This is the known-good baseline.
+#
+#   WAD       -> embedded
+#   E1M1 OGG  -> embedded
+#   ISO boot  -> yes
+#   DVD I/O   -> NO
+#
+#---------------------------------------------------------------------------------
+
 test:
 	$(MAKE) clean
+
 	$(MAKE) EMBED_WAD=1
 
-	@echo
-	@echo "Embedded OGG objects:"
-	@find "$(CURDIR)/$(BUILD)" \
-		-maxdepth 1 \
-		-name '*.ogg.o' \
-		-printf '%f\n'
-	@echo
+	$(MAKE) iso
 
-	@ls -lh \
-		"$(CURDIR)/$(TARGET).elf" \
-		"$(CURDIR)/$(TARGET).dol"
+	@echo
+	@echo "Launching known-good embedded DoomCube DOL from ISO..."
+	@echo
 
 	/usr/bin/flatpak run \
 		--filesystem="$(CURDIR):ro" \
@@ -254,17 +422,29 @@ test:
 		--arch=x86_64 \
 		--command=/app/bin/dolphin-emu-wrapper \
 		org.DolphinEmu.dolphin-emu \
-		"$(CURDIR)/$(TARGET).dol"
+		"$(ISO_OUT)"
+
+#---------------------------------------------------------------------------------
+# Inner build
+#---------------------------------------------------------------------------------
 
 else
 
 DEPENDS := $(OFILES:.o=.d)
+
+.PHONY: all
+
+all: $(OUTPUT).dol
 
 $(OUTPUT).dol: $(OUTPUT).elf
 
 $(OUTPUT).elf: $(OFILES)
 
 $(OFILES_SOURCES): $(HFILES)
+
+#---------------------------------------------------------------------------------
+# Embedded binary conversion
+#---------------------------------------------------------------------------------
 
 %_wad.h %.wad.o : %.wad
 	@echo $(notdir $<)
@@ -273,6 +453,8 @@ $(OFILES_SOURCES): $(HFILES)
 %_ogg.h %.ogg.o : %.ogg
 	@echo $(notdir $<)
 	@$(bin2o)
+
+#---------------------------------------------------------------------------------
 
 -include $(DEPENDS)
 
