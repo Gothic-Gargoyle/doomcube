@@ -6,6 +6,8 @@
 #include "doomgeneric.h"
 #include "m_controls.h"
 
+#include "gc_memcard.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -140,7 +142,8 @@ static bool mountIsoFilesystem(void)
     /*
      * Do NOT call DVD_Init() or DVD_Mount().
      *
-     * ISO9660_Mount() directly against __io_gcdvd is the working path.
+     * ISO9660_Mount() directly against __io_gcdvd is the
+     * working DoomCube path.
      */
     if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
@@ -166,7 +169,11 @@ void DG_Init(void)
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
-        printf("SDL_Init failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_Init failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
@@ -181,15 +188,27 @@ void DG_Init(void)
 
     if (!window)
     {
-        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateWindow failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
-    renderer = SDL_CreateRenderer(window, -1, 0);
+    renderer = SDL_CreateRenderer(
+        window,
+        -1,
+        0
+    );
 
     if (!renderer)
     {
-        printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateRenderer failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
@@ -203,7 +222,11 @@ void DG_Init(void)
 
     if (!texture)
     {
-        printf("SDL_CreateTexture failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateTexture failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
@@ -211,12 +234,40 @@ void DG_Init(void)
     SDL_RenderPresent(renderer);
 
     /*
-     * Mount only after SDL/video is initialized.
+     * DVD first.
+     *
+     * Doom's IWAD and music both live on dvd:/.
      */
     if (!mountIsoFilesystem())
     {
-        printf("DoomCube: disc mount unavailable\n");
+        printf(
+            "DoomCube: disc mount unavailable\n"
+        );
+
         exit(1);
+    }
+
+    /*
+     * Memory Card A persistence test.
+     *
+     * On the first run:
+     *   - read will fail because DOOMCUBE does not exist yet
+     *   - write will create it
+     *
+     * On subsequent runs:
+     *   - read should find and verify the previous test value
+     *   - write refreshes the same test value
+     */
+    if (GC_MemoryCardInit())
+    {
+        GC_MemoryCardReadTest();
+        GC_MemoryCardWriteTest();
+    }
+    else
+    {
+        printf(
+            "DoomCube: Memory Card unavailable; continuing without saves\n"
+        );
     }
 }
 
@@ -231,7 +282,14 @@ void DG_DrawFrame(void)
     );
 
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+
+    SDL_RenderCopy(
+        renderer,
+        texture,
+        NULL,
+        NULL
+    );
+
     SDL_RenderPresent(renderer);
 
     handleGameCubeInput();
@@ -258,7 +316,9 @@ int DG_GetKey(int *pressed, unsigned char *doomKey)
         return 0;
 
     data = keyQueue[keyRead];
-    keyRead = (keyRead + 1) % KEYQUEUE_SIZE;
+
+    keyRead =
+        (keyRead + 1) % KEYQUEUE_SIZE;
 
     *pressed = data >> 8;
     *doomKey = data & 0xff;
@@ -270,7 +330,12 @@ int DG_GetKey(int *pressed, unsigned char *doomKey)
 void DG_SetWindowTitle(const char *title)
 {
     if (window)
-        SDL_SetWindowTitle(window, title);
+    {
+        SDL_SetWindowTitle(
+            window,
+            title
+        );
+    }
 }
 
 
@@ -290,19 +355,33 @@ int main(int argc, char **argv)
         "dvd:/doom1.wad"
     };
 
-    doomgeneric_Create(3, doomArgv);
+    doomgeneric_Create(
+        3,
+        doomArgv
+    );
 
     /*
-     * Preserve your working prev/next weapon assignments.
+     * Preserve the working GameCube weapon mappings.
      */
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
 
     while (SYS_MainLoop())
+    {
         doomgeneric_Tick();
+    }
+
+    /*
+     * Shut down writable media first.
+     */
+    GC_MemoryCardShutdown();
 
     if (dvdMounted)
-        ISO9660_Unmount("dvd");
+    {
+        ISO9660_Unmount(
+            "dvd"
+        );
+    }
 
     return 0;
 }

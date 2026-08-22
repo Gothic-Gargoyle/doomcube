@@ -170,11 +170,12 @@ CFILES := \
 	w_file.c \
 	w_main.c \
 	w_wad.c \
-	w_file_stdc.c \
+	w_file_gamecube.c \
 	z_zone.c \
 	i_input.c \
 	i_video.c \
 	doomgeneric.c \
+	gc_memcard.c \
 	doomgeneric_gamecube.c
 
 CPPFILES := \
@@ -234,8 +235,6 @@ export LIBPATHS := \
 
 .PHONY: all $(BUILD) clean run iso test
 
-#---------------------------------------------------------------------------------
-
 all: $(BUILD)
 
 #---------------------------------------------------------------------------------
@@ -265,6 +264,8 @@ clean:
 		$(CURDIR)/$(TARGET).dol \
 		$(ISO_OUT)
 
+#---------------------------------------------------------------------------------
+# Run on hardware
 #---------------------------------------------------------------------------------
 
 run:
@@ -319,15 +320,7 @@ iso:
 	@echo
 
 #---------------------------------------------------------------------------------
-# Test
-#
-# IWAD:
-#   dvd:/doom1.wad
-#
-# Music:
-#   dvd:/music/*.ogg
-#
-# Nothing large is embedded in doomcube.dol.
+# Dolphin test
 #---------------------------------------------------------------------------------
 
 test:
@@ -336,18 +329,15 @@ test:
 	$(MAKE) iso
 
 	@echo
-	@echo "Launching fully DVD-backed DoomCube..."
+	@echo "Launching DoomCube..."
 	@echo
 
 	@echo "DOL:"
 	@ls -lh "$(CURDIR)/$(TARGET).dol"
 	@echo
 
-	/usr/bin/flatpak run \
+	flatpak run \
 		--filesystem="$(CURDIR):ro" \
-		--branch=stable \
-		--arch=x86_64 \
-		--command=/app/bin/dolphin-emu-wrapper \
 		org.DolphinEmu.dolphin-emu \
 		"$(ISO_OUT)"
 
