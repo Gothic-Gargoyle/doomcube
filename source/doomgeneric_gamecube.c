@@ -13,9 +13,17 @@
 #include <ogcsys.h>
 #include <gccore.h>
 
-#define KEYQUEUE_SIZE    64
-#define STICK_DEADZONE   24
-#define CSTICK_DEADZONE  24
+#define KEYQUEUE_SIZE     64
+#define STICK_DEADZONE    24
+#define CSTICK_DEADZONE   24
+#define TRIGGER_THRESHOLD 40
+
+/*
+ * These are arbitrary unused keycodes for the GameCube backend.
+ * Doom's own key_prevweapon/key_nextweapon variables will point to them.
+ */
+#define GC_KEY_PREVWEAPON 0xa4
+#define GC_KEY_NEXTWEAPON 0xa5
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -28,6 +36,7 @@ static unsigned int keyRead;
 static int gcUp, gcDown, gcLeft, gcRight;
 static int gcFire, gcUse, gcRun, gcEnter, gcEscape, gcTab;
 static int gcStrafeLeft, gcStrafeRight;
+static int gcPrevWeapon, gcNextWeapon;
 
 static void queueKey(int pressed, unsigned char key)
 {
@@ -63,6 +72,8 @@ static void handleGameCubeInput(void)
     s8 stickY = PAD_StickY(0);
     s8 cstickX = PAD_SubStickX(0);
 
+    u8 triggerR = PAD_TriggerR(0);
+
     int up =
         (held & PAD_BUTTON_UP) ||
         stickY > STICK_DEADZONE;
@@ -93,12 +104,53 @@ static void handleGameCubeInput(void)
     setKeyState(cLeft,  &gcStrafeLeft,  KEY_STRAFE_L);
     setKeyState(cRight, &gcStrafeRight, KEY_STRAFE_R);
 
-    setKeyState(held & PAD_TRIGGER_R,    &gcFire,   KEY_FIRE);
-    setKeyState(held & PAD_BUTTON_A,     &gcUse,    KEY_USE);
-    setKeyState(held & PAD_TRIGGER_L,    &gcRun,    KEY_RSHIFT);
-    setKeyState(held & PAD_BUTTON_A,     &gcEnter,  KEY_ENTER);
-    setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
-    setKeyState(held & PAD_TRIGGER_Z,    &gcTab,    KEY_TAB);
+    setKeyState(
+        triggerR > TRIGGER_THRESHOLD,
+        &gcFire,
+        KEY_FIRE
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_X,
+        &gcNextWeapon,
+        GC_KEY_NEXTWEAPON
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_Y,
+        &gcPrevWeapon,
+        GC_KEY_PREVWEAPON
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcUse,
+        KEY_USE
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_B,
+        &gcRun,
+        KEY_RSHIFT
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcEnter,
+        KEY_ENTER
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_START,
+        &gcEscape,
+        KEY_ESCAPE
+    );
+
+    setKeyState(
+        held & PAD_TRIGGER_Z,
+        &gcTab,
+        KEY_TAB
+    );
 }
 
 void DG_Init(void)
@@ -126,11 +178,7 @@ void DG_Init(void)
         exit(1);
     }
 
-    renderer = SDL_CreateRenderer(
-        window,
-        -1,
-        0
-    );
+    renderer = SDL_CreateRenderer(window, -1, 0);
 
     if (!renderer)
     {
@@ -216,6 +264,13 @@ int main(int argc, char **argv)
     };
 
     doomgeneric_Create(3, doomArgv);
+
+    /*
+     * DoomGeneric defaults these to 0, meaning unbound.
+     * Give the GameCube backend two private keycodes.
+     */
+    key_prevweapon = GC_KEY_PREVWEAPON;
+    key_nextweapon = GC_KEY_NEXTWEAPON;
 
     while (SYS_MainLoop())
         doomgeneric_Tick();
