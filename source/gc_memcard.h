@@ -4,8 +4,7 @@
 #include <stdbool.h>
 
 bool GC_MemoryCardInit(void);
-bool GC_MemoryCardWriteTest(void);
-bool GC_MemoryCardReadTest(void);
+bool GC_MemoryCardCounterTest(void);
 void GC_MemoryCardShutdown(void);
 
 #endif

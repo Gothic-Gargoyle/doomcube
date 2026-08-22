@@ -139,12 +139,6 @@ static bool mountIsoFilesystem(void)
 {
     printf("DoomCube: mounting ISO9660...\n");
 
-    /*
-     * Do NOT call DVD_Init() or DVD_Mount().
-     *
-     * ISO9660_Mount() directly against __io_gcdvd is the
-     * working DoomCube path.
-     */
     if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
         printf("DoomCube: ISO9660_Mount FAILED\n");
@@ -233,11 +227,6 @@ void DG_Init(void)
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
-    /*
-     * DVD first.
-     *
-     * Doom's IWAD and music both live on dvd:/.
-     */
     if (!mountIsoFilesystem())
     {
         printf(
@@ -248,24 +237,21 @@ void DG_Init(void)
     }
 
     /*
-     * Memory Card A persistence test.
+     * Memory Card persistence test.
      *
-     * On the first run:
-     *   - read will fail because DOOMCUBE does not exist yet
-     *   - write will create it
-     *
-     * On subsequent runs:
-     *   - read should find and verify the previous test value
-     *   - write refreshes the same test value
+     * Each boot should:
+     *   - read the previous counter
+     *   - increment it
+     *   - write it back
+     *   - read it again to verify
      */
     if (GC_MemoryCardInit())
     {
-        GC_MemoryCardReadTest();
-        GC_MemoryCardWriteTest();
+        GC_MemoryCardCounterTest();
     }
     else
     {
-        printf(
+        SYS_Report(
             "DoomCube: Memory Card unavailable; continuing without saves\n"
         );
     }
@@ -360,9 +346,6 @@ int main(int argc, char **argv)
         doomArgv
     );
 
-    /*
-     * Preserve the working GameCube weapon mappings.
-     */
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
 
@@ -371,9 +354,6 @@ int main(int argc, char **argv)
         doomgeneric_Tick();
     }
 
-    /*
-     * Shut down writable media first.
-     */
     GC_MemoryCardShutdown();
 
     if (dvdMounted)

@@ -1,10 +1,10 @@
 #include "gc_memcard.h"
 
 #include <ogc/card.h>
+#include <ogcsys.h>
 
 #include <malloc.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,9 +15,7 @@
 #define CARD_COMPANY           "DC"
 
 #define DOOMCUBE_MAGIC         0x44434D43u
-#define DOOMCUBE_VERSION       1
-
-#define TEST_VALUE             0x12345678u
+#define DOOMCUBE_VERSION       1u
 
 static unsigned char cardWorkArea[CARD_WORKAREA]
     __attribute__((aligned(32)));
@@ -34,7 +32,7 @@ typedef struct
 {
     uint32_t magic;
     uint32_t version;
-    uint32_t test_value;
+    uint32_t boot_counter;
     uint32_t reserved[5];
 } doomcube_card_header_t;
 
@@ -107,9 +105,33 @@ static void cardRemoved(s32 channel, s32 result)
 
     if (channel == CARD_SLOT)
     {
-        printf("DoomCube: Memory Card A removed\n");
+        SYS_Report(
+            "DoomCube: Memory Card A removed\n"
+        );
+
         cardMounted = false;
     }
+}
+
+
+static unsigned char *allocSectorBuffer(void)
+{
+    unsigned char *buffer;
+
+    buffer = memalign(
+        32,
+        sectorSize
+    );
+
+    if (!buffer)
+    {
+        SYS_Report(
+            "DoomCube: failed allocating %ld-byte card buffer\n",
+            (long)sectorSize
+        );
+    }
+
+    return buffer;
 }
 
 
@@ -122,7 +144,14 @@ bool GC_MemoryCardInit(void)
     s32 result;
     s32 memorySize = 0;
 
-    printf("DoomCube: Memory Card init...\n");
+    SYS_Report("\n");
+    SYS_Report(
+        "DoomCube: ---- MEMORY CARD A ----\n"
+    );
+
+    SYS_Report(
+        "DoomCube: initializing memory card...\n"
+    );
 
     result = CARD_Init(
         CARD_GAMECODE,
@@ -131,7 +160,7 @@ bool GC_MemoryCardInit(void)
 
     if (result < 0)
     {
-        printf(
+        SYS_Report(
             "DoomCube: CARD_Init failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
@@ -152,7 +181,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        printf(
+        SYS_Report(
             "DoomCube: CARD_ProbeEx failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
@@ -161,11 +190,20 @@ bool GC_MemoryCardInit(void)
         return false;
     }
 
-    printf(
+    SYS_Report(
         "DoomCube: card size=%ld sector=%ld\n",
         (long)memorySize,
         (long)sectorSize
     );
+
+    if (sectorSize <= 0)
+    {
+        SYS_Report(
+            "DoomCube: invalid card sector size\n"
+        );
+
+        return false;
+    }
 
     result = CARD_Mount(
         CARD_SLOT,
@@ -175,7 +213,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        printf(
+        SYS_Report(
             "DoomCube: CARD_Mount failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
@@ -186,25 +224,39 @@ bool GC_MemoryCardInit(void)
 
     cardMounted = true;
 
-    printf("DoomCube: Memory Card A mounted\n");
+    SYS_Report(
+        "DoomCube: Memory Card A mounted\n"
+    );
 
     return true;
 }
 
 
 /* ------------------------------------------------------------------------- */
-/* Write test                                                                */
+/* Counter test                                                              */
 /* ------------------------------------------------------------------------- */
 
-bool GC_MemoryCardWriteTest(void)
+bool GC_MemoryCardCounterTest(void)
 {
     card_file file;
     unsigned char *buffer;
     doomcube_card_header_t *header;
+
     s32 result;
 
+    uint32_t oldCounter;
+    uint32_t newCounter;
+
+    bool created = false;
+
     if (!cardMounted)
+    {
+        SYS_Report(
+            "DoomCube: counter test skipped; card not mounted\n"
+        );
+
         return false;
+    }
 
     result = CARD_Open(
         CARD_SLOT,
@@ -214,8 +266,8 @@ bool GC_MemoryCardWriteTest(void)
 
     if (result == CARD_ERROR_NOFILE)
     {
-        printf(
-            "DoomCube: creating card file '%s'\n",
+        SYS_Report(
+            "DoomCube: '%s' not found; creating new save\n",
             CARD_FILENAME
         );
 
@@ -228,7 +280,7 @@ bool GC_MemoryCardWriteTest(void)
 
         if (result != CARD_ERROR_READY)
         {
-            printf(
+            SYS_Report(
                 "DoomCube: CARD_Create failed: %s (%ld)\n",
                 cardErrorName(result),
                 (long)result
@@ -236,10 +288,12 @@ bool GC_MemoryCardWriteTest(void)
 
             return false;
         }
+
+        created = true;
     }
     else if (result != CARD_ERROR_READY)
     {
-        printf(
+        SYS_Report(
             "DoomCube: CARD_Open failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
@@ -248,17 +302,91 @@ bool GC_MemoryCardWriteTest(void)
         return false;
     }
 
-    buffer = memalign(
-        32,
-        sectorSize
-    );
+    buffer = allocSectorBuffer();
 
     if (!buffer)
     {
-        printf("DoomCube: memalign failed\n");
         CARD_Close(&file);
         return false;
     }
+
+    memset(
+        buffer,
+        0,
+        sectorSize
+    );
+
+    header =
+        (doomcube_card_header_t *)buffer;
+
+    if (!created)
+    {
+        result = CARD_Read(
+            &file,
+            buffer,
+            sectorSize,
+            0
+        );
+
+        if (result != CARD_ERROR_READY)
+        {
+            SYS_Report(
+                "DoomCube: CARD_Read failed: %s (%ld)\n",
+                cardErrorName(result),
+                (long)result
+            );
+
+            free(buffer);
+            CARD_Close(&file);
+
+            return false;
+        }
+
+        if (header->magic != DOOMCUBE_MAGIC)
+        {
+            SYS_Report(
+                "DoomCube: invalid save magic: 0x%08x\n",
+                header->magic
+            );
+
+            free(buffer);
+            CARD_Close(&file);
+
+            return false;
+        }
+
+        if (header->version != DOOMCUBE_VERSION)
+        {
+            SYS_Report(
+                "DoomCube: unsupported save version: %u\n",
+                header->version
+            );
+
+            free(buffer);
+            CARD_Close(&file);
+
+            return false;
+        }
+
+        oldCounter =
+            header->boot_counter;
+
+        SYS_Report(
+            "DoomCube: stored boot counter = %u\n",
+            oldCounter
+        );
+    }
+    else
+    {
+        oldCounter = 0;
+
+        SYS_Report(
+            "DoomCube: new save; stored boot counter = 0\n"
+        );
+    }
+
+    newCounter =
+        oldCounter + 1;
 
     memset(
         buffer,
@@ -275,8 +403,13 @@ bool GC_MemoryCardWriteTest(void)
     header->version =
         DOOMCUBE_VERSION;
 
-    header->test_value =
-        TEST_VALUE;
+    header->boot_counter =
+        newCounter;
+
+    SYS_Report(
+        "DoomCube: writing boot counter = %u\n",
+        newCounter
+    );
 
     result = CARD_Write(
         &file,
@@ -285,88 +418,23 @@ bool GC_MemoryCardWriteTest(void)
         0
     );
 
-    free(buffer);
-
     if (result != CARD_ERROR_READY)
     {
-        printf(
+        SYS_Report(
             "DoomCube: CARD_Write failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
         );
 
+        free(buffer);
         CARD_Close(&file);
-        return false;
-    }
-
-    result = CARD_Close(
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
-    {
-        printf(
-            "DoomCube: CARD_Close failed: %s (%ld)\n",
-            cardErrorName(result),
-            (long)result
-        );
 
         return false;
     }
 
-    printf(
-        "DoomCube: wrote test value 0x%08x\n",
-        TEST_VALUE
-    );
-
-    return true;
-}
-
-
-/* ------------------------------------------------------------------------- */
-/* Read test                                                                 */
-/* ------------------------------------------------------------------------- */
-
-bool GC_MemoryCardReadTest(void)
-{
-    card_file file;
-    unsigned char *buffer;
-    doomcube_card_header_t *header;
-    s32 result;
-    bool ok = false;
-
-    if (!cardMounted)
-        return false;
-
-    result = CARD_Open(
-        CARD_SLOT,
-        CARD_FILENAME,
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
-    {
-        printf(
-            "DoomCube: CARD_Open read failed: %s (%ld)\n",
-            cardErrorName(result),
-            (long)result
-        );
-
-        return false;
-    }
-
-    buffer = memalign(
-        32,
-        sectorSize
-    );
-
-    if (!buffer)
-    {
-        printf("DoomCube: memalign failed\n");
-        CARD_Close(&file);
-        return false;
-    }
-
+    /*
+     * Read it back immediately.
+     */
     memset(
         buffer,
         0,
@@ -382,8 +450,8 @@ bool GC_MemoryCardReadTest(void)
 
     if (result != CARD_ERROR_READY)
     {
-        printf(
-            "DoomCube: CARD_Read failed: %s (%ld)\n",
+        SYS_Report(
+            "DoomCube: verification CARD_Read failed: %s (%ld)\n",
             cardErrorName(result),
             (long)result
         );
@@ -397,29 +465,47 @@ bool GC_MemoryCardReadTest(void)
     header =
         (doomcube_card_header_t *)buffer;
 
-    printf(
-        "DoomCube: read magic=0x%08x version=%u test=0x%08x\n",
-        header->magic,
-        header->version,
-        header->test_value
+    SYS_Report(
+        "DoomCube: verification counter = %u\n",
+        header->boot_counter
     );
 
-    if (header->magic == DOOMCUBE_MAGIC &&
-        header->version == DOOMCUBE_VERSION &&
-        header->test_value == TEST_VALUE)
+    if (header->magic != DOOMCUBE_MAGIC ||
+        header->version != DOOMCUBE_VERSION ||
+        header->boot_counter != newCounter)
     {
-        printf("DoomCube: memory-card persistence OK\n");
-        ok = true;
+        SYS_Report(
+            "DoomCube: MEMORY CARD VERIFY FAILED\n"
+        );
+
+        free(buffer);
+        CARD_Close(&file);
+
+        return false;
     }
-    else
-    {
-        printf("DoomCube: memory-card persistence FAILED\n");
-    }
+
+    SYS_Report(
+        "DoomCube: MEMORY CARD VERIFY OK\n"
+    );
 
     free(buffer);
-    CARD_Close(&file);
 
-    return ok;
+    result = CARD_Close(
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        SYS_Report(
+            "DoomCube: CARD_Close failed: %s (%ld)\n",
+            cardErrorName(result),
+            (long)result
+        );
+
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -429,14 +515,33 @@ bool GC_MemoryCardReadTest(void)
 
 void GC_MemoryCardShutdown(void)
 {
+    s32 result;
+
     if (!cardMounted)
         return;
 
-    CARD_Unmount(
+    result = CARD_Unmount(
         CARD_SLOT
     );
 
     cardMounted = false;
 
-    printf("DoomCube: Memory Card A unmounted\n");
+    if (result != CARD_ERROR_READY)
+    {
+        SYS_Report(
+            "DoomCube: CARD_Unmount failed: %s (%ld)\n",
+            cardErrorName(result),
+            (long)result
+        );
+
+        return;
+    }
+
+    SYS_Report(
+        "DoomCube: Memory Card A unmounted\n"
+    );
+
+    SYS_Report(
+        "DoomCube: -----------------------\n"
+    );
 }
