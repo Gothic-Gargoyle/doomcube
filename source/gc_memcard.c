@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define CARD_SLOT              CARD_SLOTA
 #define CARD_FILENAME          "DOOMCUBE"
@@ -17,6 +18,19 @@
 #define DOOMCUBE_MAGIC         0x44434D43u
 #define DOOMCUBE_VERSION       1u
 
+/*
+ * Actual Doom save observed:
+ *
+ *     25350 bytes
+ *
+ * Four 8192-byte card sectors gives:
+ *
+ *     32768 bytes total
+ *
+ * minus our tiny header.
+ */
+#define SAVE_SECTORS           4u
+
 static unsigned char cardWorkArea[CARD_WORKAREA]
     __attribute__((aligned(32)));
 
@@ -25,77 +39,49 @@ static s32 sectorSize;
 
 
 /* ------------------------------------------------------------------------- */
-/* On-card format                                                            */
+/* Save format                                                               */
 /* ------------------------------------------------------------------------- */
 
 typedef struct
 {
     uint32_t magic;
     uint32_t version;
-    uint32_t boot_counter;
-    uint32_t reserved[5];
-} doomcube_card_header_t;
+
+    uint32_t valid;
+    uint32_t size;
+
+    uint32_t timestamp;
+
+    uint32_t reserved[3];
+} doomcube_save_header_t;
 
 
 /* ------------------------------------------------------------------------- */
 /* Helpers                                                                   */
 /* ------------------------------------------------------------------------- */
 
-static const char *cardErrorName(s32 result)
+static size_t cardFileSize(void)
 {
-    switch (result)
-    {
-        case CARD_ERROR_READY:
-            return "ready";
+    return
+        (size_t)sectorSize *
+        SAVE_SECTORS;
+}
 
-        case CARD_ERROR_BUSY:
-            return "busy";
 
-        case CARD_ERROR_WRONGDEVICE:
-            return "wrong device";
+static size_t saveCapacity(void)
+{
+    return
+        cardFileSize() -
+        sizeof(doomcube_save_header_t);
+}
 
-        case CARD_ERROR_NOCARD:
-            return "no card";
 
-        case CARD_ERROR_NOFILE:
-            return "file not found";
-
-        case CARD_ERROR_IOERROR:
-            return "I/O error";
-
-        case CARD_ERROR_BROKEN:
-            return "broken filesystem";
-
-        case CARD_ERROR_EXIST:
-            return "already exists";
-
-        case CARD_ERROR_NOENT:
-            return "no free directory entry";
-
-        case CARD_ERROR_INSSPACE:
-            return "insufficient space";
-
-        case CARD_ERROR_NOPERM:
-            return "permission denied";
-
-        case CARD_ERROR_LIMIT:
-            return "card limit reached";
-
-        case CARD_ERROR_NAMETOOLONG:
-            return "filename too long";
-
-        case CARD_ERROR_ENCODING:
-            return "encoding mismatch";
-
-        case CARD_ERROR_CANCELED:
-            return "cancelled";
-
-        case CARD_ERROR_FATAL_ERROR:
-            return "fatal error";
-
-        default:
-            return "unknown";
-    }
+static unsigned char *allocSaveBuffer(void)
+{
+    return memalign(
+        32,
+        cardFileSize()
+    );
 }
 
 
@@ -105,33 +91,12 @@ static void cardRemoved(s32 channel, s32 result)
 
     if (channel == CARD_SLOT)
     {
+        cardMounted = false;
+
         SYS_Report(
             "DoomCube: Memory Card A removed\n"
         );
-
-        cardMounted = false;
     }
-}
-
-
-static unsigned char *allocSectorBuffer(void)
-{
-    unsigned char *buffer;
-
-    buffer = memalign(
-        32,
-        sectorSize
-    );
-
-    if (!buffer)
-    {
-        SYS_Report(
-            "DoomCube: failed allocating %ld-byte card buffer\n",
-            (long)sectorSize
-        );
-    }
-
-    return buffer;
 }
 
 
@@ -141,6 +106,8 @@ static unsigned char *allocSectorBuffer(void)
 
 bool GC_MemoryCardInit(void)
 {
+    card_file file;
+
     s32 result;
     s32 memorySize = 0;
 
@@ -161,8 +128,7 @@ bool GC_MemoryCardInit(void)
     if (result < 0)
     {
         SYS_Report(
-            "DoomCube: CARD_Init failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_Init failed: %ld\n",
             (long)result
         );
 
@@ -182,8 +148,7 @@ bool GC_MemoryCardInit(void)
     if (result != CARD_ERROR_READY)
     {
         SYS_Report(
-            "DoomCube: CARD_ProbeEx failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_ProbeEx failed: %ld\n",
             (long)result
         );
 
@@ -196,15 +161,6 @@ bool GC_MemoryCardInit(void)
         (long)sectorSize
     );
 
-    if (sectorSize <= 0)
-    {
-        SYS_Report(
-            "DoomCube: invalid card sector size\n"
-        );
-
-        return false;
-    }
-
     result = CARD_Mount(
         CARD_SLOT,
         cardWorkArea,
@@ -214,8 +170,7 @@ bool GC_MemoryCardInit(void)
     if (result != CARD_ERROR_READY)
     {
         SYS_Report(
-            "DoomCube: CARD_Mount failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_Mount failed: %ld\n",
             (long)result
         );
 
@@ -228,267 +183,65 @@ bool GC_MemoryCardInit(void)
         "DoomCube: Memory Card A mounted\n"
     );
 
-    return true;
-}
-
-
-/* ------------------------------------------------------------------------- */
-/* Counter test                                                              */
-/* ------------------------------------------------------------------------- */
-
-bool GC_MemoryCardCounterTest(void)
-{
-    card_file file;
-    unsigned char *buffer;
-    doomcube_card_header_t *header;
-
-    s32 result;
-
-    uint32_t oldCounter;
-    uint32_t newCounter;
-
-    bool created = false;
-
-    if (!cardMounted)
-    {
-        SYS_Report(
-            "DoomCube: counter test skipped; card not mounted\n"
-        );
-
-        return false;
-    }
-
+    /*
+     * See whether our save already exists.
+     */
     result = CARD_Open(
         CARD_SLOT,
         CARD_FILENAME,
         &file
     );
 
-    if (result == CARD_ERROR_NOFILE)
+    if (result == CARD_ERROR_READY)
     {
-        SYS_Report(
-            "DoomCube: '%s' not found; creating new save\n",
-            CARD_FILENAME
-        );
-
-        result = CARD_Create(
-            CARD_SLOT,
-            CARD_FILENAME,
-            sectorSize,
+        CARD_Close(
             &file
         );
 
-        if (result != CARD_ERROR_READY)
-        {
-            SYS_Report(
-                "DoomCube: CARD_Create failed: %s (%ld)\n",
-                cardErrorName(result),
-                (long)result
-            );
+        SYS_Report(
+            "DoomCube: existing save file found\n"
+        );
 
-            return false;
-        }
-
-        created = true;
+        return true;
     }
-    else if (result != CARD_ERROR_READY)
+
+    if (result != CARD_ERROR_NOFILE)
     {
         SYS_Report(
-            "DoomCube: CARD_Open failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_Open failed: %ld\n",
             (long)result
         );
-
-        return false;
-    }
-
-    buffer = allocSectorBuffer();
-
-    if (!buffer)
-    {
-        CARD_Close(&file);
-        return false;
-    }
-
-    memset(
-        buffer,
-        0,
-        sectorSize
-    );
-
-    header =
-        (doomcube_card_header_t *)buffer;
-
-    if (!created)
-    {
-        result = CARD_Read(
-            &file,
-            buffer,
-            sectorSize,
-            0
-        );
-
-        if (result != CARD_ERROR_READY)
-        {
-            SYS_Report(
-                "DoomCube: CARD_Read failed: %s (%ld)\n",
-                cardErrorName(result),
-                (long)result
-            );
-
-            free(buffer);
-            CARD_Close(&file);
-
-            return false;
-        }
-
-        if (header->magic != DOOMCUBE_MAGIC)
-        {
-            SYS_Report(
-                "DoomCube: invalid save magic: 0x%08x\n",
-                header->magic
-            );
-
-            free(buffer);
-            CARD_Close(&file);
-
-            return false;
-        }
-
-        if (header->version != DOOMCUBE_VERSION)
-        {
-            SYS_Report(
-                "DoomCube: unsupported save version: %u\n",
-                header->version
-            );
-
-            free(buffer);
-            CARD_Close(&file);
-
-            return false;
-        }
-
-        oldCounter =
-            header->boot_counter;
-
-        SYS_Report(
-            "DoomCube: stored boot counter = %u\n",
-            oldCounter
-        );
-    }
-    else
-    {
-        oldCounter = 0;
-
-        SYS_Report(
-            "DoomCube: new save; stored boot counter = 0\n"
-        );
-    }
-
-    newCounter =
-        oldCounter + 1;
-
-    memset(
-        buffer,
-        0,
-        sectorSize
-    );
-
-    header =
-        (doomcube_card_header_t *)buffer;
-
-    header->magic =
-        DOOMCUBE_MAGIC;
-
-    header->version =
-        DOOMCUBE_VERSION;
-
-    header->boot_counter =
-        newCounter;
-
-    SYS_Report(
-        "DoomCube: writing boot counter = %u\n",
-        newCounter
-    );
-
-    result = CARD_Write(
-        &file,
-        buffer,
-        sectorSize,
-        0
-    );
-
-    if (result != CARD_ERROR_READY)
-    {
-        SYS_Report(
-            "DoomCube: CARD_Write failed: %s (%ld)\n",
-            cardErrorName(result),
-            (long)result
-        );
-
-        free(buffer);
-        CARD_Close(&file);
 
         return false;
     }
 
     /*
-     * Read it back immediately.
+     * Create the save once.
+     *
+     * Unlike our doomed giant-container experiments, this is only
+     * four sectors and we do not touch the contents yet.
      */
-    memset(
-        buffer,
-        0,
-        sectorSize
+    SYS_Report(
+        "DoomCube: creating %u-byte save file\n",
+        (unsigned int)cardFileSize()
     );
 
-    result = CARD_Read(
-        &file,
-        buffer,
-        sectorSize,
-        0
+    result = CARD_Create(
+        CARD_SLOT,
+        CARD_FILENAME,
+        cardFileSize(),
+        &file
     );
 
     if (result != CARD_ERROR_READY)
     {
         SYS_Report(
-            "DoomCube: verification CARD_Read failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_Create failed: %ld\n",
             (long)result
         );
 
-        free(buffer);
-        CARD_Close(&file);
-
         return false;
     }
-
-    header =
-        (doomcube_card_header_t *)buffer;
-
-    SYS_Report(
-        "DoomCube: verification counter = %u\n",
-        header->boot_counter
-    );
-
-    if (header->magic != DOOMCUBE_MAGIC ||
-        header->version != DOOMCUBE_VERSION ||
-        header->boot_counter != newCounter)
-    {
-        SYS_Report(
-            "DoomCube: MEMORY CARD VERIFY FAILED\n"
-        );
-
-        free(buffer);
-        CARD_Close(&file);
-
-        return false;
-    }
-
-    SYS_Report(
-        "DoomCube: MEMORY CARD VERIFY OK\n"
-    );
-
-    free(buffer);
 
     result = CARD_Close(
         &file
@@ -497,15 +250,394 @@ bool GC_MemoryCardCounterTest(void)
     if (result != CARD_ERROR_READY)
     {
         SYS_Report(
-            "DoomCube: CARD_Close failed: %s (%ld)\n",
-            cardErrorName(result),
+            "DoomCube: CARD_Close failed: %ld\n",
             (long)result
         );
 
         return false;
     }
 
+    SYS_Report(
+        "DoomCube: save file created\n"
+    );
+
     return true;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Exists                                                                    */
+/* ------------------------------------------------------------------------- */
+
+bool GC_MemoryCardSaveExists(void)
+{
+    card_file file;
+
+    unsigned char *buffer;
+    doomcube_save_header_t *header;
+
+    s32 result;
+    bool exists;
+
+    if (!cardMounted)
+        return false;
+
+    buffer =
+        allocSaveBuffer();
+
+    if (!buffer)
+        return false;
+
+    result = CARD_Open(
+        CARD_SLOT,
+        CARD_FILENAME,
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+        return false;
+    }
+
+    result = CARD_Read(
+        &file,
+        buffer,
+        cardFileSize(),
+        0
+    );
+
+    CARD_Close(
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+        return false;
+    }
+
+    header =
+        (doomcube_save_header_t *)buffer;
+
+    exists =
+        header->magic == DOOMCUBE_MAGIC &&
+        header->version == DOOMCUBE_VERSION &&
+        header->valid != 0 &&
+        header->size <= saveCapacity();
+
+    free(
+        buffer
+    );
+
+    return exists;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Write                                                                     */
+/* ------------------------------------------------------------------------- */
+
+bool GC_MemoryCardWriteSave(
+    const void *data,
+    size_t size)
+{
+    card_file file;
+
+    unsigned char *buffer;
+    doomcube_save_header_t *header;
+
+    s32 result;
+
+    if (!cardMounted ||
+        !data ||
+        size == 0)
+    {
+        return false;
+    }
+
+    if (size > saveCapacity())
+    {
+        SYS_Report(
+            "DoomCube: save too large: %u bytes, capacity %u\n",
+            (unsigned int)size,
+            (unsigned int)saveCapacity()
+        );
+
+        return false;
+    }
+
+    buffer =
+        allocSaveBuffer();
+
+    if (!buffer)
+        return false;
+
+    memset(
+        buffer,
+        0,
+        cardFileSize()
+    );
+
+    header =
+        (doomcube_save_header_t *)buffer;
+
+    header->magic =
+        DOOMCUBE_MAGIC;
+
+    header->version =
+        DOOMCUBE_VERSION;
+
+    header->valid =
+        1;
+
+    header->size =
+        (uint32_t)size;
+
+    header->timestamp =
+        (uint32_t)time(NULL);
+
+    memcpy(
+        buffer +
+            sizeof(doomcube_save_header_t),
+        data,
+        size
+    );
+
+    result = CARD_Open(
+        CARD_SLOT,
+        CARD_FILENAME,
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+
+        SYS_Report(
+            "DoomCube: CARD_Open for write failed: %ld\n",
+            (long)result
+        );
+
+        return false;
+    }
+
+    result = CARD_Write(
+        &file,
+        buffer,
+        cardFileSize(),
+        0
+    );
+
+    CARD_Close(
+        &file
+    );
+
+    free(
+        buffer
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        SYS_Report(
+            "DoomCube: CARD_Write failed: %ld\n",
+            (long)result
+        );
+
+        return false;
+    }
+
+    SYS_Report(
+        "DoomCube: save written: %u bytes\n",
+        (unsigned int)size
+    );
+
+    return true;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Read                                                                      */
+/* ------------------------------------------------------------------------- */
+
+bool GC_MemoryCardReadSave(
+    void *output,
+    size_t outputSize,
+    size_t *actualSize)
+{
+    card_file file;
+
+    unsigned char *buffer;
+    doomcube_save_header_t *header;
+
+    s32 result;
+
+    if (actualSize)
+        *actualSize = 0;
+
+    if (!cardMounted)
+        return false;
+
+    buffer =
+        allocSaveBuffer();
+
+    if (!buffer)
+        return false;
+
+    result = CARD_Open(
+        CARD_SLOT,
+        CARD_FILENAME,
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+        return false;
+    }
+
+    result = CARD_Read(
+        &file,
+        buffer,
+        cardFileSize(),
+        0
+    );
+
+    CARD_Close(
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+
+        SYS_Report(
+            "DoomCube: CARD_Read failed: %ld\n",
+            (long)result
+        );
+
+        return false;
+    }
+
+    header =
+        (doomcube_save_header_t *)buffer;
+
+    if (header->magic != DOOMCUBE_MAGIC ||
+        header->version != DOOMCUBE_VERSION ||
+        !header->valid ||
+        header->size > saveCapacity())
+    {
+        free(buffer);
+        return false;
+    }
+
+    if (actualSize)
+    {
+        *actualSize =
+            header->size;
+    }
+
+    if (!output)
+    {
+        free(buffer);
+        return true;
+    }
+
+    if (outputSize < header->size)
+    {
+        SYS_Report(
+            "DoomCube: destination buffer too small\n"
+        );
+
+        free(buffer);
+        return false;
+    }
+
+    memcpy(
+        output,
+        buffer +
+            sizeof(doomcube_save_header_t),
+        header->size
+    );
+
+    SYS_Report(
+        "DoomCube: save loaded: %u bytes\n",
+        header->size
+    );
+
+    free(
+        buffer
+    );
+
+    return true;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Timestamp                                                                 */
+/* ------------------------------------------------------------------------- */
+
+uint32_t GC_MemoryCardSaveTimestamp(void)
+{
+    card_file file;
+
+    unsigned char *buffer;
+    doomcube_save_header_t *header;
+
+    s32 result;
+    uint32_t timestamp = 0;
+
+    if (!cardMounted)
+        return 0;
+
+    buffer =
+        allocSaveBuffer();
+
+    if (!buffer)
+        return 0;
+
+    result = CARD_Open(
+        CARD_SLOT,
+        CARD_FILENAME,
+        &file
+    );
+
+    if (result != CARD_ERROR_READY)
+    {
+        free(buffer);
+        return 0;
+    }
+
+    result = CARD_Read(
+        &file,
+        buffer,
+        cardFileSize(),
+        0
+    );
+
+    CARD_Close(
+        &file
+    );
+
+    if (result == CARD_ERROR_READY)
+    {
+        header =
+            (doomcube_save_header_t *)buffer;
+
+        if (header->magic == DOOMCUBE_MAGIC &&
+            header->version == DOOMCUBE_VERSION &&
+            header->valid)
+        {
+            timestamp =
+                header->timestamp;
+        }
+    }
+
+    free(
+        buffer
+    );
+
+    return timestamp;
 }
 
 
@@ -515,33 +647,16 @@ bool GC_MemoryCardCounterTest(void)
 
 void GC_MemoryCardShutdown(void)
 {
-    s32 result;
-
     if (!cardMounted)
         return;
 
-    result = CARD_Unmount(
+    CARD_Unmount(
         CARD_SLOT
     );
 
     cardMounted = false;
 
-    if (result != CARD_ERROR_READY)
-    {
-        SYS_Report(
-            "DoomCube: CARD_Unmount failed: %s (%ld)\n",
-            cardErrorName(result),
-            (long)result
-        );
-
-        return;
-    }
-
     SYS_Report(
         "DoomCube: Memory Card A unmounted\n"
-    );
-
-    SYS_Report(
-        "DoomCube: -----------------------\n"
     );
 }

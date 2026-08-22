@@ -245,11 +245,7 @@ void DG_Init(void)
      *   - write it back
      *   - read it again to verify
      */
-    if (GC_MemoryCardInit())
-    {
-        GC_MemoryCardCounterTest();
-    }
-    else
+    if (!GC_MemoryCardInit())
     {
         SYS_Report(
             "DoomCube: Memory Card unavailable; continuing without saves\n"
