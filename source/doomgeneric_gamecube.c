@@ -95,7 +95,7 @@ static void handleGameCubeInput(void)
 
     setKeyState(held & PAD_TRIGGER_R,    &gcFire,   KEY_FIRE);
     setKeyState(held & PAD_BUTTON_A,     &gcUse,    KEY_USE);
-    setKeyState(held & PAD_BUTTON_B,     &gcRun,    KEY_RSHIFT);
+    setKeyState(held & PAD_TRIGGER_L,    &gcRun,    KEY_RSHIFT);
     setKeyState(held & PAD_BUTTON_A,     &gcEnter,  KEY_ENTER);
     setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
     setKeyState(held & PAD_TRIGGER_Z,    &gcTab,    KEY_TAB);
