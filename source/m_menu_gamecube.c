@@ -446,9 +446,6 @@ enum
     load1,
     load2,
     load3,
-    load4,
-    load5,
-    load6,
     load_end
 } load_e;
 
@@ -457,9 +454,6 @@ menuitem_t LoadMenu[]=
     {1,"", M_LoadSelect,'1'},
     {1,"", M_LoadSelect,'2'},
     {1,"", M_LoadSelect,'3'},
-    {1,"", M_LoadSelect,'4'},
-    {1,"", M_LoadSelect,'5'},
-    {1,"", M_LoadSelect,'6'}
 };
 
 menu_t  LoadDef =
@@ -480,9 +474,6 @@ menuitem_t SaveMenu[]=
     {1,"", M_SaveSelect,'1'},
     {1,"", M_SaveSelect,'2'},
     {1,"", M_SaveSelect,'3'},
-    {1,"", M_SaveSelect,'4'},
-    {1,"", M_SaveSelect,'5'},
-    {1,"", M_SaveSelect,'6'}
 };
 
 menu_t  SaveDef =
@@ -636,20 +627,6 @@ void M_SaveSelect(int choice)
 {
     time_t now;
     struct tm *tm_info;
-
-    /*
-     * For now, only slot 0 is backed by the GameCube memory card.
-     */
-    if (choice != 0)
-    {
-        M_StartMessage(
-            "ONLY SAVE SLOT 1 IS ENABLED",
-            NULL,
-            false
-        );
-
-        return;
-    }
 
     now = time(NULL);
     tm_info = localtime(&now);

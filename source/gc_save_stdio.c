@@ -20,12 +20,13 @@ typedef struct
 
     bool writable;
     bool temporary;
-    bool slot0;
+
+    int slot;
 } gc_save_stream_t;
 
 
 /* ------------------------------------------------------------------------- */
-/* RAM temporary save                                                        */
+/* Temporary Doom save                                                       */
 /* ------------------------------------------------------------------------- */
 
 static unsigned char *tempSaveData;
@@ -49,32 +50,48 @@ static const char *baseName(const char *path)
         '/'
     );
 
-    if (!slash)
-        return path;
-
-    return slash + 1;
+    return slash
+        ? slash + 1
+        : path;
 }
 
 
-static bool isSlot0(const char *path)
+static int saveSlotFromPath(const char *path)
 {
     const char *name =
         baseName(path);
 
-    return strcmp(
-        name,
-        "doomsav0.dsg"
-    ) == 0;
+    int slot;
+
+    for (slot = 0;
+         slot < GC_MEMCARD_SAVE_SLOTS;
+         ++slot)
+    {
+        char expected[32];
+
+        snprintf(
+            expected,
+            sizeof(expected),
+            "doomsav%d.dsg",
+            slot
+        );
+
+        if (strcmp(
+                name,
+                expected) == 0)
+        {
+            return slot;
+        }
+    }
+
+    return -1;
 }
 
 
 static bool isTempSave(const char *path)
 {
-    const char *name =
-        baseName(path);
-
     return strcmp(
-        name,
+        baseName(path),
         "temp.dsg"
     ) == 0;
 }
@@ -82,11 +99,8 @@ static bool isTempSave(const char *path)
 
 static bool isRecoverySave(const char *path)
 {
-    const char *name =
-        baseName(path);
-
     return strcmp(
-        name,
+        baseName(path),
         "recovery.dsg"
     ) == 0;
 }
@@ -106,6 +120,9 @@ static gc_save_stream_t *newStream(void)
 
     stream->capacity =
         GC_SAVE_BUFFER_SIZE;
+
+    stream->slot =
+        -1;
 
     stream->data = malloc(
         stream->capacity
@@ -150,6 +167,8 @@ FILE *GC_SaveFOpen(
     bool reading;
     bool writing;
 
+    int slot;
+
     reading =
         mode &&
         strchr(mode, 'r') != NULL;
@@ -158,12 +177,15 @@ FILE *GC_SaveFOpen(
         mode &&
         strchr(mode, 'w') != NULL;
 
+    slot =
+        saveSlotFromPath(path);
+
 
     /*
-     * Slot 0 load.
+     * Reading doomsav0.dsg ... doomsav5.dsg
      */
     if (reading &&
-        isSlot0(path))
+        slot >= 0)
     {
         size_t actualSize = 0;
 
@@ -174,6 +196,7 @@ FILE *GC_SaveFOpen(
             return NULL;
 
         if (!GC_MemoryCardReadSave(
+                slot,
                 stream->data,
                 stream->capacity,
                 &actualSize))
@@ -191,11 +214,12 @@ FILE *GC_SaveFOpen(
         stream->position =
             0;
 
-        stream->slot0 =
-            true;
+        stream->slot =
+            slot;
 
         SYS_Report(
-            "DoomCube: fopen slot0 read (%u bytes)\n",
+            "DoomCube: fopen slot %d read (%u bytes)\n",
+            slot,
             (unsigned int)actualSize
         );
 
@@ -204,7 +228,7 @@ FILE *GC_SaveFOpen(
 
 
     /*
-     * Chocolate Doom writes to temp.dsg first.
+     * Doom writes to temp.dsg first.
      */
     if (writing &&
         (isTempSave(path) ||
@@ -236,11 +260,6 @@ FILE *GC_SaveFOpen(
     }
 
 
-    /*
-     * The menu probes every save slot.
-     *
-     * For this milestone only slot 0 exists.
-     */
     return NULL;
 }
 
@@ -299,7 +318,8 @@ size_t GC_SaveFRead(
     stream->position +=
         bytes;
 
-    return bytes / size;
+    return
+        bytes / size;
 }
 
 
@@ -365,7 +385,8 @@ size_t GC_SaveFWrite(
             stream->position;
     }
 
-    return bytes / size;
+    return
+        bytes / size;
 }
 
 
@@ -381,8 +402,8 @@ long GC_SaveFTell(FILE *file)
     if (!stream)
         return -1;
 
-    return (long)
-        stream->position;
+    return
+        (long)stream->position;
 }
 
 
@@ -398,54 +419,62 @@ int GC_SaveFClose(FILE *file)
     if (!stream)
         return -1;
 
-    /*
-     * Closing temp.dsg preserves it in RAM.
-     *
-     * Chocolate Doom will rename it to doomsav0.dsg
-     * immediately afterward.
-     */
     if (stream->temporary &&
         stream->writable)
     {
         unsigned char *newData;
 
-        newData = realloc(
-            tempSaveData,
-            stream->size
-        );
-
-        if (stream->size > 0 &&
-            !newData)
+        if (stream->size == 0)
         {
-            destroyStream(
-                stream
+            free(
+                tempSaveData
             );
 
-            return -1;
+            tempSaveData =
+                NULL;
+
+            tempSaveSize =
+                0;
+
+            tempSaveValid =
+                false;
         }
-
-        tempSaveData =
-            newData;
-
-        if (stream->size > 0)
+        else
         {
+            newData = realloc(
+                tempSaveData,
+                stream->size
+            );
+
+            if (!newData)
+            {
+                destroyStream(
+                    stream
+                );
+
+                return -1;
+            }
+
+            tempSaveData =
+                newData;
+
             memcpy(
                 tempSaveData,
                 stream->data,
                 stream->size
             );
+
+            tempSaveSize =
+                stream->size;
+
+            tempSaveValid =
+                true;
+
+            SYS_Report(
+                "DoomCube: temporary Doom save complete (%u bytes)\n",
+                (unsigned int)tempSaveSize
+            );
         }
-
-        tempSaveSize =
-            stream->size;
-
-        tempSaveValid =
-            true;
-
-        SYS_Report(
-            "DoomCube: temporary Doom save complete (%u bytes)\n",
-            (unsigned int)tempSaveSize
-        );
     }
 
     destroyStream(
@@ -462,17 +491,19 @@ int GC_SaveFClose(FILE *file)
 
 int GC_SaveRemove(const char *path)
 {
+    int slot =
+        saveSlotFromPath(path);
+
     /*
-     * Chocolate Doom removes the old doomsav0.dsg immediately
-     * before renaming temp.dsg over it.
+     * Doom removes the old save immediately before rename().
      *
-     * Do nothing here. The following rename commits atomically-ish
-     * to the GameCube card.
+     * Do nothing; rename commits the replacement.
      */
-    if (isSlot0(path))
+    if (slot >= 0)
         return 0;
 
-    if (isTempSave(path))
+    if (isTempSave(path) ||
+        isRecoverySave(path))
     {
         free(
             tempSaveData
@@ -502,13 +533,18 @@ int GC_SaveRename(
     const char *oldpath,
     const char *newpath)
 {
+    int slot;
+
     if (!isTempSave(oldpath) &&
         !isRecoverySave(oldpath))
     {
         return -1;
     }
 
-    if (!isSlot0(newpath))
+    slot =
+        saveSlotFromPath(newpath);
+
+    if (slot < 0)
         return -1;
 
     if (!tempSaveValid ||
@@ -516,30 +552,34 @@ int GC_SaveRename(
         tempSaveSize == 0)
     {
         SYS_Report(
-            "DoomCube: rename attempted without temporary save\n"
+            "DoomCube: rename without temporary save\n"
         );
 
         return -1;
     }
 
     SYS_Report(
-        "DoomCube: committing doomsav0.dsg (%u bytes)\n",
+        "DoomCube: committing slot %d (%u bytes)\n",
+        slot,
         (unsigned int)tempSaveSize
     );
 
     if (!GC_MemoryCardWriteSave(
+            slot,
             tempSaveData,
             tempSaveSize))
     {
         SYS_Report(
-            "DoomCube: GameCube save commit FAILED\n"
+            "DoomCube: slot %d commit FAILED\n",
+            slot
         );
 
         return -1;
     }
 
     SYS_Report(
-        "DoomCube: GameCube save commit OK\n"
+        "DoomCube: slot %d commit OK\n",
+        slot
     );
 
     free(
