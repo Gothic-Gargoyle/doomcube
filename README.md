@@ -41,9 +41,11 @@ Default:
 # Features
 ## Must have
 * genericdoom running on gamecube
-* sound effects and music
+* sound effects 
+* and music
 
 ## Should have
+* rumble when firing
 
 ## Could have
 * Gameboy cable support for displaying map on gameboy
