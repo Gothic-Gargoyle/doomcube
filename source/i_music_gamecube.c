@@ -8,11 +8,6 @@
 #include "sounds.h"
 
 #include <stdio.h>
-#include <string.h>
-
-#ifdef DOOMCUBE_EMBED_ASSETS
-#include "d_e1m1_ogg.h"
-#endif
 
 static boolean music_initialized;
 static boolean owns_audio;
@@ -60,10 +55,6 @@ static boolean GC_MusicInit(void)
         return false;
     }
 
-    /*
-     * SFX normally opens SDL_mixer first.
-     * Open audio here only if necessary.
-     */
     if (!Mix_QuerySpec(
             &freq,
             &format,
@@ -104,11 +95,9 @@ static boolean GC_MusicInit(void)
 
     music_initialized = true;
 
-#ifdef DOOMCUBE_EMBED_ASSETS
-    printf("DoomCube: embedded OGG music ready\n");
-#else
-    printf("DoomCube: filesystem OGG music ready\n");
-#endif
+    printf(
+        "DoomCube: DVD OGG music backend ready\n"
+    );
 
     return true;
 }
@@ -190,16 +179,22 @@ static void GC_ResumeMusic(void)
 /* Register                                                                  */
 /* ------------------------------------------------------------------------- */
 
-static void *GC_RegisterSong(void *data, int len)
+static void *GC_RegisterSong(
+    void *data,
+    int len)
 {
     const char *name;
+    char path[160];
+    FILE *probe;
+    Mix_Music *music;
 
     (void)len;
 
     if (!music_initialized)
         return NULL;
 
-    name = findMusicName(data);
+    name =
+        findMusicName(data);
 
     if (!name)
     {
@@ -210,133 +205,61 @@ static void *GC_RegisterSong(void *data, int len)
         return NULL;
     }
 
-
-#ifdef DOOMCUBE_EMBED_ASSETS
-
     /*
-     * Known-good Dolphin test build.
-     *
-     * Only E1M1 is embedded.
-     */
-    if (!strcmp(name, "e1m1"))
-    {
-        SDL_RWops *rw;
-        Mix_Music *music;
-
-        printf(
-            "DoomCube: music %s -> embedded d_e1m1.ogg\n",
-            name
-        );
-
-        rw = SDL_RWFromConstMem(
-            d_e1m1_ogg,
-            d_e1m1_ogg_size
-        );
-
-        if (!rw)
-        {
-            printf(
-                "DoomCube: SDL_RWFromConstMem failed: %s\n",
-                SDL_GetError()
-            );
-
-            return NULL;
-        }
-
-        music = Mix_LoadMUS_RW(
-            rw,
-            1
-        );
-
-        if (!music)
-        {
-            printf(
-                "DoomCube: failed loading embedded "
-                "d_e1m1.ogg: %s\n",
-                Mix_GetError()
-            );
-
-            return NULL;
-        }
-
-        return music;
-    }
-
-    printf(
-        "DoomCube: d_%s.ogg not embedded in test build\n",
-        name
-    );
-
-    return NULL;
-
-
-#else
-
-    /*
-     * Filesystem build.
-     *
-     * Example:
+     * Doom music name:
      *
      *     e1m1
      *
      * becomes:
      *
-     *     music/d_e1m1.ogg
+     *     dvd:/music/d_e1m1.ogg
      */
-    {
-        char path[128];
-        FILE *probe;
-        Mix_Music *music;
+    snprintf(
+        path,
+        sizeof(path),
+        "dvd:/music/d_%s.ogg",
+        name
+    );
 
-        snprintf(
-            path,
-            sizeof(path),
-            "music/d_%s.ogg",
-            name
-        );
-
-        probe = fopen(
+    probe =
+        fopen(
             path,
             "rb"
         );
 
-        if (!probe)
-        {
-            printf(
-                "DoomCube: music missing: %s\n",
-                path
-            );
-
-            return NULL;
-        }
-
-        fclose(probe);
-
+    if (!probe)
+    {
         printf(
-            "DoomCube: music %s -> %s\n",
-            name,
+            "DoomCube: music missing: %s\n",
             path
         );
 
-        music = Mix_LoadMUS(
-            path
-        );
-
-        if (!music)
-        {
-            printf(
-                "DoomCube: failed loading %s: %s\n",
-                path,
-                Mix_GetError()
-            );
-
-            return NULL;
-        }
-
-        return music;
+        return NULL;
     }
 
-#endif
+    fclose(probe);
+
+    printf(
+        "DoomCube: music %s -> %s\n",
+        name,
+        path
+    );
+
+    music =
+        Mix_LoadMUS(path);
+
+    if (!music)
+    {
+        printf(
+            "DoomCube: failed loading %s: %s\n",
+            path,
+            Mix_GetError()
+        );
+
+        return NULL;
+    }
+
+    return music;
 }
 
 

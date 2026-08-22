@@ -13,6 +13,9 @@
 #include <ogcsys.h>
 #include <gccore.h>
 
+#include <iso9660.h>
+#include <ogc/dvd.h>
+
 #define KEYQUEUE_SIZE      64
 #define STICK_DEADZONE     24
 #define CSTICK_DEADZONE    24
@@ -114,7 +117,6 @@ static void handleGameCubeInput(void)
     u8 triggerR =
         PAD_TriggerR(0);
 
-
     int up =
         (held & PAD_BUTTON_UP) ||
         stickY > STICK_DEADZONE;
@@ -136,7 +138,6 @@ static void handleGameCubeInput(void)
 
     int cRight =
         cstickX > CSTICK_DEADZONE;
-
 
     setKeyState(
         up,
@@ -162,7 +163,6 @@ static void handleGameCubeInput(void)
         KEY_RIGHTARROW
     );
 
-
     setKeyState(
         cLeft,
         &gcStrafeLeft,
@@ -175,13 +175,11 @@ static void handleGameCubeInput(void)
         KEY_STRAFE_R
     );
 
-
     setKeyState(
         triggerR > TRIGGER_THRESHOLD,
         &gcFire,
         KEY_FIRE
     );
-
 
     setKeyState(
         held & PAD_BUTTON_X,
@@ -195,7 +193,6 @@ static void handleGameCubeInput(void)
         key_prevweapon
     );
 
-
     setKeyState(
         held & PAD_BUTTON_A,
         &gcUse,
@@ -203,11 +200,10 @@ static void handleGameCubeInput(void)
     );
 
     setKeyState(
-        held & PAD_BUTTON_B,
+        held & PAD_TRIGGER_L,
         &gcRun,
         KEY_RSHIFT
     );
-
 
     setKeyState(
         held & PAD_BUTTON_A,
@@ -226,6 +222,46 @@ static void handleGameCubeInput(void)
         &gcTab,
         KEY_TAB
     );
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* ISO9660                                                                   */
+/* ------------------------------------------------------------------------- */
+
+static void mountIsoFilesystem(void)
+{
+    printf(
+        "DoomCube: mounting ISO9660 filesystem...\n"
+    );
+
+    /*
+     * Important:
+     *
+     * Do NOT call DVD_Init() or DVD_Mount().
+     *
+     * We already proved those are what caused the black screen.
+     * The GameCube DVD DISC_INTERFACE is already usable here.
+     */
+    if (!ISO9660_Mount(
+            "dvd",
+            &__io_gcdvd))
+    {
+        printf(
+            "DoomCube: ISO9660_Mount failed\n"
+        );
+
+        return;
+    }
+
+    printf(
+        "DoomCube: mounted dvd:/\n"
+    );
+
+    /*
+     * Leave it mounted for the lifetime of Doom.
+     * SDL_mixer will stream OGGs from dvd:/music/.
+     */
 }
 
 
@@ -249,7 +285,6 @@ void DG_Init(void)
         exit(1);
     }
 
-
     window =
         SDL_CreateWindow(
             "DOOM",
@@ -270,7 +305,6 @@ void DG_Init(void)
         exit(1);
     }
 
-
     renderer =
         SDL_CreateRenderer(
             window,
@@ -287,7 +321,6 @@ void DG_Init(void)
 
         exit(1);
     }
-
 
     texture =
         SDL_CreateTexture(
@@ -308,9 +341,15 @@ void DG_Init(void)
         exit(1);
     }
 
-
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
+
+    /*
+     * SDL/video is alive first.
+     *
+     * Then mount the ISO filesystem and leave it mounted.
+     */
+    mountIsoFilesystem();
 }
 
 
@@ -399,6 +438,11 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
+    /*
+     * Keep the IWAD embedded for now.
+     *
+     * We are changing ONLY the music source in this test.
+     */
     char *doomArgv[] =
     {
         "doomcube",
@@ -415,6 +459,8 @@ int main(int argc, char **argv)
     {
         doomgeneric_Tick();
     }
+
+    ISO9660_Unmount("dvd");
 
     return 0;
 }

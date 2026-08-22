@@ -80,6 +80,7 @@ LIBS := \
 	-lSDL2 \
 	-lopengx \
 	-laesnd \
+	-liso9660 \
 	-logc \
 	-lz \
 	-lstdc++ \
@@ -96,8 +97,7 @@ export DEPSDIR := $(CURDIR)/$(BUILD)
 
 export VPATH := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-	$(CURDIR)/data \
-	$(CURDIR)/data/music
+	$(CURDIR)/data
 
 #---------------------------------------------------------------------------------
 # Doom sources
@@ -189,6 +189,9 @@ CFILES := \
 
 #---------------------------------------------------------------------------------
 # WAD backend
+#
+# Keep the WAD embedded for now.
+# Music is NOT embedded anymore.
 #---------------------------------------------------------------------------------
 
 ifeq ($(EMBED_WAD),1)
@@ -197,8 +200,7 @@ CFILES += \
 	w_file_embedded.c
 
 BINFILES := \
-	doom1.wad \
-	d_e1m1.ogg
+	doom1.wad
 
 else
 
@@ -210,7 +212,7 @@ BINFILES :=
 endif
 
 #---------------------------------------------------------------------------------
-# Other sources
+# Other source types
 #---------------------------------------------------------------------------------
 
 CPPFILES := \
@@ -287,8 +289,6 @@ export LIBPATHS := \
 	test
 
 #---------------------------------------------------------------------------------
-# Default
-#---------------------------------------------------------------------------------
 
 all: $(BUILD)
 
@@ -321,21 +321,12 @@ clean:
 		$(ISO_OUT)
 
 #---------------------------------------------------------------------------------
-# Real hardware
-#---------------------------------------------------------------------------------
 
 run:
 	wiiload $(TARGET).dol
 
 #---------------------------------------------------------------------------------
 # ISO
-#
-# At this stage the DOL deliberately DOES NOT access the ISO filesystem.
-#
-# doom1.wad and d_e1m1.ogg are embedded in the executable during `make test`.
-#
-# We still put the WAD and complete OGG directory onto the ISO so that the
-# filesystem layout is ready for the next stage.
 #---------------------------------------------------------------------------------
 
 iso:
@@ -394,26 +385,20 @@ iso:
 #---------------------------------------------------------------------------------
 # Dolphin test
 #
-# IMPORTANT:
+# WAD:
+#   embedded
 #
-# This is the known-good baseline.
-#
-#   WAD       -> embedded
-#   E1M1 OGG  -> embedded
-#   ISO boot  -> yes
-#   DVD I/O   -> NO
-#
+# MUSIC:
+#   streamed from dvd:/music/*.ogg
 #---------------------------------------------------------------------------------
 
 test:
 	$(MAKE) clean
-
 	$(MAKE) EMBED_WAD=1
-
 	$(MAKE) iso
 
 	@echo
-	@echo "Launching known-good embedded DoomCube DOL from ISO..."
+	@echo "Launching DoomCube with DVD-streamed music..."
 	@echo
 
 	/usr/bin/flatpak run \
@@ -443,14 +428,10 @@ $(OUTPUT).elf: $(OFILES)
 $(OFILES_SOURCES): $(HFILES)
 
 #---------------------------------------------------------------------------------
-# Embedded binary conversion
+# Embedded WAD conversion
 #---------------------------------------------------------------------------------
 
 %_wad.h %.wad.o : %.wad
-	@echo $(notdir $<)
-	@$(bin2o)
-
-%_ogg.h %.ogg.o : %.ogg
 	@echo $(notdir $<)
 	@$(bin2o)
 
