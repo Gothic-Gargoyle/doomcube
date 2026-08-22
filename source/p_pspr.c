@@ -478,6 +478,7 @@ A_Punch
     // turn to face target
     if (linetarget)
     {
+        DG_Rumble(4);
 	S_StartSound (player->mo, sfx_punch);
 	player->mo->angle = R_PointToAngle2 (player->mo->x,
 					     player->mo->y,
@@ -659,7 +660,7 @@ A_FirePistol
   pspdef_t*	psp ) 
 {
     S_StartSound (player->mo, sfx_pistol);
-    DG_Rumble(4);
+    DG_Rumble(5);
     P_SetMobjState (player->mo, S_PLAY_ATK2);
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 1);
 
