@@ -14,16 +14,6 @@ LIBDIRS     :=
 
 EMBED_WAD ?= 0
 
-ifeq ($(EMBED_WAD),1)
-	DATA := data
-else
-	DATA :=
-endif
-
-#---------------------------------------------------------------------------------
-# Sound
-#---------------------------------------------------------------------------------
-
 CFLAGS = \
 	-g \
 	-O2 \
@@ -31,6 +21,10 @@ CFLAGS = \
 	-DFEATURE_SOUND \
 	$(MACHDEP) \
 	$(INCLUDE)
+
+ifeq ($(EMBED_WAD),1)
+	CFLAGS += -DDOOMCUBE_EMBED_ASSETS
+endif
 
 CXXFLAGS = $(CFLAGS)
 
@@ -43,38 +37,35 @@ ifeq ($(EMBED_WAD),1)
 	LDFLAGS += -Wl,--wrap=M_FileExists
 endif
 
-#---------------------------------------------------------------------------------
-# SDL2 only.
-#
-# NO SDL2_mixer.
-#
-# SDL2's GameCube audio driver uses AESND underneath.
-#---------------------------------------------------------------------------------
-
 LIBS := \
+	-lSDL2_mixer \
+	-lFLAC \
+	-lgme \
+	-lmpg123 \
+	-lvorbisfile \
+	-lvorbis \
+	-logg \
+	-lopusfile \
+	-lopus \
+	-lwavpack \
+	-lxmp \
 	-lSDL2 \
 	-lopengx \
 	-laesnd \
 	-logc \
+	-lz \
+	-lstdc++ \
 	-lm
-
-#---------------------------------------------------------------------------------
-# Outer build
-#---------------------------------------------------------------------------------
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
+export DEPSDIR := $(CURDIR)/$(BUILD)
 
 export VPATH := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-	$(foreach dir,$(DATA),$(CURDIR)/$(dir))
-
-export DEPSDIR := $(CURDIR)/$(BUILD)
-
-#---------------------------------------------------------------------------------
-# Doom sources
-#---------------------------------------------------------------------------------
+	$(CURDIR)/data \
+	$(CURDIR)/data/music
 
 CFILES := \
 	dummy.c \
@@ -100,7 +91,8 @@ CFILES := \
 	i_joystick.c \
 	i_scale.c \
 	i_sound.c \
-	i_sound_gamecube.c \
+	i_sdlsound.c \
+	i_music_gamecube.c \
 	i_system.c \
 	i_timer.c \
 	memio.c \
@@ -159,41 +151,33 @@ CFILES := \
 	doomgeneric.c \
 	doomgeneric_gamecube.c
 
-#---------------------------------------------------------------------------------
-# WAD backend
-#---------------------------------------------------------------------------------
-
 ifeq ($(EMBED_WAD),1)
 	CFILES += w_file_embedded.c
 else
 	CFILES += w_file_stdc.c
 endif
 
-CPPFILES := \
-	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+sFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
 
-sFILES := \
-	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-
-SFILES := \
-	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+ifeq ($(EMBED_WAD),1)
 
 BINFILES := \
-	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+	doom1.wad \
+	d_e1m1.ogg
 
-#---------------------------------------------------------------------------------
-# Linker
-#---------------------------------------------------------------------------------
+else
+
+BINFILES :=
+
+endif
 
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
 else
 	export LD := $(CXX)
 endif
-
-#---------------------------------------------------------------------------------
-# Objects
-#---------------------------------------------------------------------------------
 
 export OFILES_BIN := \
 	$(addsuffix .o,$(BINFILES))
@@ -211,10 +195,6 @@ export OFILES := \
 export HFILES := \
 	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
-#---------------------------------------------------------------------------------
-# Includes
-#---------------------------------------------------------------------------------
-
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -222,26 +202,16 @@ export INCLUDE := \
 	-I$(CURDIR)/source \
 	-I$(DEVKITPRO)/libogc2/gamecube/include \
 	-I$(DEVKITPRO)/libogc2/gamecube/include/SDL2 \
+	-I$(DEVKITPRO)/portlibs/ppc/include \
 	-I$(LIBOGC_INC)
-
-#---------------------------------------------------------------------------------
-# Libraries
-#---------------------------------------------------------------------------------
 
 export LIBPATHS := \
 	-L$(DEVKITPRO)/libogc2/gamecube/lib \
+	-L$(DEVKITPRO)/portlibs/ppc/lib \
 	-L$(LIBOGC_LIB) \
 	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-#---------------------------------------------------------------------------------
-
-.PHONY: \
-	$(BUILD) \
-	clean \
-	run \
-	test
-
-#---------------------------------------------------------------------------------
+.PHONY: $(BUILD) clean run test
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -252,27 +222,31 @@ $(BUILD):
 		-f $(CURDIR)/Makefile \
 		EMBED_WAD=$(EMBED_WAD)
 
-#---------------------------------------------------------------------------------
-
 clean:
 	@echo clean ...
-	@rm -fr \
+	@rm -rf \
 		$(BUILD) \
-		$(OUTPUT).elf \
-		$(OUTPUT).dol
-
-#---------------------------------------------------------------------------------
+		$(CURDIR)/$(TARGET).elf \
+		$(CURDIR)/$(TARGET).dol
 
 run:
 	wiiload $(TARGET).dol
 
-#---------------------------------------------------------------------------------
-# Dolphin development build
-#---------------------------------------------------------------------------------
-
 test:
 	$(MAKE) clean
 	$(MAKE) EMBED_WAD=1
+
+	@echo
+	@echo "Embedded OGG objects:"
+	@find "$(CURDIR)/$(BUILD)" \
+		-maxdepth 1 \
+		-name '*.ogg.o' \
+		-printf '%f\n'
+	@echo
+
+	@ls -lh \
+		"$(CURDIR)/$(TARGET).elf" \
+		"$(CURDIR)/$(TARGET).dol"
 
 	/usr/bin/flatpak run \
 		--filesystem="$(CURDIR):ro" \
@@ -281,10 +255,6 @@ test:
 		--command=/app/bin/dolphin-emu-wrapper \
 		org.DolphinEmu.dolphin-emu \
 		"$(CURDIR)/$(TARGET).dol"
-
-#---------------------------------------------------------------------------------
-# Inner build
-#---------------------------------------------------------------------------------
 
 else
 
@@ -296,15 +266,13 @@ $(OUTPUT).elf: $(OFILES)
 
 $(OFILES_SOURCES): $(HFILES)
 
-#---------------------------------------------------------------------------------
-# Embedded WAD for Dolphin
-#---------------------------------------------------------------------------------
-
 %_wad.h %.wad.o : %.wad
 	@echo $(notdir $<)
 	@$(bin2o)
 
-#---------------------------------------------------------------------------------
+%_ogg.h %.ogg.o : %.ogg
+	@echo $(notdir $<)
+	@$(bin2o)
 
 -include $(DEPENDS)
 

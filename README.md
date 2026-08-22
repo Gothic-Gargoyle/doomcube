@@ -21,6 +21,20 @@ then install the needed libraries:
 
 
 # Running this homebrew
+
+# WAD
+Place in /data folder.
+
+# music
+Optional high-quality music is supported! 
+Place OGG files in data/music/ folder, using Doom lump-style names, e.g.:
+
+d_e1m1.ogg
+d_e1m2.ogg
+d_intro.ogg
+
+Soundtrack files are not distributed with DoomCube.
+
 ## Dolphin
 
 
@@ -46,6 +60,8 @@ Default:
 
 ## Should have
 * rumble when firing
+* nametag in dolphin
+* save icon
 
 ## Could have
 * Gameboy cable support for displaying map on gameboy

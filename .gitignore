@@ -10,6 +10,15 @@ Debug/
 Release/
 Build/
 build/
-doom1.wad
 doomcube.*
 scratch
+
+# User-supplied Doom data
+data/*.wad
+
+# Sycraft / external soundtrack files
+data/music/*.ogg
+data/music/*.mp3
+
+# Keep the directory
+!data/music/.gitkeep
