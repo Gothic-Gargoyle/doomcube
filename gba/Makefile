@@ -1,17 +1,23 @@
 .SUFFIXES:
 
 ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment.")
+$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
 include $(DEVKITARM)/gba_rules
 
-TARGET  := doomcube_gba_mb
-BUILD   := build
-SOURCES := source
+#---------------------------------------------------------------------------------
+# GBA multiboot payload
+#---------------------------------------------------------------------------------
+
+TARGET   := doomcube_gba_mb
+BUILD    := build
+SOURCES  := source
 INCLUDES :=
 
-ARCH := -mthumb -mthumb-interwork
+ARCH := \
+	-mthumb \
+	-mthumb-interwork
 
 CFLAGS := \
 	-g \
@@ -27,9 +33,15 @@ LDFLAGS := \
 	$(ARCH) \
 	-Wl,-Map,$(notdir $@).map
 
-LIBS := -lgba
+LIBS := \
+	-lgba
 
-LIBDIRS := $(LIBGBA)
+LIBDIRS := \
+	$(LIBGBA)
+
+#---------------------------------------------------------------------------------
+# Outer build
+#---------------------------------------------------------------------------------
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
@@ -38,7 +50,8 @@ export OUTPUT := $(CURDIR)/$(TARGET)
 export VPATH := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 
-export DEPSDIR := $(CURDIR)/$(BUILD)
+export DEPSDIR := \
+	$(CURDIR)/$(BUILD)
 
 CFILES := \
 	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
@@ -46,8 +59,11 @@ CFILES := \
 CPPFILES := \
 	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 
-SFILES := \
+sFILES := \
 	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+
+SFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
 
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
@@ -58,7 +74,8 @@ endif
 export OFILES := \
 	$(CPPFILES:.cpp=.o) \
 	$(CFILES:.c=.o) \
-	$(SFILES:.s=.o)
+	$(sFILES:.s=.o) \
+	$(SFILES:.S=.o)
 
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-iquote $(CURDIR)/$(dir)) \
@@ -68,27 +85,49 @@ export INCLUDE := \
 export LIBPATHS := \
 	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean
+.PHONY: all $(BUILD) clean
+
+#---------------------------------------------------------------------------------
+
+all: $(BUILD)
+
+#---------------------------------------------------------------------------------
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
+
 	@$(MAKE) \
 		--no-print-directory \
 		-C $(BUILD) \
-		-f $(CURDIR)/Makefile
+		-f $(CURDIR)/Makefile \
+		$(CURDIR)/$(TARGET).gba
+
+#---------------------------------------------------------------------------------
 
 clean:
-	@echo clean ...
+	@echo clean GBA payload ...
+
 	@rm -rf \
 		$(BUILD) \
 		$(TARGET).elf \
 		$(TARGET).gba
 
+#---------------------------------------------------------------------------------
+# Inner build
+#---------------------------------------------------------------------------------
+
 else
 
 DEPENDS := $(OFILES:.o=.d)
 
+.PHONY: all
+
+# Important:
+# The recursive build now has an explicit default target.
+all: $(OUTPUT).gba
+
 $(OUTPUT).gba: $(OUTPUT).elf
+
 $(OUTPUT).elf: $(OFILES)
 
 -include $(DEPENDS)

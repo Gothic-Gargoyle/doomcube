@@ -1,10 +1,15 @@
 .SUFFIXES:
+.DEFAULT_GOAL := all
 
 ifeq ($(strip $(DEVKITPPC)),)
 $(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
 endif
 
 include $(DEVKITPRO)/libogc2/gamecube_rules
+
+#---------------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------------
 
 TARGET      := doomcube
 BUILD       := build
@@ -14,7 +19,11 @@ LIBDIRS     :=
 
 EMBED_WAD ?= 0
 
-CFLAGS = \
+#---------------------------------------------------------------------------------
+# Compiler
+#---------------------------------------------------------------------------------
+
+CFLAGS := \
 	-g \
 	-O2 \
 	-Wall \
@@ -26,9 +35,9 @@ ifeq ($(EMBED_WAD),1)
 	CFLAGS += -DDOOMCUBE_EMBED_ASSETS
 endif
 
-CXXFLAGS = $(CFLAGS)
+CXXFLAGS := $(CFLAGS)
 
-LDFLAGS = \
+LDFLAGS := \
 	-g \
 	$(MACHDEP) \
 	-Wl,-Map,$(notdir $@).map
@@ -36,6 +45,10 @@ LDFLAGS = \
 ifeq ($(EMBED_WAD),1)
 	LDFLAGS += -Wl,--wrap=M_FileExists
 endif
+
+#---------------------------------------------------------------------------------
+# Libraries
+#---------------------------------------------------------------------------------
 
 LIBS := \
 	-lSDL2_mixer \
@@ -57,6 +70,10 @@ LIBS := \
 	-lstdc++ \
 	-lm
 
+#---------------------------------------------------------------------------------
+# Outer build
+#---------------------------------------------------------------------------------
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
@@ -66,6 +83,10 @@ export VPATH := \
 	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 	$(CURDIR)/data \
 	$(CURDIR)/data/music
+
+#---------------------------------------------------------------------------------
+# Doom sources
+#---------------------------------------------------------------------------------
 
 CFILES := \
 	dummy.c \
@@ -157,9 +178,18 @@ else
 	CFILES += w_file_stdc.c
 endif
 
-CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-sFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+CPPFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+
+sFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+
+SFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+
+#---------------------------------------------------------------------------------
+# Embedded Dolphin assets
+#---------------------------------------------------------------------------------
 
 ifeq ($(EMBED_WAD),1)
 
@@ -173,11 +203,19 @@ BINFILES :=
 
 endif
 
+#---------------------------------------------------------------------------------
+# Linker
+#---------------------------------------------------------------------------------
+
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
 else
 	export LD := $(CXX)
 endif
+
+#---------------------------------------------------------------------------------
+# Objects
+#---------------------------------------------------------------------------------
 
 export OFILES_BIN := \
 	$(addsuffix .o,$(BINFILES))
@@ -195,6 +233,10 @@ export OFILES := \
 export HFILES := \
 	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
+#---------------------------------------------------------------------------------
+# Includes
+#---------------------------------------------------------------------------------
+
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -205,13 +247,31 @@ export INCLUDE := \
 	-I$(DEVKITPRO)/portlibs/ppc/include \
 	-I$(LIBOGC_INC)
 
+#---------------------------------------------------------------------------------
+# Library paths
+#---------------------------------------------------------------------------------
+
 export LIBPATHS := \
 	-L$(DEVKITPRO)/libogc2/gamecube/lib \
 	-L$(DEVKITPRO)/portlibs/ppc/lib \
 	-L$(LIBOGC_LIB) \
 	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-.PHONY: $(BUILD) clean run test
+#---------------------------------------------------------------------------------
+
+.PHONY: \
+	all \
+	$(BUILD) \
+	clean \
+	run \
+	test \
+	testgba
+
+#---------------------------------------------------------------------------------
+
+all: $(BUILD)
+
+#---------------------------------------------------------------------------------
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -222,31 +282,28 @@ $(BUILD):
 		-f $(CURDIR)/Makefile \
 		EMBED_WAD=$(EMBED_WAD)
 
+#---------------------------------------------------------------------------------
+
 clean:
-	@echo clean ...
+	@echo clean DoomCube ...
+
 	@rm -rf \
 		$(BUILD) \
 		$(CURDIR)/$(TARGET).elf \
 		$(CURDIR)/$(TARGET).dol
 
+#---------------------------------------------------------------------------------
+
 run:
 	wiiload $(TARGET).dol
+
+#---------------------------------------------------------------------------------
+# DoomCube Dolphin test
+#---------------------------------------------------------------------------------
 
 test:
 	$(MAKE) clean
 	$(MAKE) EMBED_WAD=1
-
-	@echo
-	@echo "Embedded OGG objects:"
-	@find "$(CURDIR)/$(BUILD)" \
-		-maxdepth 1 \
-		-name '*.ogg.o' \
-		-printf '%f\n'
-	@echo
-
-	@ls -lh \
-		"$(CURDIR)/$(TARGET).elf" \
-		"$(CURDIR)/$(TARGET).dol"
 
 	/usr/bin/flatpak run \
 		--filesystem="$(CURDIR):ro" \
@@ -255,6 +312,48 @@ test:
 		--command=/app/bin/dolphin-emu-wrapper \
 		org.DolphinEmu.dolphin-emu \
 		"$(CURDIR)/$(TARGET).dol"
+
+#---------------------------------------------------------------------------------
+# GameCube -> GBA multiboot Dolphin test
+#
+# Builds:
+#
+#   gba/doomcube_gba_mb.gba
+#            ↓
+#   embedded into
+#            ↓
+#   gba_test.dol
+#            ↓
+#   automatically launched in Dolphin
+#
+# Dolphin setup:
+#
+#   Port 1 = Standard Controller
+#   Port 2 = GBA (Integrated)
+#---------------------------------------------------------------------------------
+
+testgba:
+	$(MAKE) -f Makefile.gbatest clean
+	$(MAKE) -f Makefile.gbatest all
+
+	@echo
+	@echo "GBA multiboot test built:"
+	@ls -lh "$(CURDIR)/gba_test.dol"
+	@echo
+	@echo "Launching gba_test.dol in Dolphin..."
+	@echo
+
+	/usr/bin/flatpak run \
+		--filesystem="$(CURDIR):ro" \
+		--branch=stable \
+		--arch=x86_64 \
+		--command=/app/bin/dolphin-emu-wrapper \
+		org.DolphinEmu.dolphin-emu \
+		"$(CURDIR)/gba_test.dol"
+
+#---------------------------------------------------------------------------------
+# Inner Doom build
+#---------------------------------------------------------------------------------
 
 else
 
@@ -266,6 +365,10 @@ $(OUTPUT).elf: $(OFILES)
 
 $(OFILES_SOURCES): $(HFILES)
 
+#---------------------------------------------------------------------------------
+# Binary conversion
+#---------------------------------------------------------------------------------
+
 %_wad.h %.wad.o : %.wad
 	@echo $(notdir $<)
 	@$(bin2o)
@@ -273,6 +376,8 @@ $(OFILES_SOURCES): $(HFILES)
 %_ogg.h %.ogg.o : %.ogg
 	@echo $(notdir $<)
 	@$(bin2o)
+
+#---------------------------------------------------------------------------------
 
 -include $(DEPENDS)
 
