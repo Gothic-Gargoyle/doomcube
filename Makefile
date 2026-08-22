@@ -127,7 +127,7 @@ CFILES := \
 	m_config.c \
 	m_controls.c \
 	m_fixed.c \
-	m_menu.c \
+	m_menu_gamecube.c \
 	m_misc.c \
 	m_random.c \
 	p_ceilng.c \
@@ -176,6 +176,7 @@ CFILES := \
 	i_video.c \
 	doomgeneric.c \
 	gc_memcard.c \
+	gc_save_stdio.c \
 	doomgeneric_gamecube.c
 
 CPPFILES := \
@@ -356,6 +357,14 @@ all: $(OUTPUT).dol
 $(OUTPUT).dol: $(OUTPUT).elf
 
 $(OUTPUT).elf: $(OFILES)
+
+#---------------------------------------------------------------------------------
+# GameCube save stdio shim
+#---------------------------------------------------------------------------------
+
+g_game.o p_saveg.o m_menu_gamecube.o: CFLAGS += \
+	-DDOOMCUBE_SAVE_SHIM \
+	-include gc_save_stdio.h
 
 -include $(DEPENDS)
 
