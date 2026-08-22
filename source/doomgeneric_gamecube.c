@@ -6,9 +6,11 @@
 #include "doomgeneric.h"
 #include "m_controls.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <ogcsys.h>
 #include <gccore.h>
@@ -20,6 +22,8 @@
 #define STICK_DEADZONE     24
 #define CSTICK_DEADZONE    24
 #define TRIGGER_THRESHOLD  40
+#define GC_KEY_PREVWEAPON 0xa4
+#define GC_KEY_NEXTWEAPON 0xa5
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -49,36 +53,25 @@ static int gcStrafeRight;
 static int gcPrevWeapon;
 static int gcNextWeapon;
 
+static bool dvdMounted;
+
 
 /* ------------------------------------------------------------------------- */
 /* Key queue                                                                 */
 /* ------------------------------------------------------------------------- */
 
-static void queueKey(
-    int pressed,
-    unsigned char key)
+static void queueKey(int pressed, unsigned char key)
 {
-    unsigned int next =
-        (keyWrite + 1) % KEYQUEUE_SIZE;
+    unsigned int next = (keyWrite + 1) % KEYQUEUE_SIZE;
 
     if (next == keyRead)
-    {
-        keyRead =
-            (keyRead + 1) % KEYQUEUE_SIZE;
-    }
+        keyRead = (keyRead + 1) % KEYQUEUE_SIZE;
 
-    keyQueue[keyWrite] =
-        ((pressed ? 1 : 0) << 8) |
-        key;
-
+    keyQueue[keyWrite] = ((pressed ? 1 : 0) << 8) | key;
     keyWrite = next;
 }
 
-
-static void setKeyState(
-    int wanted,
-    int *state,
-    unsigned char key)
+static void setKeyState(int wanted, int *state, unsigned char key)
 {
     wanted = !!wanted;
 
@@ -86,11 +79,7 @@ static void setKeyState(
         return;
 
     *state = wanted;
-
-    queueKey(
-        wanted,
-        key
-    );
+    queueKey(wanted, key);
 }
 
 
@@ -102,126 +91,41 @@ static void handleGameCubeInput(void)
 {
     PAD_ScanPads();
 
-    u16 held =
-        PAD_ButtonsHeld(0);
+    u16 held = PAD_ButtonsHeld(0);
 
-    s8 stickX =
-        PAD_StickX(0);
+    s8 stickX = PAD_StickX(0);
+    s8 stickY = PAD_StickY(0);
+    s8 cstickX = PAD_SubStickX(0);
 
-    s8 stickY =
-        PAD_StickY(0);
+    u8 triggerR = PAD_TriggerR(0);
 
-    s8 cstickX =
-        PAD_SubStickX(0);
+    int up = (held & PAD_BUTTON_UP) || stickY > STICK_DEADZONE;
+    int down = (held & PAD_BUTTON_DOWN) || stickY < -STICK_DEADZONE;
+    int left = (held & PAD_BUTTON_LEFT) || stickX < -STICK_DEADZONE;
+    int right = (held & PAD_BUTTON_RIGHT) || stickX > STICK_DEADZONE;
 
-    u8 triggerR =
-        PAD_TriggerR(0);
+    int cLeft = cstickX < -CSTICK_DEADZONE;
+    int cRight = cstickX > CSTICK_DEADZONE;
 
-    int up =
-        (held & PAD_BUTTON_UP) ||
-        stickY > STICK_DEADZONE;
+    setKeyState(up, &gcUp, KEY_UPARROW);
+    setKeyState(down, &gcDown, KEY_DOWNARROW);
+    setKeyState(left, &gcLeft, KEY_LEFTARROW);
+    setKeyState(right, &gcRight, KEY_RIGHTARROW);
 
-    int down =
-        (held & PAD_BUTTON_DOWN) ||
-        stickY < -STICK_DEADZONE;
+    setKeyState(cLeft, &gcStrafeLeft, KEY_STRAFE_L);
+    setKeyState(cRight, &gcStrafeRight, KEY_STRAFE_R);
 
-    int left =
-        (held & PAD_BUTTON_LEFT) ||
-        stickX < -STICK_DEADZONE;
+    setKeyState(triggerR > TRIGGER_THRESHOLD, &gcFire, KEY_FIRE);
 
-    int right =
-        (held & PAD_BUTTON_RIGHT) ||
-        stickX > STICK_DEADZONE;
+    setKeyState(held & PAD_BUTTON_X, &gcNextWeapon, key_nextweapon);
+    setKeyState(held & PAD_BUTTON_Y, &gcPrevWeapon, key_prevweapon);
 
-    int cLeft =
-        cstickX < -CSTICK_DEADZONE;
+    setKeyState(held & PAD_BUTTON_A, &gcUse, KEY_USE);
+    setKeyState(held & PAD_TRIGGER_L, &gcRun, KEY_RSHIFT);
 
-    int cRight =
-        cstickX > CSTICK_DEADZONE;
-
-    setKeyState(
-        up,
-        &gcUp,
-        KEY_UPARROW
-    );
-
-    setKeyState(
-        down,
-        &gcDown,
-        KEY_DOWNARROW
-    );
-
-    setKeyState(
-        left,
-        &gcLeft,
-        KEY_LEFTARROW
-    );
-
-    setKeyState(
-        right,
-        &gcRight,
-        KEY_RIGHTARROW
-    );
-
-    setKeyState(
-        cLeft,
-        &gcStrafeLeft,
-        KEY_STRAFE_L
-    );
-
-    setKeyState(
-        cRight,
-        &gcStrafeRight,
-        KEY_STRAFE_R
-    );
-
-    setKeyState(
-        triggerR > TRIGGER_THRESHOLD,
-        &gcFire,
-        KEY_FIRE
-    );
-
-    setKeyState(
-        held & PAD_BUTTON_X,
-        &gcNextWeapon,
-        key_nextweapon
-    );
-
-    setKeyState(
-        held & PAD_BUTTON_Y,
-        &gcPrevWeapon,
-        key_prevweapon
-    );
-
-    setKeyState(
-        held & PAD_BUTTON_A,
-        &gcUse,
-        KEY_USE
-    );
-
-    setKeyState(
-        held & PAD_TRIGGER_L,
-        &gcRun,
-        KEY_RSHIFT
-    );
-
-    setKeyState(
-        held & PAD_BUTTON_A,
-        &gcEnter,
-        KEY_ENTER
-    );
-
-    setKeyState(
-        held & PAD_BUTTON_START,
-        &gcEscape,
-        KEY_ESCAPE
-    );
-
-    setKeyState(
-        held & PAD_TRIGGER_Z,
-        &gcTab,
-        KEY_TAB
-    );
+    setKeyState(held & PAD_BUTTON_A, &gcEnter, KEY_ENTER);
+    setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
+    setKeyState(held & PAD_TRIGGER_Z, &gcTab, KEY_TAB);
 }
 
 
@@ -229,39 +133,186 @@ static void handleGameCubeInput(void)
 /* ISO9660                                                                   */
 /* ------------------------------------------------------------------------- */
 
-static void mountIsoFilesystem(void)
+static bool mountIsoFilesystem(void)
 {
-    printf(
-        "DoomCube: mounting ISO9660 filesystem...\n"
-    );
+    printf("DoomCube: mounting ISO9660...\n");
 
-    /*
-     * Important:
-     *
-     * Do NOT call DVD_Init() or DVD_Mount().
-     *
-     * We already proved those are what caused the black screen.
-     * The GameCube DVD DISC_INTERFACE is already usable here.
-     */
-    if (!ISO9660_Mount(
-            "dvd",
-            &__io_gcdvd))
+    if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
-        printf(
-            "DoomCube: ISO9660_Mount failed\n"
-        );
+        printf("DoomCube: ISO9660_Mount FAILED\n");
+        return false;
+    }
 
+    dvdMounted = true;
+
+    printf("DoomCube: mounted dvd:/\n");
+
+    return true;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* DVD WAD probe                                                             */
+/* ------------------------------------------------------------------------- */
+
+static uint32_t readLE32(const unsigned char *p)
+{
+    return ((uint32_t)p[0])
+         | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16)
+         | ((uint32_t)p[3] << 24);
+}
+
+static void probeDvdWad(void)
+{
+    FILE *file;
+    long fileSize;
+
+    unsigned char header[12];
+    unsigned char entry[16];
+
+    uint32_t numLumps;
+    uint32_t directoryOffset;
+
+    printf("\n");
+    printf("DoomCube: ---- DVD WAD PROBE ----\n");
+
+    file = fopen("dvd:/doom1.wad", "rb");
+
+    if (!file)
+    {
+        printf("DoomCube: fopen FAILED\n");
         return;
     }
 
+    printf("DoomCube: fopen OK\n");
+
+    if (fseek(file, 0, SEEK_END) != 0)
+    {
+        printf("DoomCube: SEEK_END FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    fileSize = ftell(file);
+
+    if (fileSize < 0)
+    {
+        printf("DoomCube: ftell FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    printf("DoomCube: file size = %ld bytes\n", fileSize);
+
+    if (fseek(file, 0, SEEK_SET) != 0)
+    {
+        printf("DoomCube: SEEK_SET(0) FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    if (fread(header, 1, sizeof(header), file) != sizeof(header))
+    {
+        printf("DoomCube: header fread FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    printf("DoomCube: identification = %.4s\n", header);
+
+    if (memcmp(header, "IWAD", 4) != 0
+     && memcmp(header, "PWAD", 4) != 0)
+    {
+        printf("DoomCube: invalid WAD identification\n");
+        fclose(file);
+        return;
+    }
+
+    numLumps = readLE32(header + 4);
+    directoryOffset = readLE32(header + 8);
+
+    printf("DoomCube: numlumps = %u\n", (unsigned int)numLumps);
     printf(
-        "DoomCube: mounted dvd:/\n"
+        "DoomCube: directory offset = 0x%08x\n",
+        (unsigned int)directoryOffset
     );
 
-    /*
-     * Leave it mounted for the lifetime of Doom.
-     * SDL_mixer will stream OGGs from dvd:/music/.
-     */
+    if (numLumps == 0)
+    {
+        printf("DoomCube: invalid zero-lump WAD\n");
+        fclose(file);
+        return;
+    }
+
+    if ((long)directoryOffset >= fileSize)
+    {
+        printf("DoomCube: directory offset outside file\n");
+        fclose(file);
+        return;
+    }
+
+    if (fseek(file, (long)directoryOffset, SEEK_SET) != 0)
+    {
+        printf("DoomCube: directory fseek FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    if (fread(entry, 1, sizeof(entry), file) != sizeof(entry))
+    {
+        printf("DoomCube: directory fread FAILED\n");
+        fclose(file);
+        return;
+    }
+
+    printf("DoomCube: first lump: %.8s\n", entry + 8);
+
+    printf(
+        "DoomCube: first lump offset = 0x%08x\n",
+        (unsigned int)readLE32(entry)
+    );
+
+    printf(
+        "DoomCube: first lump size = %u\n",
+        (unsigned int)readLE32(entry + 4)
+    );
+
+    {
+        uint32_t lastEntryOffset =
+            directoryOffset + ((numLumps - 1) * 16);
+
+        if (fseek(file, (long)lastEntryOffset, SEEK_SET) != 0)
+        {
+            printf("DoomCube: last-entry fseek FAILED\n");
+            fclose(file);
+            return;
+        }
+
+        if (fread(entry, 1, sizeof(entry), file) != sizeof(entry))
+        {
+            printf("DoomCube: last-entry fread FAILED\n");
+            fclose(file);
+            return;
+        }
+
+        printf("DoomCube: last lump: %.8s\n", entry + 8);
+
+        printf(
+            "DoomCube: last lump offset = 0x%08x\n",
+            (unsigned int)readLE32(entry)
+        );
+
+        printf(
+            "DoomCube: last lump size = %u\n",
+            (unsigned int)readLE32(entry + 4)
+        );
+    }
+
+    fclose(file);
+
+    printf("DoomCube: DVD WAD PROBE SUCCESS\n");
+    printf("DoomCube: -----------------------\n\n");
 }
 
 
@@ -273,83 +324,59 @@ void DG_Init(void)
 {
     PAD_Init();
 
-    if (SDL_Init(
-            SDL_INIT_VIDEO |
-            SDL_INIT_AUDIO) < 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
-        printf(
-            "SDL_Init failed: %s\n",
-            SDL_GetError()
-        );
-
+        printf("SDL_Init failed: %s\n", SDL_GetError());
         exit(1);
     }
 
-    window =
-        SDL_CreateWindow(
-            "DOOM",
-            SDL_WINDOWPOS_UNDEFINED,
-            SDL_WINDOWPOS_UNDEFINED,
-            DOOMGENERIC_RESX,
-            DOOMGENERIC_RESY,
-            SDL_WINDOW_SHOWN
-        );
+    window = SDL_CreateWindow(
+        "DOOM",
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
+        DOOMGENERIC_RESX,
+        DOOMGENERIC_RESY,
+        SDL_WINDOW_SHOWN
+    );
 
     if (!window)
     {
-        printf(
-            "SDL_CreateWindow failed: %s\n",
-            SDL_GetError()
-        );
-
+        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
         exit(1);
     }
 
-    renderer =
-        SDL_CreateRenderer(
-            window,
-            -1,
-            0
-        );
+    renderer = SDL_CreateRenderer(window, -1, 0);
 
     if (!renderer)
     {
-        printf(
-            "SDL_CreateRenderer failed: %s\n",
-            SDL_GetError()
-        );
-
+        printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
         exit(1);
     }
 
-    texture =
-        SDL_CreateTexture(
-            renderer,
-            SDL_PIXELFORMAT_RGB888,
-            SDL_TEXTUREACCESS_STREAMING,
-            DOOMGENERIC_RESX,
-            DOOMGENERIC_RESY
-        );
+    texture = SDL_CreateTexture(
+        renderer,
+        SDL_PIXELFORMAT_RGB888,
+        SDL_TEXTUREACCESS_STREAMING,
+        DOOMGENERIC_RESX,
+        DOOMGENERIC_RESY
+    );
 
     if (!texture)
     {
-        printf(
-            "SDL_CreateTexture failed: %s\n",
-            SDL_GetError()
-        );
-
+        printf("SDL_CreateTexture failed: %s\n", SDL_GetError());
         exit(1);
     }
 
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
-    /*
-     * SDL/video is alive first.
-     *
-     * Then mount the ISO filesystem and leave it mounted.
-     */
-    mountIsoFilesystem();
+    if (!mountIsoFilesystem())
+    {
+        printf("DoomCube: disc mount unavailable\n");
+        return;
+    }
+
+    probeDvdWad();
 }
 
 
@@ -359,19 +386,11 @@ void DG_DrawFrame(void)
         texture,
         NULL,
         DG_ScreenBuffer,
-        DOOMGENERIC_RESX *
-            sizeof(uint32_t)
+        DOOMGENERIC_RESX * sizeof(uint32_t)
     );
 
     SDL_RenderClear(renderer);
-
-    SDL_RenderCopy(
-        renderer,
-        texture,
-        NULL,
-        NULL
-    );
-
+    SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
 
     handleGameCubeInput();
@@ -390,42 +409,27 @@ uint32_t DG_GetTicksMs(void)
 }
 
 
-int DG_GetKey(
-    int *pressed,
-    unsigned char *doomKey)
+int DG_GetKey(int *pressed, unsigned char *doomKey)
 {
     unsigned short data;
 
     if (keyRead == keyWrite)
         return 0;
 
-    data =
-        keyQueue[keyRead];
+    data = keyQueue[keyRead];
+    keyRead = (keyRead + 1) % KEYQUEUE_SIZE;
 
-    keyRead =
-        (keyRead + 1) %
-        KEYQUEUE_SIZE;
-
-    *pressed =
-        data >> 8;
-
-    *doomKey =
-        data & 0xff;
+    *pressed = data >> 8;
+    *doomKey = data & 0xff;
 
     return 1;
 }
 
 
-void DG_SetWindowTitle(
-    const char *title)
+void DG_SetWindowTitle(const char *title)
 {
     if (window)
-    {
-        SDL_SetWindowTitle(
-            window,
-            title
-        );
-    }
+        SDL_SetWindowTitle(window, title);
 }
 
 
@@ -438,11 +442,6 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    /*
-     * Keep the IWAD embedded for now.
-     *
-     * We are changing ONLY the music source in this test.
-     */
     char *doomArgv[] =
     {
         "doomcube",
@@ -450,17 +449,17 @@ int main(int argc, char **argv)
         "doom1.wad"
     };
 
-    doomgeneric_Create(
-        3,
-        doomArgv
-    );
+    doomgeneric_Create(3, doomArgv);
+
+
+    key_prevweapon = GC_KEY_PREVWEAPON;
+    key_nextweapon = GC_KEY_NEXTWEAPON;
 
     while (SYS_MainLoop())
-    {
         doomgeneric_Tick();
-    }
 
-    ISO9660_Unmount("dvd");
+    if (dvdMounted)
+        ISO9660_Unmount("dvd");
 
     return 0;
 }
