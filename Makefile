@@ -1,6 +1,3 @@
-#---------------------------------------------------------------------------------
-# Clear implicit rules
-#---------------------------------------------------------------------------------
 .SUFFIXES:
 
 ifeq ($(strip $(DEVKITPPC)),)
@@ -9,26 +6,12 @@ endif
 
 include $(DEVKITPRO)/libogc2/gamecube_rules
 
-#---------------------------------------------------------------------------------
-# Project
-#---------------------------------------------------------------------------------
 TARGET      := doomcube
 BUILD       := build
 SOURCES     := . source
 INCLUDES    :=
 LIBDIRS     :=
 
-#---------------------------------------------------------------------------------
-# Build modes
-#
-# make
-#     Normal GameCube build.
-#     Uses original w_file_stdc.c.
-#
-# make test
-#     Dolphin build.
-#     Embeds data/doom1.wad and uses w_file_embedded.c.
-#---------------------------------------------------------------------------------
 EMBED_WAD ?= 0
 
 ifeq ($(EMBED_WAD),1)
@@ -38,31 +21,47 @@ else
 endif
 
 #---------------------------------------------------------------------------------
-# Compiler
+# Sound
 #---------------------------------------------------------------------------------
-CFLAGS      = -g -O2 -Wall $(MACHDEP) $(INCLUDE)
-CXXFLAGS    = $(CFLAGS)
 
-LDFLAGS     = -g $(MACHDEP) -Wl,-Map,$(notdir $@).map
+CFLAGS = \
+	-g \
+	-O2 \
+	-Wall \
+	-DFEATURE_SOUND \
+	$(MACHDEP) \
+	$(INCLUDE)
 
-#---------------------------------------------------------------------------------
-# Dolphin-only linker wrapper.
-#
-# Doom's D_FindWADByName() calls M_FileExists() before opening the WAD.
-# The embedded build intercepts that check without modifying Doom.
-#---------------------------------------------------------------------------------
+CXXFLAGS = $(CFLAGS)
+
+LDFLAGS = \
+	-g \
+	$(MACHDEP) \
+	-Wl,-Map,$(notdir $@).map
+
 ifeq ($(EMBED_WAD),1)
 	LDFLAGS += -Wl,--wrap=M_FileExists
 endif
 
 #---------------------------------------------------------------------------------
-# Libraries
+# SDL2 only.
+#
+# NO SDL2_mixer.
+#
+# SDL2's GameCube audio driver uses AESND underneath.
 #---------------------------------------------------------------------------------
-LIBS := -lSDL2 -lopengx -laesnd -logc -lm
+
+LIBS := \
+	-lSDL2 \
+	-lopengx \
+	-laesnd \
+	-logc \
+	-lm
 
 #---------------------------------------------------------------------------------
 # Outer build
 #---------------------------------------------------------------------------------
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
@@ -74,8 +73,9 @@ export VPATH := \
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 #---------------------------------------------------------------------------------
-# Upstream Doom sources + GameCube platform layer
+# Doom sources
 #---------------------------------------------------------------------------------
+
 CFILES := \
 	dummy.c \
 	am_map.c \
@@ -100,6 +100,7 @@ CFILES := \
 	i_joystick.c \
 	i_scale.c \
 	i_sound.c \
+	i_sound_gamecube.c \
 	i_system.c \
 	i_timer.c \
 	memio.c \
@@ -159,25 +160,31 @@ CFILES := \
 	doomgeneric_gamecube.c
 
 #---------------------------------------------------------------------------------
-# Select WAD backend.
-#
-# Upstream w_file_stdc.c remains untouched on disk.
+# WAD backend
 #---------------------------------------------------------------------------------
+
 ifeq ($(EMBED_WAD),1)
 	CFILES += w_file_embedded.c
 else
 	CFILES += w_file_stdc.c
 endif
 
-CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-sFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+CPPFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 
-BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+sFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+
+SFILES := \
+	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+
+BINFILES := \
+	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 #---------------------------------------------------------------------------------
-# Linker selection
+# Linker
 #---------------------------------------------------------------------------------
+
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
 else
@@ -187,7 +194,9 @@ endif
 #---------------------------------------------------------------------------------
 # Objects
 #---------------------------------------------------------------------------------
-export OFILES_BIN := $(addsuffix .o,$(BINFILES))
+
+export OFILES_BIN := \
+	$(addsuffix .o,$(BINFILES))
 
 export OFILES_SOURCES := \
 	$(CPPFILES:.cpp=.o) \
@@ -195,54 +204,76 @@ export OFILES_SOURCES := \
 	$(sFILES:.s=.o) \
 	$(SFILES:.S=.o)
 
-export OFILES := $(OFILES_BIN) $(OFILES_SOURCES)
+export OFILES := \
+	$(OFILES_BIN) \
+	$(OFILES_SOURCES)
 
-export HFILES := $(addsuffix .h,$(subst .,_,$(BINFILES)))
+export HFILES := \
+	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
 #---------------------------------------------------------------------------------
 # Includes
 #---------------------------------------------------------------------------------
+
 export INCLUDE := \
 	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
 	-I$(CURDIR)/$(BUILD) \
 	-I$(CURDIR)/source \
-	-I$(LIBOGC_INC) \
-	-I$(DEVKITPRO)/libogc2/gamecube/include
+	-I$(DEVKITPRO)/libogc2/gamecube/include \
+	-I$(DEVKITPRO)/libogc2/gamecube/include/SDL2 \
+	-I$(LIBOGC_INC)
 
 #---------------------------------------------------------------------------------
-# Library paths
+# Libraries
 #---------------------------------------------------------------------------------
+
 export LIBPATHS := \
+	-L$(DEVKITPRO)/libogc2/gamecube/lib \
 	-L$(LIBOGC_LIB) \
 	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 #---------------------------------------------------------------------------------
-.PHONY: $(BUILD) clean run test
+
+.PHONY: \
+	$(BUILD) \
+	clean \
+	run \
+	test
 
 #---------------------------------------------------------------------------------
+
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
-	@$(MAKE) --no-print-directory \
+
+	@$(MAKE) \
+		--no-print-directory \
 		-C $(BUILD) \
 		-f $(CURDIR)/Makefile \
 		EMBED_WAD=$(EMBED_WAD)
 
 #---------------------------------------------------------------------------------
+
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol
+	@rm -fr \
+		$(BUILD) \
+		$(OUTPUT).elf \
+		$(OUTPUT).dol
 
 #---------------------------------------------------------------------------------
+
 run:
 	wiiload $(TARGET).dol
 
 #---------------------------------------------------------------------------------
 # Dolphin development build
 #---------------------------------------------------------------------------------
+
 test:
 	$(MAKE) clean
 	$(MAKE) EMBED_WAD=1
+
 	/usr/bin/flatpak run \
 		--filesystem="$(CURDIR):ro" \
 		--branch=stable \
@@ -254,6 +285,7 @@ test:
 #---------------------------------------------------------------------------------
 # Inner build
 #---------------------------------------------------------------------------------
+
 else
 
 DEPENDS := $(OFILES:.o=.d)
@@ -265,11 +297,14 @@ $(OUTPUT).elf: $(OFILES)
 $(OFILES_SOURCES): $(HFILES)
 
 #---------------------------------------------------------------------------------
-# Embedded Dolphin WAD
+# Embedded WAD for Dolphin
 #---------------------------------------------------------------------------------
+
 %_wad.h %.wad.o : %.wad
 	@echo $(notdir $<)
 	@$(bin2o)
+
+#---------------------------------------------------------------------------------
 
 -include $(DEPENDS)
 

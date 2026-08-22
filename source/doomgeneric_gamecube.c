@@ -29,9 +29,11 @@ static int gcUp, gcDown, gcLeft, gcRight;
 static int gcFire, gcUse, gcRun, gcEnter, gcEscape, gcTab;
 static int gcStrafeLeft, gcStrafeRight;
 
+
 static void queueKey(int pressed, unsigned char key)
 {
-    unsigned int next = (keyWrite + 1) % KEYQUEUE_SIZE;
+    unsigned int next =
+        (keyWrite + 1) % KEYQUEUE_SIZE;
 
     if (next == keyRead)
         keyRead = (keyRead + 1) % KEYQUEUE_SIZE;
@@ -42,7 +44,11 @@ static void queueKey(int pressed, unsigned char key)
     keyWrite = next;
 }
 
-static void setKeyState(int wanted, int *state, unsigned char key)
+
+static void setKeyState(
+    int wanted,
+    int *state,
+    unsigned char key)
 {
     wanted = !!wanted;
 
@@ -50,18 +56,29 @@ static void setKeyState(int wanted, int *state, unsigned char key)
         return;
 
     *state = wanted;
-    queueKey(wanted, key);
+
+    queueKey(
+        wanted,
+        key
+    );
 }
+
 
 static void handleGameCubeInput(void)
 {
     PAD_ScanPads();
 
-    u16 held = PAD_ButtonsHeld(0);
+    u16 held =
+        PAD_ButtonsHeld(0);
 
-    s8 stickX = PAD_StickX(0);
-    s8 stickY = PAD_StickY(0);
-    s8 cstickX = PAD_SubStickX(0);
+    s8 stickX =
+        PAD_StickX(0);
+
+    s8 stickY =
+        PAD_StickY(0);
+
+    s8 cstickX =
+        PAD_SubStickX(0);
 
     int up =
         (held & PAD_BUTTON_UP) ||
@@ -85,30 +102,95 @@ static void handleGameCubeInput(void)
     int cRight =
         cstickX > CSTICK_DEADZONE;
 
-    setKeyState(up,    &gcUp,    KEY_UPARROW);
-    setKeyState(down,  &gcDown,  KEY_DOWNARROW);
-    setKeyState(left,  &gcLeft,  KEY_LEFTARROW);
-    setKeyState(right, &gcRight, KEY_RIGHTARROW);
+    setKeyState(
+        up,
+        &gcUp,
+        KEY_UPARROW
+    );
 
-    setKeyState(cLeft,  &gcStrafeLeft,  KEY_STRAFE_L);
-    setKeyState(cRight, &gcStrafeRight, KEY_STRAFE_R);
+    setKeyState(
+        down,
+        &gcDown,
+        KEY_DOWNARROW
+    );
 
-    setKeyState(held & PAD_TRIGGER_R,    &gcFire,   KEY_FIRE);
-    setKeyState(held & PAD_BUTTON_A,     &gcUse,    KEY_USE);
-    setKeyState(held & PAD_BUTTON_B,     &gcRun,    KEY_RSHIFT);
-    setKeyState(held & PAD_BUTTON_A,     &gcEnter,  KEY_ENTER);
-    setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
+    setKeyState(
+        left,
+        &gcLeft,
+        KEY_LEFTARROW
+    );
 
-    setKeyState(held & PAD_TRIGGER_Z, &gcTab,KEY_TAB);
+    setKeyState(
+        right,
+        &gcRight,
+        KEY_RIGHTARROW
+    );
+
+    setKeyState(
+        cLeft,
+        &gcStrafeLeft,
+        KEY_STRAFE_L
+    );
+
+    setKeyState(
+        cRight,
+        &gcStrafeRight,
+        KEY_STRAFE_R
+    );
+
+    setKeyState(
+        held & PAD_TRIGGER_R,
+        &gcFire,
+        KEY_FIRE
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcUse,
+        KEY_USE
+    );
+
+    setKeyState(
+        held & PAD_TRIGGER_L,
+        &gcRun,
+        KEY_RSHIFT
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcEnter,
+        KEY_ENTER
+    );
+
+    setKeyState(
+        held & PAD_BUTTON_START,
+        &gcEscape,
+        KEY_ESCAPE
+    );
+
+    setKeyState(
+        held & PAD_TRIGGER_Z,
+        &gcTab,
+        KEY_TAB
+    );
 }
+
 
 void DG_Init(void)
 {
     PAD_Init();
 
+    /*
+     * i_sound_gamecube.c initializes the SDL audio
+     * subsystem itself.
+     */
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        printf("SDL_Init failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_Init failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
@@ -123,15 +205,28 @@ void DG_Init(void)
 
     if (!window)
     {
-        printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateWindow failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
-    renderer = SDL_CreateRenderer(window, -1, 0);
+    renderer =
+        SDL_CreateRenderer(
+            window,
+            -1,
+            0
+        );
 
     if (!renderer)
     {
-        printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateRenderer failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
@@ -145,13 +240,18 @@ void DG_Init(void)
 
     if (!texture)
     {
-        printf("SDL_CreateTexture failed: %s\n", SDL_GetError());
+        printf(
+            "SDL_CreateTexture failed: %s\n",
+            SDL_GetError()
+        );
+
         exit(1);
     }
 
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 }
+
 
 void DG_DrawFrame(void)
 {
@@ -163,42 +263,65 @@ void DG_DrawFrame(void)
     );
 
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+
+    SDL_RenderCopy(
+        renderer,
+        texture,
+        NULL,
+        NULL
+    );
+
     SDL_RenderPresent(renderer);
 
     handleGameCubeInput();
 }
+
 
 void DG_SleepMs(uint32_t ms)
 {
     SDL_Delay(ms);
 }
 
+
 uint32_t DG_GetTicksMs(void)
 {
     return SDL_GetTicks();
 }
 
-int DG_GetKey(int *pressed, unsigned char *doomKey)
+
+int DG_GetKey(
+    int *pressed,
+    unsigned char *doomKey)
 {
     if (keyRead == keyWrite)
         return 0;
 
-    unsigned short data = keyQueue[keyRead];
+    unsigned short data =
+        keyQueue[keyRead];
 
-    keyRead = (keyRead + 1) % KEYQUEUE_SIZE;
+    keyRead =
+        (keyRead + 1) % KEYQUEUE_SIZE;
 
-    *pressed = data >> 8;
-    *doomKey = data & 0xff;
+    *pressed =
+        data >> 8;
+
+    *doomKey =
+        data & 0xff;
 
     return 1;
 }
 
-void DG_SetWindowTitle(const char *title)
+
+void DG_SetWindowTitle(
+    const char *title)
 {
     if (window)
-        SDL_SetWindowTitle(window, title);
+        SDL_SetWindowTitle(
+            window,
+            title
+        );
 }
+
 
 int main(int argc, char **argv)
 {
@@ -209,10 +332,19 @@ int main(int argc, char **argv)
     {
         "doomcube",
         "-iwad",
-        "doom1.wad"
+        "doom1.wad",
+
+        /*
+         * SFX on.
+         * Music disabled for now.
+         */
+        "-nomusic"
     };
 
-    doomgeneric_Create(3, doomArgv);
+    doomgeneric_Create(
+        4,
+        doomArgv
+    );
 
     while (SYS_MainLoop())
         doomgeneric_Tick();
