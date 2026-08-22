@@ -55,6 +55,8 @@ static int gcStrafeRight;
 static int gcPrevWeapon;
 static int gcNextWeapon;
 
+static int gcRumbleFrames;
+
 static bool dvdMounted;
 
 /* ------------------------------------------------------------------------- */
@@ -124,18 +126,6 @@ static void handleGameCubeInput(void)
     int fire =
         triggerR > TRIGGER_THRESHOLD;
 
-    /*
-     * Only update the motor when the fire state changes.
-     *
-     * gcFire still contains the previous frame's state here because
-     * setKeyState() has not been called yet.
-     */
-    if (fire != gcFire)
-    {
-        PAD_ControlMotor(
-            PAD_CHAN0,
-            fire ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
-    }
 
     setKeyState(
         up,
@@ -203,6 +193,14 @@ static void handleGameCubeInput(void)
         KEY_ESCAPE);
 
     setKeyState(held & PAD_TRIGGER_Z, &gcTab, KEY_TAB);
+
+    if (gcRumbleFrames > 0)
+   {
+       gcRumbleFrames--;
+
+       if (gcRumbleFrames == 0)
+           PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_STOP);
+   }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -365,6 +363,15 @@ void DG_SetWindowTitle(const char *title)
             window,
             title);
     }
+}
+
+void DG_Rumble(int frames)
+{
+   PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
+    if (frames <= 0)
+        return;
+   PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
+    gcRumbleFrames = frames;
 }
 
 /* ------------------------------------------------------------------------- */

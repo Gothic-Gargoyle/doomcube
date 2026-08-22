@@ -19,6 +19,7 @@
 
 
 #include "doomdef.h"
+#include "doomgeneric.h"
 #include "d_event.h"
 
 #include "deh_misc.h"
@@ -658,7 +659,7 @@ A_FirePistol
   pspdef_t*	psp ) 
 {
     S_StartSound (player->mo, sfx_pistol);
-
+    DG_Rumble(4);
     P_SetMobjState (player->mo, S_PLAY_ATK2);
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 1);
 
