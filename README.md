@@ -44,19 +44,27 @@ Soundtrack files are not distributed with DoomCube.
 # Controls
 Default:
 * Forward = Left analog stick up
+* Backpedal = Left analog stick down
+* Turn Left = C stick left
+* Turn Right = c stick right
 * Strafe Left = Left analog stick left
 * Strafe Right = Left analog stick right
-* backpedal = Left analog stick down
+
 * Run = Left trigger
 * Fire = Right trigger
 * Use = A button
-* Turn Left = C stick
+* Next weapon = X
+* Previous Weapon = Y
+
+* Map = Z
+
+
 
 # Features
 ## Must have
 * genericdoom running on gamecube
 * sound effects 
-* and music
+* !music
 
 ## Should have
 * rumble when firing
@@ -65,6 +73,8 @@ Default:
 
 ## Could have
 * Gameboy cable support for displaying map on gameboy
+* Local 4 screen MP
+* Online MP
 
 ## Wont have
 
