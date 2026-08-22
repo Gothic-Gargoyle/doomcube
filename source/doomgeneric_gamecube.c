@@ -19,13 +19,13 @@
 #include <iso9660.h>
 #include <ogc/dvd.h>
 
-#define KEYQUEUE_SIZE      64
-#define STICK_DEADZONE     24
-#define CSTICK_DEADZONE    24
-#define TRIGGER_THRESHOLD  40
+#define KEYQUEUE_SIZE 64
+#define STICK_DEADZONE 24
+#define CSTICK_DEADZONE 24
+#define TRIGGER_THRESHOLD 40
 
-#define GC_KEY_PREVWEAPON  0xa4
-#define GC_KEY_NEXTWEAPON  0xa5
+#define GC_KEY_PREVWEAPON 0xa4
+#define GC_KEY_NEXTWEAPON 0xa5
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -57,7 +57,6 @@ static int gcNextWeapon;
 
 static bool dvdMounted;
 
-
 /* ------------------------------------------------------------------------- */
 /* Key queue                                                                 */
 /* ------------------------------------------------------------------------- */
@@ -84,7 +83,6 @@ static void setKeyState(int wanted, int *state, unsigned char key)
     queueKey(wanted, key);
 }
 
-
 /* ------------------------------------------------------------------------- */
 /* GameCube controller                                                       */
 /* ------------------------------------------------------------------------- */
@@ -101,35 +99,111 @@ static void handleGameCubeInput(void)
 
     u8 triggerR = PAD_TriggerR(0);
 
-    int up = (held & PAD_BUTTON_UP) || stickY > STICK_DEADZONE;
-    int down = (held & PAD_BUTTON_DOWN) || stickY < -STICK_DEADZONE;
-    int left = (held & PAD_BUTTON_LEFT) || stickX < -STICK_DEADZONE;
-    int right = (held & PAD_BUTTON_RIGHT) || stickX > STICK_DEADZONE;
+    int up =
+        (held & PAD_BUTTON_UP) ||
+        stickY > STICK_DEADZONE;
 
-    int cLeft = cstickX < -CSTICK_DEADZONE;
-    int cRight = cstickX > CSTICK_DEADZONE;
+    int down =
+        (held & PAD_BUTTON_DOWN) ||
+        stickY < -STICK_DEADZONE;
 
-    setKeyState(up, &gcUp, KEY_UPARROW);
-    setKeyState(down, &gcDown, KEY_DOWNARROW);
-    setKeyState(left, &gcLeft, KEY_LEFTARROW);
-    setKeyState(right, &gcRight, KEY_RIGHTARROW);
+    int left =
+        (held & PAD_BUTTON_LEFT) ||
+        stickX < -STICK_DEADZONE;
 
-    setKeyState(cLeft, &gcStrafeLeft, KEY_STRAFE_L);
-    setKeyState(cRight, &gcStrafeRight, KEY_STRAFE_R);
+    int right =
+        (held & PAD_BUTTON_RIGHT) ||
+        stickX > STICK_DEADZONE;
 
-    setKeyState(triggerR > TRIGGER_THRESHOLD, &gcFire, KEY_FIRE);
+    int cLeft =
+        cstickX < -CSTICK_DEADZONE;
 
-    setKeyState(held & PAD_BUTTON_X, &gcNextWeapon, key_nextweapon);
-    setKeyState(held & PAD_BUTTON_Y, &gcPrevWeapon, key_prevweapon);
+    int cRight =
+        cstickX > CSTICK_DEADZONE;
 
-    setKeyState(held & PAD_BUTTON_A, &gcUse, KEY_USE);
-    setKeyState(held & PAD_TRIGGER_L, &gcRun, KEY_RSHIFT);
+    int fire =
+        triggerR > TRIGGER_THRESHOLD;
 
-    setKeyState(held & PAD_BUTTON_A, &gcEnter, KEY_ENTER);
-    setKeyState(held & PAD_BUTTON_START, &gcEscape, KEY_ESCAPE);
+    /*
+     * Only update the motor when the fire state changes.
+     *
+     * gcFire still contains the previous frame's state here because
+     * setKeyState() has not been called yet.
+     */
+    if (fire != gcFire)
+    {
+        PAD_ControlMotor(
+            PAD_CHAN0,
+            fire ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+    }
+
+    setKeyState(
+        up,
+        &gcUp,
+        KEY_UPARROW);
+
+    setKeyState(
+        down,
+        &gcDown,
+        KEY_DOWNARROW);
+
+    setKeyState(
+        left,
+        &gcLeft,
+        KEY_LEFTARROW);
+
+    setKeyState(
+        right,
+        &gcRight,
+        KEY_RIGHTARROW);
+
+    setKeyState(
+        cLeft,
+        &gcStrafeLeft,
+        KEY_STRAFE_L);
+
+    setKeyState(
+        cRight,
+        &gcStrafeRight,
+        KEY_STRAFE_R);
+
+    setKeyState(
+        fire,
+        &gcFire,
+        KEY_FIRE);
+
+    setKeyState(
+        held & PAD_BUTTON_X,
+        &gcNextWeapon,
+        key_nextweapon);
+
+    setKeyState(
+        held & PAD_BUTTON_Y,
+        &gcPrevWeapon,
+        key_prevweapon);
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcUse,
+        KEY_USE);
+
+    setKeyState(
+        held & PAD_TRIGGER_L,
+        &gcRun,
+        KEY_RSHIFT);
+
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcEnter,
+        KEY_ENTER);
+
+    setKeyState(
+        held & PAD_BUTTON_START,
+        &gcEscape,
+        KEY_ESCAPE);
+
     setKeyState(held & PAD_TRIGGER_Z, &gcTab, KEY_TAB);
 }
-
 
 /* ------------------------------------------------------------------------- */
 /* ISO9660                                                                   */
@@ -152,7 +226,6 @@ static bool mountIsoFilesystem(void)
     return true;
 }
 
-
 /* ------------------------------------------------------------------------- */
 /* DoomGeneric                                                               */
 /* ------------------------------------------------------------------------- */
@@ -165,8 +238,7 @@ void DG_Init(void)
     {
         printf(
             "SDL_Init failed: %s\n",
-            SDL_GetError()
-        );
+            SDL_GetError());
 
         exit(1);
     }
@@ -177,15 +249,13 @@ void DG_Init(void)
         SDL_WINDOWPOS_UNDEFINED,
         DOOMGENERIC_RESX,
         DOOMGENERIC_RESY,
-        SDL_WINDOW_SHOWN
-    );
+        SDL_WINDOW_SHOWN);
 
     if (!window)
     {
         printf(
             "SDL_CreateWindow failed: %s\n",
-            SDL_GetError()
-        );
+            SDL_GetError());
 
         exit(1);
     }
@@ -193,15 +263,13 @@ void DG_Init(void)
     renderer = SDL_CreateRenderer(
         window,
         -1,
-        0
-    );
+        0);
 
     if (!renderer)
     {
         printf(
             "SDL_CreateRenderer failed: %s\n",
-            SDL_GetError()
-        );
+            SDL_GetError());
 
         exit(1);
     }
@@ -211,15 +279,13 @@ void DG_Init(void)
         SDL_PIXELFORMAT_RGB888,
         SDL_TEXTUREACCESS_STREAMING,
         DOOMGENERIC_RESX,
-        DOOMGENERIC_RESY
-    );
+        DOOMGENERIC_RESY);
 
     if (!texture)
     {
         printf(
             "SDL_CreateTexture failed: %s\n",
-            SDL_GetError()
-        );
+            SDL_GetError());
 
         exit(1);
     }
@@ -230,29 +296,17 @@ void DG_Init(void)
     if (!mountIsoFilesystem())
     {
         printf(
-            "DoomCube: disc mount unavailable\n"
-        );
+            "DoomCube: disc mount unavailable\n");
 
         exit(1);
     }
 
-    /*
-     * Memory Card persistence test.
-     *
-     * Each boot should:
-     *   - read the previous counter
-     *   - increment it
-     *   - write it back
-     *   - read it again to verify
-     */
     if (!GC_MemoryCardInit())
     {
         SYS_Report(
-            "DoomCube: Memory Card unavailable; continuing without saves\n"
-        );
+            "DoomCube: Memory Card unavailable; continuing without saves\n");
     }
 }
-
 
 void DG_DrawFrame(void)
 {
@@ -260,8 +314,7 @@ void DG_DrawFrame(void)
         texture,
         NULL,
         DG_ScreenBuffer,
-        DOOMGENERIC_RESX * sizeof(uint32_t)
-    );
+        DOOMGENERIC_RESX * sizeof(uint32_t));
 
     SDL_RenderClear(renderer);
 
@@ -269,26 +322,22 @@ void DG_DrawFrame(void)
         renderer,
         texture,
         NULL,
-        NULL
-    );
+        NULL);
 
     SDL_RenderPresent(renderer);
 
     handleGameCubeInput();
 }
 
-
 void DG_SleepMs(uint32_t ms)
 {
     SDL_Delay(ms);
 }
 
-
 uint32_t DG_GetTicksMs(void)
 {
     return SDL_GetTicks();
 }
-
 
 int DG_GetKey(int *pressed, unsigned char *doomKey)
 {
@@ -308,18 +357,15 @@ int DG_GetKey(int *pressed, unsigned char *doomKey)
     return 1;
 }
 
-
 void DG_SetWindowTitle(const char *title)
 {
     if (window)
     {
         SDL_SetWindowTitle(
             window,
-            title
-        );
+            title);
     }
 }
-
 
 /* ------------------------------------------------------------------------- */
 /* Main                                                                      */
@@ -331,16 +377,14 @@ int main(int argc, char **argv)
     (void)argv;
 
     char *doomArgv[] =
-    {
-        "doomcube",
-        "-iwad",
-        "dvd:/doom1.wad"
-    };
+        {
+            "doomcube",
+            "-iwad",
+            "dvd:/doom1.wad"};
 
     doomgeneric_Create(
         3,
-        doomArgv
-    );
+        doomArgv);
 
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
@@ -350,13 +394,19 @@ int main(int argc, char **argv)
         doomgeneric_Tick();
     }
 
+    /*
+     * Explicitly stop the controller motor when leaving the main loop.
+     */
+    PAD_ControlMotor(
+        PAD_CHAN0,
+        PAD_MOTOR_STOP);
+
     GC_MemoryCardShutdown();
 
     if (dvdMounted)
     {
         ISO9660_Unmount(
-            "dvd"
-        );
+            "dvd");
     }
 
     return 0;
