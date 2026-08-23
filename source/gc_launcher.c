@@ -8,6 +8,8 @@
 #define GC_LAUNCHER_WIDTH       640
 #define GC_LAUNCHER_DEADZONE    24
 
+#include "gc_memcard.h"
+
 #include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -29,15 +31,16 @@ typedef struct
     const char *name;
     const char *iwadPath;
     bool available;
+    gc_savegame_id_t saveGameId;
 } gc_game_entry_t;
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
-    { "DOOM SHAREWARE", "dvd:/doom1.wad",    false },
-    { "DOOM",           "dvd:/doom.wad",     false },
-    { "DOOM II",        "dvd:/doom2.wad",    false },
-    { "TNT: EVILUTION", "dvd:/tnt.wad",      false },
-    { "PLUTONIA",       "dvd:/plutonia.wad", false }
+    { "DOOM SHAREWARE", "dvd:/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
+    { "DOOM",           "dvd:/doom.wad",     false, GC_SAVEGAME_DOOM },
+    { "DOOM II",        "dvd:/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
+    { "TNT: EVILUTION", "dvd:/tnt.wad",      false, GC_SAVEGAME_TNT },
+    { "PLUTONIA",       "dvd:/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
 };
 
 static int gcAvailableGameCount;
@@ -283,7 +286,7 @@ static int GC_LauncherRun(SDL_Renderer *renderer)
     GC_DrawLauncher(renderer, selected);
 
 /*
- * Filthy hack: Flush stale controller transition state after PAD initialization.
+ * Flush stale controller transition state before entering the launcher.
  */
 for (int i = 0; i < 3; ++i)
 {
@@ -339,6 +342,7 @@ for (int i = 0; i < 3; ++i)
 
         if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
         {
+            GC_MemoryCardSetGame(gcGames[selected].saveGameId);
             SYS_Report(
                 "DoomCube: launcher selected %s\n",
                 gcGames[selected].name);

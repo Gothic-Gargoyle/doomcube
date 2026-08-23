@@ -431,8 +431,17 @@ static bool mountIsoFilesystem(void)
 
 static bool GC_PlatformInit(void)
 {
-    if (platformInitialized)
-        return true;
+   SYS_Report(
+       "DoomCube: GC_PlatformInit entered, platformInitialized=%d\n",
+       platformInitialized);
+
+   if (platformInitialized)
+   {
+       SYS_Report(
+           "DoomCube: platform already initialized; skipping init\n");
+
+       return true;
+   }
 
     PAD_Init();
 
@@ -503,15 +512,18 @@ static bool GC_PlatformInit(void)
         return false;
     }
 
-    if (!GC_MemoryCardInit())
-    {
-        SYS_Report(
-            "DoomCube: Memory Card unavailable; continuing without saves\n");
-    }
+   if (!GC_MemoryCardInit())
+{
+    SYS_Report(
+        "DoomCube: Memory Card unavailable; continuing without saves\n");
+}
+platformInitialized = true;
 
-    platformInitialized = true;
+SYS_Report(
+    "DoomCube: platformInitialized set to %d\n",
+    platformInitialized);
 
-    return true;
+return true;
 }
 
 
@@ -691,7 +703,7 @@ int main(int argc, char **argv)
     {
         return 1;
     }
-
+ 
     char *doomArgv[] =
     {
         "doomcube",
@@ -702,6 +714,10 @@ int main(int argc, char **argv)
     SYS_Report(
         "DoomCube: starting Doom engine with %s\n",
         selectedIwad);
+
+        SYS_Report(
+        "DoomCube: before Doom start platformInitialized=%d\n",
+        platformInitialized);
 
     doomgeneric_Create(
         3,
