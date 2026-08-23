@@ -26,6 +26,10 @@
 
 #define GC_KEY_PREVWEAPON 0xa4
 #define GC_KEY_NEXTWEAPON 0xa5
+#define GC_KEY_MENU_ENTER 0xa6
+#define GC_KEY_MENU_BACK 0xa7
+#define GC_KEY_MENU_CONFIRM 0xa8
+#define GC_KEY_MENU_ABORT 0xa9
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -46,8 +50,11 @@ static int gcUse;
 static int gcRun;
 
 static int gcEnter;
+static int gcBack;
 static int gcEscape;
 static int gcTab;
+static int gcConfirm;
+static int gcAbort;
 
 static int gcStrafeLeft;
 static int gcStrafeRight;
@@ -172,20 +179,38 @@ static void handleGameCubeInput(void)
         &gcPrevWeapon,
         key_prevweapon);
 
-    setKeyState(
-        held & PAD_BUTTON_A,
-        &gcUse,
-        KEY_USE);
 
     setKeyState(
         held & PAD_TRIGGER_L,
         &gcRun,
         KEY_RSHIFT);
 
+ /* Various things the a button does*/
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcUse,
+        KEY_USE);
+    
+    setKeyState(
+        held & PAD_BUTTON_A,
+        &gcConfirm,
+        GC_KEY_MENU_CONFIRM);
+
     setKeyState(
         held & PAD_BUTTON_A,
         &gcEnter,
-        KEY_ENTER);
+        GC_KEY_MENU_ENTER);
+
+ /* Various things the b button does*/
+    setKeyState(
+        held & PAD_BUTTON_B,
+        &gcBack,
+        GC_KEY_MENU_BACK);
+    
+    setKeyState(
+        held & PAD_BUTTON_B,
+        &gcAbort,
+        GC_KEY_MENU_ABORT);
 
     setKeyState(
         held & PAD_BUTTON_START,
@@ -418,6 +443,12 @@ int main(int argc, char **argv)
 
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
+    key_menu_forward = GC_KEY_MENU_ENTER;
+    key_menu_back = GC_KEY_MENU_BACK;
+    key_menu_confirm = GC_KEY_MENU_CONFIRM;
+    key_menu_abort = GC_KEY_MENU_ABORT;
+    key_message_refresh = 0;
+
 
     while (SYS_MainLoop())
     {
