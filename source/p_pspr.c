@@ -510,9 +510,11 @@ A_Saw
 
     if (!linetarget)
     {
+    DG_Rumble(4);
 	S_StartSound (player->mo, sfx_sawful);
 	return;
     }
+    DG_Rumble(6);
     S_StartSound (player->mo, sfx_sawhit);
 	
     // turn to face target
@@ -562,8 +564,10 @@ A_FireMissile
 ( player_t*	player,
   pspdef_t*	psp ) 
 {
+    
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 1);
     P_SpawnPlayerMissile (player->mo, MT_ROCKET);
+    DG_Rumble(12);
 }
 
 
@@ -575,9 +579,11 @@ A_FireBFG
 ( player_t*	player,
   pspdef_t*	psp ) 
 {
+
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 
                  deh_bfg_cells_per_shot);
     P_SpawnPlayerMissile (player->mo, MT_BFG);
+    DG_Rumble(12);
 }
 
 
@@ -684,6 +690,7 @@ A_FireShotgun
     int		i;
 	
     S_StartSound (player->mo, sfx_shotgn);
+    DG_Rumble(7);
     P_SetMobjState (player->mo, S_PLAY_ATK2);
 
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 1);
@@ -710,10 +717,9 @@ A_FireShotgun2
 {
     int		i;
     angle_t	angle;
-    int		damage;
-		
-	
+    int		damage;	
     S_StartSound (player->mo, sfx_dshtgn);
+    DG_Rumble(10);
     P_SetMobjState (player->mo, S_PLAY_ATK2);
 
     DecreaseAmmo(player, weaponinfo[player->readyweapon].ammo, 2);
@@ -746,7 +752,7 @@ A_FireCGun
   pspdef_t*	psp ) 
 {
     S_StartSound (player->mo, sfx_pistol);
-
+    DG_Rumble(7);
     if (!player->ammo[weaponinfo[player->readyweapon].ammo])
 	return;
 		
@@ -816,11 +822,10 @@ void A_BFGSpray (mobj_t* mo)
 	damage = 0;
 	for (j=0;j<15;j++)
 	    damage += (P_Random()&7) + 1;
-
+    
 	P_DamageMobj (linetarget, mo->target,mo->target, damage);
     }
 }
-
 
 //
 // A_BFGsound
@@ -830,10 +835,9 @@ A_BFGsound
 ( player_t*	player,
   pspdef_t*	psp )
 {
+    DG_Rumble(5);
     S_StartSound (player->mo, sfx_bfg);
 }
-
-
 
 //
 // P_SetupPsprites
@@ -851,9 +855,6 @@ void P_SetupPsprites (player_t* player)
     player->pendingweapon = player->readyweapon;
     P_BringUpWeapon (player);
 }
-
-
-
 
 //
 // P_MovePsprites

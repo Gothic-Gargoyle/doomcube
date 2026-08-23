@@ -376,6 +376,27 @@ void DG_Rumble(int frames)
     PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
 }
 
+// For BFG
+void DG_RumbleDamage(int damage)
+{
+    int frames;
+
+    if (damage >= 100)
+        frames = 12;
+    else if (damage >= 50)
+        frames = 9;
+    else if (damage >= 25)
+        frames = 6;
+    else if (damage >= 10)
+        frames = 4;
+    else if (damage > 0)
+        frames = 2;
+    else
+        return;
+
+    DG_Rumble(frames);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Main                                                                      */
 /* ------------------------------------------------------------------------- */
