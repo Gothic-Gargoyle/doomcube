@@ -693,7 +693,8 @@ void R_ExecuteSetViewSize (void)
     centerx = viewwidth/2;
     centerxfrac = centerx<<FRACBITS;
     centeryfrac = centery<<FRACBITS;
-    projection = centerxfrac;
+    
+    projection = FixedMul(centerxfrac, (3 * FRACUNIT) / 4);
 
     if (!detailshift)
     {
