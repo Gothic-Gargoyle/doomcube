@@ -17,7 +17,7 @@
 //    Configuration file interface.
 //
 
-
+#include "gc_config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1839,14 +1839,249 @@ void M_SetConfigFilenames(char *main_config, char *extra_config)
     default_extra_config = extra_config;
 }
 
+#if !ORIGCODE
+
+#define GC_CONFIG_BUFFER_SIZE 8192
+
+static size_t GC_AppendConfigCollection(
+    default_collection_t *collection,
+    char *buffer,
+    size_t bufferSize,
+    size_t position)
+{
+    default_t *defaults;
+    int i;
+
+    defaults = collection->defaults;
+
+    for (i = 0; i < collection->numdefaults; ++i)
+    {
+        int written;
+        int value;
+
+        if (!defaults[i].bound)
+            continue;
+
+        if (position >= bufferSize)
+            return bufferSize;
+
+        written = snprintf(
+            buffer + position,
+            bufferSize - position,
+            "%s ",
+            defaults[i].name);
+
+        if (written < 0 ||
+            (size_t)written >= bufferSize - position)
+        {
+            return bufferSize;
+        }
+
+        position += (size_t)written;
+
+        switch (defaults[i].type)
+        {
+            case DEFAULT_KEY:
+                value =
+                    *(int *)defaults[i].location;
+
+                if (value == KEY_RSHIFT)
+                {
+                    value = 54;
+                }
+                else if (defaults[i].untranslated &&
+                         value == defaults[i].original_translated)
+                {
+                    value =
+                        defaults[i].untranslated;
+                }
+                else
+                {
+                    int s;
+
+                    for (s = 0; s < 128; ++s)
+                    {
+                        if (scantokey[s] == value)
+                        {
+                            value = s;
+                            break;
+                        }
+                    }
+                }
+
+                written = snprintf(
+                    buffer + position,
+                    bufferSize - position,
+                    "%i\n",
+                    value);
+                break;
+
+            case DEFAULT_INT:
+                written = snprintf(
+                    buffer + position,
+                    bufferSize - position,
+                    "%i\n",
+                    *(int *)defaults[i].location);
+                break;
+
+            case DEFAULT_INT_HEX:
+                written = snprintf(
+                    buffer + position,
+                    bufferSize - position,
+                    "0x%x\n",
+                    *(int *)defaults[i].location);
+                break;
+
+            case DEFAULT_FLOAT:
+                written = snprintf(
+                    buffer + position,
+                    bufferSize - position,
+                    "%f\n",
+                    *(float *)defaults[i].location);
+                break;
+
+            case DEFAULT_STRING:
+                written = snprintf(
+                    buffer + position,
+                    bufferSize - position,
+                    "\"%s\"\n",
+                    *(char **)defaults[i].location);
+                break;
+
+            default:
+                written = 0;
+                break;
+        }
+
+        if (written < 0 ||
+            (size_t)written >= bufferSize - position)
+        {
+            return bufferSize;
+        }
+
+        position += (size_t)written;
+    }
+
+    return position;
+}
+
+
+static void GC_ParseConfigBuffer(
+    char *buffer,
+    size_t size)
+{
+    char *line;
+
+    buffer[size] = '\0';
+    line = buffer;
+
+    while (*line != '\0')
+    {
+        char *next;
+        char *space;
+        char *name;
+        char *value;
+        default_t *def;
+
+        next = strchr(line, '\n');
+
+        if (next != NULL)
+        {
+            *next = '\0';
+            ++next;
+        }
+
+        space = strchr(line, ' ');
+
+        if (space != NULL)
+        {
+            *space = '\0';
+
+            name = line;
+            value = space + 1;
+
+            while (*value == ' ')
+                ++value;
+
+            if (strlen(value) >= 2 &&
+                value[0] == '"' &&
+                value[strlen(value) - 1] == '"')
+            {
+                value[strlen(value) - 1] = '\0';
+                ++value;
+            }
+
+            def = SearchCollection(
+                &doom_defaults,
+                name);
+
+            if (def == NULL)
+            {
+                def = SearchCollection(
+                    &extra_defaults,
+                    name);
+            }
+
+            if (def != NULL &&
+                def->bound)
+            {
+                SetVariable(
+                    def,
+                    value);
+            }
+        }
+
+        if (next == NULL)
+            break;
+
+        line = next;
+    }
+}
+
+#endif
+
 //
 // M_SaveDefaults
 //
 
-void M_SaveDefaults (void)
+void M_SaveDefaults(void)
 {
+#if ORIGCODE
     SaveDefaultCollection(&doom_defaults);
     SaveDefaultCollection(&extra_defaults);
+#else
+    char *buffer;
+    size_t size;
+
+    buffer = malloc(
+        GC_CONFIG_BUFFER_SIZE);
+
+    if (!buffer)
+        return;
+
+    size = 0;
+
+    size = GC_AppendConfigCollection(
+        &doom_defaults,
+        buffer,
+        GC_CONFIG_BUFFER_SIZE,
+        size);
+
+    size = GC_AppendConfigCollection(
+        &extra_defaults,
+        buffer,
+        GC_CONFIG_BUFFER_SIZE,
+        size);
+
+    if (size < GC_CONFIG_BUFFER_SIZE)
+    {
+        GC_ConfigSave(
+            buffer,
+            size);
+    }
+
+    free(buffer);
+#endif
 }
 
 //
@@ -1928,8 +2163,34 @@ void M_LoadDefaults (void)
             = M_StringJoin(configdir, default_extra_config, NULL);
     }
 
+    #if ORIGCODE
     LoadDefaultCollection(&doom_defaults);
     LoadDefaultCollection(&extra_defaults);
+#else
+    {
+        char *buffer;
+        size_t size = 0;
+
+        buffer = malloc(
+            GC_CONFIG_BUFFER_SIZE);
+
+        if (buffer != NULL)
+        {
+            if (GC_ConfigLoad(
+                    buffer,
+                    GC_CONFIG_BUFFER_SIZE - 1,
+                    &size))
+            {
+                GC_ParseConfigBuffer(
+                    buffer,
+                    size);
+            }
+
+            free(buffer);
+        }
+    }
+#endif
+
 }
 
 // Get a configuration file variable by its name
