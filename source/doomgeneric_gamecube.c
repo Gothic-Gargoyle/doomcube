@@ -367,11 +367,13 @@ void DG_SetWindowTitle(const char *title)
 
 void DG_Rumble(int frames)
 {
-   PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
     if (frames <= 0)
         return;
-   PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
-    gcRumbleFrames = frames;
+
+    if (frames > gcRumbleFrames)
+        gcRumbleFrames = frames;
+
+    PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
 }
 
 /* ------------------------------------------------------------------------- */
