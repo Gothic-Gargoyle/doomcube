@@ -3,6 +3,10 @@
 /* ------------------------------------------------------------------------- */
 
 #include "gc_launcher.h"
+#define GC_LAUNCHER_FONT_SCALE  3
+#define GC_LAUNCHER_LINE_HEIGHT 32
+#define GC_LAUNCHER_WIDTH       640
+#define GC_LAUNCHER_DEADZONE    24
 
 #include <ctype.h>
 #include <stddef.h>
@@ -17,6 +21,15 @@
 #define GC_LAUNCHER_LINE_HEIGHT 32
 #define GC_LAUNCHER_WIDTH       640
 #define GC_LAUNCHER_DEADZONE    24
+
+#define GC_MAX_GAMES 5
+
+typedef struct
+{
+    const char *name;
+    const char *iwadPath;
+    bool available;
+} gc_game_entry_t;
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
@@ -35,7 +48,7 @@ static bool GC_FileExists(const char *path)
     return stat(path, &info) == 0;
 }
 
-int GC_LauncherScanGames(void)
+static int GC_LauncherScanGames(void)
 {
     int i;
 
@@ -116,11 +129,7 @@ static const uint8_t *GC_FontGlyph(char c)
 }
 
 static void GC_DrawChar(
-    SDL_Renderer *renderer,
-    int x,
-    int y,
-    char c,
-    int scale)
+    SDL_Renderer *renderer, int x, int y, char c, int scale)
 {
     const uint8_t *glyph = GC_FontGlyph(c);
     SDL_Rect pixel = { 0, 0, scale, scale };
@@ -142,12 +151,8 @@ static void GC_DrawChar(
     }
 }
 
-static void GC_DrawText(
-    SDL_Renderer *renderer,
-    int x,
-    int y,
-    const char *text,
-    int scale)
+static void GC_DrawText(SDL_Renderer *renderer, int x, int y,
+    const char *text, int scale)
 {
     size_t i;
     size_t length;
@@ -265,7 +270,7 @@ static void GC_DrawLauncher(SDL_Renderer *renderer, int selected)
     SDL_RenderPresent(renderer);
 }
 
-int GC_LauncherRun(SDL_Renderer *renderer)
+static int GC_LauncherRun(SDL_Renderer *renderer)
 {
     int selected;
     int stickHeld = 0;
@@ -334,10 +339,54 @@ int GC_LauncherRun(SDL_Renderer *renderer)
     return -1;
 }
 
-const gc_game_entry_t *GC_LauncherGetGame(int index)
+static const gc_game_entry_t *GC_LauncherGetGame(int index)
 {
     if (index < 0 || index >= GC_MAX_GAMES)
         return NULL;
 
     return &gcGames[index];
+}
+
+const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
+{
+    int availableGames;
+    int selectedGame;
+    const gc_game_entry_t *game;
+
+    availableGames =
+        GC_LauncherScanGames();
+
+    if (availableGames == 0)
+    {
+        SYS_Report(
+            "DoomCube: no supported IWADs found on disc\n");
+
+        return NULL;
+    }
+
+    selectedGame =
+        GC_LauncherRun(renderer);
+
+    if (selectedGame < 0)
+    {
+        return NULL;
+    }
+
+    game =
+        GC_LauncherGetGame(selectedGame);
+
+    if (!game)
+    {
+        SYS_Report(
+            "DoomCube: invalid launcher selection\n");
+
+        return NULL;
+    }
+
+    SYS_Report(
+        "DoomCube: launcher selected %s (%s)\n",
+        game->name,
+        game->iwadPath);
+
+    return game->iwadPath;
 }

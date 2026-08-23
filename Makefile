@@ -286,9 +286,13 @@ iso:
 
 	@test -f "$(CURDIR)/$(TARGET).dol" || \
 		( echo "ERROR: $(TARGET).dol is missing." && false )
-
-	@test -f "$(CURDIR)/data/doom1.wad" || \
-		( echo "ERROR: data/doom1.wad is missing." && false )
+	
+	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
+		test -f "$(CURDIR)/data/wad/doom.wad" || \
+		test -f "$(CURDIR)/data/wad/doom2.wad" || \
+		test -f "$(CURDIR)/data/wad/tnt.wad" || \
+		test -f "$(CURDIR)/data/wad/plutonia.wad" || \
+		( echo "ERROR: no supported Doom IWAD found in data/wad/." && false )
 
 	@test -d "$(CURDIR)/data/music" || \
 		( echo "ERROR: data/music is missing." && false )
@@ -298,7 +302,12 @@ iso:
 	@mkdir -p "$(ISO_DIR)/music"
 
 	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
-	@cp "$(CURDIR)/data/doom1.wad" "$(ISO_DIR)/doom1.wad"
+	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
+	if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
+		echo "Adding $$wad"; \
+		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/$$wad"; \
+	fi; \
+done
 	@cp "$(CURDIR)"/data/music/*.ogg "$(ISO_DIR)/music/"
 
 	@echo

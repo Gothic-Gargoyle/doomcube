@@ -14,7 +14,7 @@ doomcube.*
 scratch
 
 # User-supplied Doom data
-data/*.wad
+data/wad/*.wad
 
 # Sycraft / external soundtrack files
 data/music/*.ogg

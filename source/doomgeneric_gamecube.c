@@ -674,71 +674,38 @@ void DG_RumbleDamage(int damage)
 
 int main(int argc, char **argv)
 {
-    int availableGames;
-    int selectedGame;
-
-    const gc_game_entry_t *game;
-
-    char *doomArgv[3];
+    const char *selectedIwad;
 
     (void)argc;
     (void)argv;
-
-    doomArgv[0] = "doomcube";
-    doomArgv[1] = "-iwad";
-    doomArgv[2] = NULL;
 
     if (!GC_PlatformInit())
     {
         return 1;
     }
 
-    availableGames =
-        GC_LauncherScanGames();
+    selectedIwad =
+        GC_LauncherSelectGame(renderer);
 
-    if (availableGames == 0)
+    if (!selectedIwad)
     {
-        SYS_Report(
-            "DoomCube: no supported IWADs found on disc\n");
-
         return 1;
     }
 
-    selectedGame =
-        GC_LauncherRun(
-            renderer);
-
-    if (selectedGame < 0)
+    char *doomArgv[] =
     {
-        return 0;
-    }
-
-    game =
-        GC_LauncherGetGame(
-            selectedGame);
-
-    if (!game)
-    {
-        SYS_Report(
-            "DoomCube: invalid launcher selection\n");
-
-        return 1;
-    }
-
-    doomArgv[2] =
-        (char *)game->iwadPath;
+        "doomcube",
+        "-iwad",
+        (char *)selectedIwad
+    };
 
     SYS_Report(
-        "DoomCube: starting %s using %s\n",
-        game->name,
-        game->iwadPath);
+        "DoomCube: starting Doom engine with %s\n",
+        selectedIwad);
 
     doomgeneric_Create(
         3,
         doomArgv);
-
-    SYS_Report(
-        "DoomCube: Doom engine initialized\n");
 
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;
