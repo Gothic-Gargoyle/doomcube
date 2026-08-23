@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifndef DOOMGENERIC_RESX
 #define DOOMGENERIC_RESX 640
@@ -42,6 +43,8 @@ uint32_t DG_GetTicksMs();
 int DG_GetKey(int* pressed, unsigned char* key);
 void DG_SetWindowTitle(const char * title);
 void DG_Rumble(int frames);
+void DG_RumblePattern(int onFrames, int offFrames, int pulses, bool hardStop);
+void DG_RumbleDamage(int damage);
 #ifdef __cplusplus
 }
 #endif

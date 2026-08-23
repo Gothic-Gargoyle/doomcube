@@ -94,6 +94,12 @@ static int gcPrevWeapon;
 static int gcNextWeapon;
 
 static int gcRumbleFrames;
+static int gcRumbleOnFrames;
+static int gcRumbleOffFrames;
+static int gcRumblePulsesLeft;
+
+static bool gcRumbleOn;
+static bool gcRumbleHardStop;
 
 static bool dvdMounted;
 
@@ -332,12 +338,50 @@ static void handleGameCubeInput(void)
         KEY_ESCAPE);
 
     if (gcRumbleFrames > 0)
-   {
-       gcRumbleFrames--;
+    {
+        gcRumbleFrames--;
 
-       if (gcRumbleFrames == 0)
-           PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_STOP);
-   }
+        if (gcRumbleFrames == 0)
+        {
+            if (gcRumbleOn)
+            {
+                gcRumblePulsesLeft--;
+
+                if (gcRumblePulsesLeft <= 0)
+                {
+                    PAD_ControlMotor(
+                        PAD_CHAN0,
+                        gcRumbleHardStop
+                            ? PAD_MOTOR_STOP_HARD
+                            : PAD_MOTOR_STOP);
+
+                    gcRumbleOn = false;
+                }
+                else if (gcRumbleOffFrames > 0)
+                {
+                    PAD_ControlMotor(
+                        PAD_CHAN0,
+                        PAD_MOTOR_STOP);
+
+                    gcRumbleOn = false;
+                    gcRumbleFrames = gcRumbleOffFrames;
+                }
+                else
+                {
+                    gcRumbleFrames = gcRumbleOnFrames;
+                }
+            }
+            else
+            {
+                PAD_ControlMotor(
+                    PAD_CHAN0,
+                    PAD_MOTOR_RUMBLE);
+
+                gcRumbleOn = true;
+                gcRumbleFrames = gcRumbleOnFrames;
+            }
+        }
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -501,7 +545,7 @@ void DG_SetWindowTitle(const char *title)
             title);
     }
 }
-
+/* RUMBLE */
 void DG_Rumble(int frames)
 {
     if (frames <= 0)
@@ -510,29 +554,71 @@ void DG_Rumble(int frames)
     if (frames > gcRumbleFrames)
         gcRumbleFrames = frames;
 
-    PAD_ControlMotor(PAD_CHAN0, PAD_MOTOR_RUMBLE);
+    /*
+     * Do not let a weaker single pulse shorten a longer
+     * single pulse already in progress.
+     */
+    if (gcRumbleOn &&
+        gcRumblePulsesLeft == 1 &&
+        frames <= gcRumbleFrames)
+    {
+        return;
+    }
+
+    DG_RumblePattern(
+        frames,
+        0,
+        1,
+        true);
 }
 
-// For BFG
+void DG_RumblePattern(
+    int onFrames,
+    int offFrames,
+    int pulses,
+    bool hardStop)
+{
+    if (onFrames <= 0 || pulses <= 0)
+        return;
+
+    if (offFrames < 0)
+        offFrames = 0;
+
+    gcRumbleOnFrames = onFrames;
+    gcRumbleOffFrames = offFrames;
+    gcRumblePulsesLeft = pulses;
+
+    gcRumbleFrames = onFrames;
+
+    gcRumbleOn = true;
+    gcRumbleHardStop = hardStop;
+
+    PAD_ControlMotor(
+        PAD_CHAN0,
+        PAD_MOTOR_RUMBLE);
+}
+// For damage done to player.
 void DG_RumbleDamage(int damage)
 {
     int frames;
 
     if (damage >= 100)
-        frames = 12;
+        frames = 60;
     else if (damage >= 50)
-        frames = 9;
+        frames = 20;
     else if (damage >= 25)
-        frames = 6;
+        frames = 12;
     else if (damage >= 10)
-        frames = 4;
+        frames = 9;
     else if (damage > 0)
-        frames = 2;
+        frames = 5;
     else
         return;
 
     DG_Rumble(frames);
 }
+
+
 
 /* ------------------------------------------------------------------------- */
 /* Main                                                                      */

@@ -21,6 +21,7 @@
 
 // Data.
 #include "doomdef.h"
+#include "doomgeneric.h"
 #include "dstrings.h"
 #include "sounds.h"
 
@@ -364,18 +365,22 @@ P_TouchSpecialThing
       case SPR_ARM1:
 	if (!P_GiveArmor (player, deh_green_armor_class))
 	    return;
+	DG_RumblePattern(3, 2, 3, true);	
 	player->message = DEH_String(GOTARMOR);
 	break;
 		
       case SPR_ARM2:
 	if (!P_GiveArmor (player, deh_blue_armor_class))
 	    return;
+	DG_RumblePattern(3, 2, 3, true);	
 	player->message = DEH_String(GOTMEGA);
 	break;
 	
 	// bonus items
       case SPR_BON1:
 	player->health++;		// can go over 100%
+	  DG_RumblePattern(3, 2, 3, true);	
+
 	if (player->health > deh_max_health)
 	    player->health = deh_max_health;
 	player->mo->health = player->health;
@@ -384,6 +389,7 @@ P_TouchSpecialThing
 	
       case SPR_BON2:
 	player->armorpoints++;		// can go over 100%
+	  DG_Rumble(5);	
 	if (player->armorpoints > deh_max_armor)
 	    player->armorpoints = deh_max_armor;
         // deh_green_armor_class only applies to the green armor shirt;
@@ -395,6 +401,7 @@ P_TouchSpecialThing
 	
       case SPR_SOUL:
 	player->health += deh_soulsphere_health;
+	  DG_Rumble(10);	
 	if (player->health > deh_max_soulsphere)
 	    player->health = deh_max_soulsphere;
 	player->mo->health = player->health;
@@ -407,9 +414,11 @@ P_TouchSpecialThing
 	    return;
 	player->health = deh_megasphere_health;
 	player->mo->health = player->health;
+	  DG_Rumble(10);	
         // We always give armor type 2 for the megasphere; dehacked only 
         // affects the MegaArmor.
 	P_GiveArmor (player, 2);
+	  DG_Rumble(10);	
 	player->message = DEH_String(GOTMSPHERE);
 	sound = sfx_getpow;
 	break;
@@ -418,6 +427,7 @@ P_TouchSpecialThing
 	// leave cards for everyone
       case SPR_BKEY:
 	if (!player->cards[it_bluecard])
+	  DG_RumblePattern(3, 2, 3, true);
 	    player->message = DEH_String(GOTBLUECARD);
 	P_GiveCard (player, it_bluecard);
 	if (!netgame)
@@ -426,6 +436,7 @@ P_TouchSpecialThing
 	
       case SPR_YKEY:
 	if (!player->cards[it_yellowcard])
+	  DG_RumblePattern(3, 2, 3, true);
 	    player->message = DEH_String(GOTYELWCARD);
 	P_GiveCard (player, it_yellowcard);
 	if (!netgame)
@@ -434,6 +445,7 @@ P_TouchSpecialThing
 	
       case SPR_RKEY:
 	if (!player->cards[it_redcard])
+	  DG_RumblePattern(3, 2, 3, true);
 	    player->message = DEH_String(GOTREDCARD);
 	P_GiveCard (player, it_redcard);
 	if (!netgame)
@@ -442,6 +454,7 @@ P_TouchSpecialThing
 	
       case SPR_BSKU:
 	if (!player->cards[it_blueskull])
+	  DG_RumblePattern(3, 2, 3, true);	
 	    player->message = DEH_String(GOTBLUESKUL);
 	P_GiveCard (player, it_blueskull);
 	if (!netgame)
@@ -450,6 +463,7 @@ P_TouchSpecialThing
 	
       case SPR_YSKU:
 	if (!player->cards[it_yellowskull])
+	  DG_RumblePattern(3, 2, 3, true);
 	    player->message = DEH_String(GOTYELWSKUL);
 	P_GiveCard (player, it_yellowskull);
 	if (!netgame)
@@ -458,6 +472,7 @@ P_TouchSpecialThing
 	
       case SPR_RSKU:
 	if (!player->cards[it_redskull])
+	  DG_RumblePattern(3, 2, 3, true);
 	    player->message = DEH_String(GOTREDSKULL);
 	P_GiveCard (player, it_redskull);
 	if (!netgame)
@@ -468,13 +483,14 @@ P_TouchSpecialThing
       case SPR_STIM:
 	if (!P_GiveBody (player, 10))
 	    return;
+		DG_RumblePattern(3, 2, 3, true);	
 	player->message = DEH_String(GOTSTIM);
 	break;
 	
       case SPR_MEDI:
 	if (!P_GiveBody (player, 25))
 	    return;
-
+		DG_RumblePattern(3, 2, 3, true);	
 	if (player->health < 25)
 	    player->message = DEH_String(GOTMEDINEED);
 	else
@@ -486,6 +502,7 @@ P_TouchSpecialThing
       case SPR_PINV:
 	if (!P_GivePower (player, pw_invulnerability))
 	    return;
+	DG_Rumble(100);
 	player->message = DEH_String(GOTINVUL);
 	sound = sfx_getpow;
 	break;
@@ -493,6 +510,7 @@ P_TouchSpecialThing
       case SPR_PSTR:
 	if (!P_GivePower (player, pw_strength))
 	    return;
+	DG_Rumble(100);
 	player->message = DEH_String(GOTBERSERK);
 	if (player->readyweapon != wp_fist)
 	    player->pendingweapon = wp_fist;
@@ -502,6 +520,7 @@ P_TouchSpecialThing
       case SPR_PINS:
 	if (!P_GivePower (player, pw_invisibility))
 	    return;
+	DG_Rumble(20);
 	player->message = DEH_String(GOTINVIS);
 	sound = sfx_getpow;
 	break;
@@ -509,6 +528,7 @@ P_TouchSpecialThing
       case SPR_SUIT:
 	if (!P_GivePower (player, pw_ironfeet))
 	    return;
+		DG_Rumble(20);
 	player->message = DEH_String(GOTSUIT);
 	sound = sfx_getpow;
 	break;
@@ -516,6 +536,7 @@ P_TouchSpecialThing
       case SPR_PMAP:
 	if (!P_GivePower (player, pw_allmap))
 	    return;
+		DG_Rumble(20);
 	player->message = DEH_String(GOTMAP);
 	sound = sfx_getpow;
 	break;
@@ -523,6 +544,7 @@ P_TouchSpecialThing
       case SPR_PVIS:
 	if (!P_GivePower (player, pw_infrared))
 	    return;
+		DG_Rumble(20);
 	player->message = DEH_String(GOTVISOR);
 	sound = sfx_getpow;
 	break;
@@ -539,48 +561,57 @@ P_TouchSpecialThing
 	    if (!P_GiveAmmo (player,am_clip,1))
 		return;
 	}
+	DG_Rumble(5);
 	player->message = DEH_String(GOTCLIP);
 	break;
 	
       case SPR_AMMO:
 	if (!P_GiveAmmo (player, am_clip,5))
 	    return;
+	DG_Rumble(5);		
 	player->message = DEH_String(GOTCLIPBOX);
 	break;
 	
       case SPR_ROCK:
 	if (!P_GiveAmmo (player, am_misl,1))
 	    return;
+	DG_Rumble(5);		
+
 	player->message = DEH_String(GOTROCKET);
 	break;
 	
       case SPR_BROK:
 	if (!P_GiveAmmo (player, am_misl,5))
 	    return;
+	DG_Rumble(5);
 	player->message = DEH_String(GOTROCKBOX);
 	break;
 	
       case SPR_CELL:
 	if (!P_GiveAmmo (player, am_cell,1))
 	    return;
+	DG_Rumble(5);		
 	player->message = DEH_String(GOTCELL);
 	break;
 	
       case SPR_CELP:
 	if (!P_GiveAmmo (player, am_cell,5))
 	    return;
+	DG_Rumble(5);
 	player->message = DEH_String(GOTCELLBOX);
 	break;
 	
       case SPR_SHEL:
 	if (!P_GiveAmmo (player, am_shell,1))
 	    return;
+	DG_Rumble(5);
 	player->message = DEH_String(GOTSHELLS);
 	break;
 	
       case SPR_SBOX:
 	if (!P_GiveAmmo (player, am_shell,5))
 	    return;
+	DG_Rumble(5);
 	player->message = DEH_String(GOTSHELLBOX);
 	break;
 	
@@ -593,6 +624,7 @@ P_TouchSpecialThing
 	}
 	for (i=0 ; i<NUMAMMO ; i++)
 	    P_GiveAmmo (player, i, 1);
+	DG_Rumble(30);
 	player->message = DEH_String(GOTBACKPACK);
 	break;
 	
@@ -600,6 +632,7 @@ P_TouchSpecialThing
       case SPR_BFUG:
 	if (!P_GiveWeapon (player, wp_bfg, false) )
 	    return;
+		DG_RumblePattern(3, 2, 3, true);
 	player->message = DEH_String(GOTBFG9000);
 	sound = sfx_wpnup;	
 	break;
@@ -607,6 +640,7 @@ P_TouchSpecialThing
       case SPR_MGUN:
 	if (!P_GiveWeapon (player, wp_chaingun, (special->flags&MF_DROPPED) != 0) )
 	    return;
+		DG_RumblePattern(3, 2, 3, true);
 	player->message = DEH_String(GOTCHAINGUN);
 	sound = sfx_wpnup;	
 	break;
@@ -614,6 +648,7 @@ P_TouchSpecialThing
       case SPR_CSAW:
 	if (!P_GiveWeapon (player, wp_chainsaw, false) )
 	    return;
+		DG_RumblePattern(3, 2, 3, true);
 	player->message = DEH_String(GOTCHAINSAW);
 	sound = sfx_wpnup;	
 	break;
@@ -621,6 +656,7 @@ P_TouchSpecialThing
       case SPR_LAUN:
 	if (!P_GiveWeapon (player, wp_missile, false) )
 	    return;
+		DG_RumblePattern(5, 2, 3, true);
 	player->message = DEH_String(GOTLAUNCHER);
 	sound = sfx_wpnup;	
 	break;
@@ -628,6 +664,7 @@ P_TouchSpecialThing
       case SPR_PLAS:
 	if (!P_GiveWeapon (player, wp_plasma, false) )
 	    return;
+		DG_RumblePattern(6, 2, 3, true);
 	player->message = DEH_String(GOTPLASMA);
 	sound = sfx_wpnup;	
 	break;
@@ -635,6 +672,7 @@ P_TouchSpecialThing
       case SPR_SHOT:
 	if (!P_GiveWeapon (player, wp_shotgun, (special->flags&MF_DROPPED) != 0 ) )
 	    return;
+		DG_RumblePattern(3, 2, 3, true);
 	player->message = DEH_String(GOTSHOTGUN);
 	sound = sfx_wpnup;	
 	break;
@@ -642,6 +680,7 @@ P_TouchSpecialThing
       case SPR_SGN2:
 	if (!P_GiveWeapon (player, wp_supershotgun, (special->flags&MF_DROPPED) != 0 ) )
 	    return;
+		DG_RumblePattern(3, 2, 3, true);
 	player->message = DEH_String(GOTSHOTGUN2);
 	sound = sfx_wpnup;	
 	break;
@@ -885,6 +924,7 @@ P_DamageMobj
 
 	if (player == &players[consoleplayer])
 	    I_Tactile (40,10,40+temp*2);
+		DG_RumbleDamage(temp);
     }
     
     // do the damage	
