@@ -51,6 +51,8 @@
 #include "w_wad.h"
 #include "z_zone.h"
 
+#include <gccore.h>
+
 #ifdef __MACOSX__
 #include <CoreFoundation/CFUserNotification.h>
 #endif
@@ -261,6 +263,7 @@ void I_Quit (void)
     SDL_Quit();
 
     exit(0);
+
 #endif
 }
 

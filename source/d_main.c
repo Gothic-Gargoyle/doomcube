@@ -1081,8 +1081,7 @@ static void D_Endoom(void)
     endoom = W_CacheLumpName(DEH_String("ENDOOM"), PU_STATIC);
 
     I_Endoom(endoom);
-
-	exit(0);
+     exit(0);
 }
 
 #if ORIGCODE

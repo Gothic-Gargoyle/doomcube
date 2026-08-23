@@ -282,6 +282,19 @@ static int GC_LauncherRun(SDL_Renderer *renderer)
 
     GC_DrawLauncher(renderer, selected);
 
+/*
+ * Filthy hack: Flush stale controller transition state after PAD initialization.
+ */
+for (int i = 0; i < 3; ++i)
+{
+    PAD_ScanPads();
+    (void)PAD_ButtonsDown(0);
+    SDL_Delay(16);
+}
+
+    SYS_Report(
+    "DoomCube: entering launcher input loop\n");
+
     while (SYS_MainLoop())
     {
         u16 down;
@@ -289,7 +302,7 @@ static int GC_LauncherRun(SDL_Renderer *renderer)
         int stickDirection = 0;
 
         PAD_ScanPads();
-
+        
         down = PAD_ButtonsDown(0);
         stickY = PAD_StickY(0);
 
