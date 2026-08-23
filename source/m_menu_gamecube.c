@@ -444,16 +444,12 @@ menu_t  SoundDef =
 enum
 {
     load1,
-    load2,
-    load3,
     load_end
 } load_e;
 
 menuitem_t LoadMenu[]=
 {
     {1,"", M_LoadSelect,'1'},
-    {1,"", M_LoadSelect,'2'},
-    {1,"", M_LoadSelect,'3'},
 };
 
 menu_t  LoadDef =
@@ -472,8 +468,6 @@ menu_t  LoadDef =
 menuitem_t SaveMenu[]=
 {
     {1,"", M_SaveSelect,'1'},
-    {1,"", M_SaveSelect,'2'},
-    {1,"", M_SaveSelect,'3'},
 };
 
 menu_t  SaveDef =
