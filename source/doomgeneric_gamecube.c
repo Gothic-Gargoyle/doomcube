@@ -22,14 +22,30 @@
 #define KEYQUEUE_SIZE 64
 #define STICK_DEADZONE 24
 #define CSTICK_DEADZONE 24
+#define MAP_CSTICK_DEADZONE 40
 #define TRIGGER_THRESHOLD 40
 
-#define GC_KEY_PREVWEAPON 0xa4
-#define GC_KEY_NEXTWEAPON 0xa5
-#define GC_KEY_MENU_ENTER 0xa6
-#define GC_KEY_MENU_BACK 0xa7
-#define GC_KEY_MENU_CONFIRM 0xa8
-#define GC_KEY_MENU_ABORT 0xa9
+#define GC_KEY_BASE 0xd0
+
+#define GC_KEY_PREVWEAPON    (GC_KEY_BASE + 0)
+#define GC_KEY_NEXTWEAPON    (GC_KEY_BASE + 1)
+#define GC_KEY_MENU_ENTER    (GC_KEY_BASE + 2)
+#define GC_KEY_MENU_BACK     (GC_KEY_BASE + 3)
+#define GC_KEY_MENU_CONFIRM  (GC_KEY_BASE + 4)
+#define GC_KEY_MENU_ABORT    (GC_KEY_BASE + 5)
+
+#define GC_KEY_MAP_TOGGLE    (GC_KEY_BASE + 16)
+#define GC_KEY_MAP_NORTH     (GC_KEY_BASE + 17)
+#define GC_KEY_MAP_SOUTH     (GC_KEY_BASE + 18)
+#define GC_KEY_MAP_EAST      (GC_KEY_BASE + 19)
+#define GC_KEY_MAP_WEST      (GC_KEY_BASE + 20)
+#define GC_KEY_MAP_ZOOMIN    (GC_KEY_BASE + 21)
+#define GC_KEY_MAP_ZOOMOUT   (GC_KEY_BASE + 22)
+#define GC_KEY_MAP_MAXZOOM   (GC_KEY_BASE + 23)
+#define GC_KEY_MAP_FOLLOW    (GC_KEY_BASE + 24)
+#define GC_KEY_MAP_GRID      (GC_KEY_BASE + 25)
+#define GC_KEY_MAP_MARK      (GC_KEY_BASE + 26)
+#define GC_KEY_MAP_CLEARMARK (GC_KEY_BASE + 27)
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -52,7 +68,22 @@ static int gcRun;
 static int gcEnter;
 static int gcBack;
 static int gcEscape;
-static int gcTab;
+
+static int gcZHeld;
+static int gcZUsed;
+
+static int gcMapNorth;
+static int gcMapSouth;
+static int gcMapEast;
+static int gcMapWest;
+static int gcMapZoomIn;
+static int gcMapZoomOut;
+static int gcMapMaxZoom;
+static int gcMapFollow;
+static int gcMapGrid;
+static int gcMapMark;
+static int gcMapClearMark;
+
 static int gcConfirm;
 static int gcAbort;
 
@@ -104,35 +135,118 @@ static void handleGameCubeInput(void)
 
     s8 stickX = PAD_StickX(0);
     s8 stickY = PAD_StickY(0);
+
     s8 cstickX = PAD_SubStickX(0);
+    s8 cstickY = PAD_SubStickY(0);
 
     u8 triggerR = PAD_TriggerR(0);
 
-    int up =
-        (held & PAD_BUTTON_UP) ||
-        stickY > STICK_DEADZONE;
+    int up = stickY > STICK_DEADZONE;
 
-    int down =
-        (held & PAD_BUTTON_DOWN) ||
-        stickY < -STICK_DEADZONE;
+    int down = stickY < -STICK_DEADZONE;
 
-    int left =
-        (held & PAD_BUTTON_LEFT) ||
-        stickX < -STICK_DEADZONE;
+    int left = stickX < -STICK_DEADZONE;
 
-    int right =
-        (held & PAD_BUTTON_RIGHT) ||
-        stickX > STICK_DEADZONE;
+    int right = stickX > STICK_DEADZONE;
 
-    int cLeft =
-        cstickX < -CSTICK_DEADZONE;
+    int zHeld = !!(held & PAD_TRIGGER_Z);
 
-    int cRight =
-        cstickX > CSTICK_DEADZONE;
+    int cLeft = !zHeld && cstickX < -CSTICK_DEADZONE;
+    int cRight = !zHeld && cstickX > CSTICK_DEADZONE;
 
-    int fire =
-        triggerR > TRIGGER_THRESHOLD;
+    int fire = triggerR > TRIGGER_THRESHOLD;
 
+
+/*
+     * Z acts as an automap modifier.
+     *
+     * Tapping Z by itself toggles the automap.
+     * Using another automap control while Z is held suppresses
+     * the toggle when Z is released.
+*/
+    if (zHeld && !gcZHeld)
+    {
+        gcZHeld = 1;
+        gcZUsed = 0;
+    }
+
+    if (zHeld)
+    {
+        int mapNorth = 0;
+        int mapSouth = 0;
+        int mapEast =  0;
+        int mapWest =  0;
+
+        if (abs(cstickX) > MAP_CSTICK_DEADZONE)
+        {
+            mapEast = cstickX > 0;
+            mapWest = cstickX < 0;
+        }
+
+        if (abs(cstickY) > MAP_CSTICK_DEADZONE)
+        {
+            mapNorth = cstickY > 0;
+            mapSouth = cstickY < 0;
+        }
+
+        int zoomIn = !!(held & PAD_BUTTON_UP);
+        int zoomOut = !!(held & PAD_BUTTON_DOWN);
+        int maxZoom = !!(held & PAD_BUTTON_LEFT);
+        int follow = !!(held & PAD_BUTTON_RIGHT);
+
+        int mark = !!(held & PAD_BUTTON_A);
+        int clearMark = !!(held & PAD_BUTTON_B);
+        int grid = !!(held & PAD_BUTTON_X);
+
+        if (mapNorth || mapSouth || mapEast || mapWest ||
+            zoomIn || zoomOut || maxZoom || follow ||
+            mark || clearMark || grid)
+        {
+            gcZUsed = 1;
+        }
+
+        setKeyState(mapNorth, &gcMapNorth, GC_KEY_MAP_NORTH);
+        setKeyState(mapSouth, &gcMapSouth, GC_KEY_MAP_SOUTH);
+        setKeyState(mapEast, &gcMapEast, GC_KEY_MAP_EAST);
+        setKeyState(mapWest, &gcMapWest, GC_KEY_MAP_WEST);
+
+        setKeyState(zoomIn, &gcMapZoomIn, GC_KEY_MAP_ZOOMIN);
+        setKeyState(zoomOut, &gcMapZoomOut, GC_KEY_MAP_ZOOMOUT);
+        setKeyState(maxZoom, &gcMapMaxZoom, GC_KEY_MAP_MAXZOOM);
+        setKeyState(follow, &gcMapFollow, GC_KEY_MAP_FOLLOW);
+
+        setKeyState(grid, &gcMapGrid, GC_KEY_MAP_GRID);
+        setKeyState(mark, &gcMapMark, GC_KEY_MAP_MARK);
+        setKeyState(clearMark, &gcMapClearMark, GC_KEY_MAP_CLEARMARK);
+    }
+    else
+    {
+        setKeyState(0, &gcMapNorth, GC_KEY_MAP_NORTH);
+        setKeyState(0, &gcMapSouth, GC_KEY_MAP_SOUTH);
+        setKeyState(0, &gcMapEast, GC_KEY_MAP_EAST);
+        setKeyState(0, &gcMapWest, GC_KEY_MAP_WEST);
+
+        setKeyState(0, &gcMapZoomIn, GC_KEY_MAP_ZOOMIN);
+        setKeyState(0, &gcMapZoomOut, GC_KEY_MAP_ZOOMOUT);
+        setKeyState(0, &gcMapMaxZoom, GC_KEY_MAP_MAXZOOM);
+        setKeyState(0, &gcMapFollow, GC_KEY_MAP_FOLLOW);
+
+        setKeyState(0, &gcMapGrid, GC_KEY_MAP_GRID);
+        setKeyState(0, &gcMapMark, GC_KEY_MAP_MARK);
+        setKeyState(0, &gcMapClearMark, GC_KEY_MAP_CLEARMARK);
+
+        if (gcZHeld)
+        {
+            if (!gcZUsed)
+            {
+                queueKey(1, GC_KEY_MAP_TOGGLE);
+                queueKey(0, GC_KEY_MAP_TOGGLE);
+            }
+
+            gcZHeld = 0;
+            gcZUsed = 0;
+        }
+    }
 
     setKeyState(
         up,
@@ -170,12 +284,12 @@ static void handleGameCubeInput(void)
         KEY_FIRE);
 
     setKeyState(
-        held & PAD_BUTTON_X,
+        !zHeld && (held & PAD_BUTTON_X),
         &gcNextWeapon,
         key_nextweapon);
 
     setKeyState(
-        held & PAD_BUTTON_Y,
+        !zHeld && (held & PAD_BUTTON_Y),
         &gcPrevWeapon,
         key_prevweapon);
 
@@ -187,28 +301,28 @@ static void handleGameCubeInput(void)
 
  /* Various things the a button does*/
     setKeyState(
-        held & PAD_BUTTON_A,
+        !zHeld && (held & PAD_BUTTON_A),
         &gcUse,
         KEY_USE);
     
     setKeyState(
-        held & PAD_BUTTON_A,
+        !zHeld && (held & PAD_BUTTON_A),
         &gcConfirm,
         GC_KEY_MENU_CONFIRM);
 
     setKeyState(
-        held & PAD_BUTTON_A,
+        !zHeld && (held & PAD_BUTTON_A),
         &gcEnter,
         GC_KEY_MENU_ENTER);
 
  /* Various things the b button does*/
     setKeyState(
-        held & PAD_BUTTON_B,
+        !zHeld && (held & PAD_BUTTON_B),
         &gcBack,
         GC_KEY_MENU_BACK);
     
     setKeyState(
-        held & PAD_BUTTON_B,
+        !zHeld && (held & PAD_BUTTON_B),
         &gcAbort,
         GC_KEY_MENU_ABORT);
 
@@ -216,8 +330,6 @@ static void handleGameCubeInput(void)
         held & PAD_BUTTON_START,
         &gcEscape,
         KEY_ESCAPE);
-
-    setKeyState(held & PAD_TRIGGER_Z, &gcTab, KEY_TAB);
 
     if (gcRumbleFrames > 0)
    {
@@ -449,6 +561,18 @@ int main(int argc, char **argv)
     key_menu_abort = GC_KEY_MENU_ABORT;
     key_message_refresh = 0;
 
+    key_map_toggle = GC_KEY_MAP_TOGGLE;
+    key_map_north = GC_KEY_MAP_NORTH;
+    key_map_south = GC_KEY_MAP_SOUTH;
+    key_map_east = GC_KEY_MAP_EAST;
+    key_map_west = GC_KEY_MAP_WEST;
+    key_map_zoomin = GC_KEY_MAP_ZOOMIN;
+    key_map_zoomout = GC_KEY_MAP_ZOOMOUT;
+    key_map_maxzoom = GC_KEY_MAP_MAXZOOM;
+    key_map_follow = GC_KEY_MAP_FOLLOW;
+    key_map_grid = GC_KEY_MAP_GRID;
+    key_map_mark = GC_KEY_MAP_MARK;
+    key_map_clearmark = GC_KEY_MAP_CLEARMARK;
 
     while (SYS_MainLoop())
     {
