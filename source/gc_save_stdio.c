@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GC_SAVE_BUFFER_SIZE 32736u
+#define GC_SAVE_BUFFER_SIZE 0x2c000u
 
 typedef struct
 {
@@ -29,7 +29,12 @@ typedef struct
 /* Temporary Doom save                                                       */
 /* ------------------------------------------------------------------------- */
 
-static unsigned char *tempSaveData;
+static unsigned char streamWorkBuffer[GC_SAVE_BUFFER_SIZE]
+    __attribute__((aligned(32)));
+
+static unsigned char tempSaveData[GC_SAVE_BUFFER_SIZE]
+    __attribute__((aligned(32)));
+
 static size_t tempSaveSize;
 static bool tempSaveValid;
 
@@ -124,15 +129,8 @@ static gc_save_stream_t *newStream(void)
     stream->slot =
         -1;
 
-    stream->data = malloc(
-        stream->capacity
-    );
-
-    if (!stream->data)
-    {
-        free(stream);
-        return NULL;
-    }
+    stream->data =
+    streamWorkBuffer;
 
     return stream;
 }
@@ -143,10 +141,6 @@ static void destroyStream(
 {
     if (!stream)
         return;
-
-    free(
-        stream->data
-    );
 
     free(
         stream
@@ -422,47 +416,21 @@ int GC_SaveFClose(FILE *file)
     if (stream->temporary &&
         stream->writable)
     {
-        unsigned char *newData;
-
         if (stream->size == 0)
-        {
-            free(
-                tempSaveData
-            );
+{
+    tempSaveSize =
+        0;
 
-            tempSaveData =
-                NULL;
-
-            tempSaveSize =
-                0;
-
-            tempSaveValid =
-                false;
-        }
-        else
-        {
-            newData = realloc(
-                tempSaveData,
-                stream->size
-            );
-
-            if (!newData)
-            {
-                destroyStream(
-                    stream
-                );
-
-                return -1;
-            }
-
-            tempSaveData =
-                newData;
-
-            memcpy(
-                tempSaveData,
-                stream->data,
-                stream->size
-            );
+    tempSaveValid =
+        false;
+}
+else
+{
+    memcpy(
+        tempSaveData,
+        stream->data,
+        stream->size
+    );
 
             tempSaveSize =
                 stream->size;
@@ -505,13 +473,6 @@ int GC_SaveRemove(const char *path)
     if (isTempSave(path) ||
         isRecoverySave(path))
     {
-        free(
-            tempSaveData
-        );
-
-        tempSaveData =
-            NULL;
-
         tempSaveSize =
             0;
 
@@ -548,7 +509,6 @@ int GC_SaveRename(
         return -1;
 
     if (!tempSaveValid ||
-        !tempSaveData ||
         tempSaveSize == 0)
     {
         SYS_Report(
@@ -581,13 +541,6 @@ int GC_SaveRename(
         "DoomCube: slot %d commit OK\n",
         slot
     );
-
-    free(
-        tempSaveData
-    );
-
-    tempSaveData =
-        NULL;
 
     tempSaveSize =
         0;
