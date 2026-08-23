@@ -2023,12 +2023,13 @@ static void GC_ParseConfigBuffer(
             }
 
             if (def != NULL &&
-                def->bound)
-            {
-                SetVariable(
-                    def,
-                    value);
-            }
+    def->bound &&
+    def->type != DEFAULT_KEY)
+{
+    SetVariable(
+        def,
+        value);
+}
         }
 
         if (next == NULL)
@@ -2181,10 +2182,15 @@ void M_LoadDefaults (void)
                     GC_CONFIG_BUFFER_SIZE - 1,
                     &size))
             {
-                GC_ParseConfigBuffer(
-                    buffer,
-                    size);
-            }
+                if (GC_ConfigLoad(
+        buffer,
+        GC_CONFIG_BUFFER_SIZE - 1,
+        &size))
+{
+    GC_ParseConfigBuffer(
+        buffer,
+        size);
+} }
 
             free(buffer);
         }
