@@ -19,6 +19,12 @@
 #include <iso9660.h>
 #include <ogc/dvd.h>
 
+#define DOOMGENERIC_RESX 640
+#define DOOMGENERIC_RESY 400
+
+#define GC_OUTPUT_WIDTH  640
+#define GC_OUTPUT_HEIGHT 480
+
 #define KEYQUEUE_SIZE 64
 #define STICK_DEADZONE 24
 #define CSTICK_DEADZONE 24
@@ -426,9 +432,10 @@ void DG_Init(void)
         "DOOM",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        DOOMGENERIC_RESX,
-        DOOMGENERIC_RESY,
+        GC_OUTPUT_WIDTH,
+        GC_OUTPUT_HEIGHT,
         SDL_WINDOW_SHOWN);
+        
 
     if (!window)
     {
@@ -468,6 +475,23 @@ void DG_Init(void)
 
         exit(1);
     }
+
+
+/* Diagnostic: actual GameCube renderer output size. */
+    int outputW;
+int outputH;
+
+SDL_GetRendererOutputSize(
+    renderer,
+    &outputW,
+    &outputH
+);
+
+SYS_Report(
+    "DoomCube: SDL renderer output = %dx%d\n",
+    outputW,
+    outputH
+);
 
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
