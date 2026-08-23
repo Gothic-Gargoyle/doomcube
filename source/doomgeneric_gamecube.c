@@ -167,7 +167,6 @@ static void handleGameCubeInput(void)
     int cLeft = !zHeld && cstickX < -CSTICK_DEADZONE;
     int cRight = !zHeld && cstickX > CSTICK_DEADZONE;
 
-    int fire = triggerR > TRIGGER_THRESHOLD;
 
     /*
      * Z acts as an automap modifier.
@@ -210,14 +209,14 @@ static void handleGameCubeInput(void)
             mapSouth = cstickY < 0;
         }
 
-        zoomIn = !!(held & PAD_BUTTON_UP);
-        zoomOut = !!(held & PAD_BUTTON_DOWN);
-        maxZoom = !!(held & PAD_BUTTON_LEFT);
-        follow = !!(held & PAD_BUTTON_RIGHT);
+       zoomIn = !!(held & PAD_BUTTON_UP);
+       zoomOut = !!(held & PAD_BUTTON_DOWN);
+       maxZoom = !!(held & PAD_BUTTON_LEFT);
+       follow = !!(held & PAD_BUTTON_RIGHT);
 
-        mark = !!(held & PAD_BUTTON_A);
-        clearMark = !!(held & PAD_BUTTON_B);
-        grid = !!(held & PAD_BUTTON_X);
+       mark = !!(held & PAD_BUTTON_A);
+       clearMark = !!(held & PAD_BUTTON_B);
+       grid = !!(held & PAD_BUTTON_X);
 
         if (mapNorth || mapSouth || mapEast || mapWest ||
             zoomIn || zoomOut || maxZoom || follow ||
@@ -300,11 +299,6 @@ static void handleGameCubeInput(void)
         KEY_STRAFE_R);
 
     setKeyState(
-        fire,
-        &gcFire,
-        KEY_FIRE);
-
-    setKeyState(
         !zHeld && (held & PAD_BUTTON_X),
         &gcNextWeapon,
         key_nextweapon);
@@ -318,6 +312,11 @@ static void handleGameCubeInput(void)
         held & PAD_TRIGGER_L,
         &gcRun,
         KEY_RSHIFT);
+
+    setKeyState(
+        held & PAD_TRIGGER_R,
+        &gcFire,
+        KEY_FIRE);    
 
     /* Various things the A button does. */
     setKeyState(
