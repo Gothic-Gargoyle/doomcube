@@ -6,6 +6,7 @@
 #include "doomgeneric.h"
 #include "m_controls.h"
 
+#include "gc_launcher.h"
 #include "gc_memcard.h"
 
 #include <stdbool.h>
@@ -107,7 +108,9 @@ static int gcRumblePulsesLeft;
 static bool gcRumbleOn;
 static bool gcRumbleHardStop;
 
+static bool platformInitialized;
 static bool dvdMounted;
+
 
 /* ------------------------------------------------------------------------- */
 /* Key queue                                                                 */
@@ -135,6 +138,7 @@ static void setKeyState(int wanted, int *state, unsigned char key)
     queueKey(wanted, key);
 }
 
+
 /* ------------------------------------------------------------------------- */
 /* GameCube controller                                                       */
 /* ------------------------------------------------------------------------- */
@@ -154,11 +158,8 @@ static void handleGameCubeInput(void)
     u8 triggerR = PAD_TriggerR(0);
 
     int up = stickY > STICK_DEADZONE;
-
     int down = stickY < -STICK_DEADZONE;
-
     int left = stickX < -STICK_DEADZONE;
-
     int right = stickX > STICK_DEADZONE;
 
     int zHeld = !!(held & PAD_TRIGGER_Z);
@@ -168,14 +169,13 @@ static void handleGameCubeInput(void)
 
     int fire = triggerR > TRIGGER_THRESHOLD;
 
-
-/*
+    /*
      * Z acts as an automap modifier.
      *
      * Tapping Z by itself toggles the automap.
      * Using another automap control while Z is held suppresses
      * the toggle when Z is released.
-*/
+     */
     if (zHeld && !gcZHeld)
     {
         gcZHeld = 1;
@@ -186,8 +186,17 @@ static void handleGameCubeInput(void)
     {
         int mapNorth = 0;
         int mapSouth = 0;
-        int mapEast =  0;
-        int mapWest =  0;
+        int mapEast = 0;
+        int mapWest = 0;
+
+        int zoomIn;
+        int zoomOut;
+        int maxZoom;
+        int follow;
+
+        int mark;
+        int clearMark;
+        int grid;
 
         if (abs(cstickX) > MAP_CSTICK_DEADZONE)
         {
@@ -201,14 +210,14 @@ static void handleGameCubeInput(void)
             mapSouth = cstickY < 0;
         }
 
-        int zoomIn = !!(held & PAD_BUTTON_UP);
-        int zoomOut = !!(held & PAD_BUTTON_DOWN);
-        int maxZoom = !!(held & PAD_BUTTON_LEFT);
-        int follow = !!(held & PAD_BUTTON_RIGHT);
+        zoomIn = !!(held & PAD_BUTTON_UP);
+        zoomOut = !!(held & PAD_BUTTON_DOWN);
+        maxZoom = !!(held & PAD_BUTTON_LEFT);
+        follow = !!(held & PAD_BUTTON_RIGHT);
 
-        int mark = !!(held & PAD_BUTTON_A);
-        int clearMark = !!(held & PAD_BUTTON_B);
-        int grid = !!(held & PAD_BUTTON_X);
+        mark = !!(held & PAD_BUTTON_A);
+        clearMark = !!(held & PAD_BUTTON_B);
+        grid = !!(held & PAD_BUTTON_X);
 
         if (mapNorth || mapSouth || mapEast || mapWest ||
             zoomIn || zoomOut || maxZoom || follow ||
@@ -305,18 +314,17 @@ static void handleGameCubeInput(void)
         &gcPrevWeapon,
         key_prevweapon);
 
-
     setKeyState(
         held & PAD_TRIGGER_L,
         &gcRun,
         KEY_RSHIFT);
 
- /* Various things the a button does*/
+    /* Various things the A button does. */
     setKeyState(
         !zHeld && (held & PAD_BUTTON_A),
         &gcUse,
         KEY_USE);
-    
+
     setKeyState(
         !zHeld && (held & PAD_BUTTON_A),
         &gcConfirm,
@@ -327,12 +335,12 @@ static void handleGameCubeInput(void)
         &gcEnter,
         GC_KEY_MENU_ENTER);
 
- /* Various things the b button does*/
+    /* Various things the B button does. */
     setKeyState(
         !zHeld && (held & PAD_BUTTON_B),
         &gcBack,
         GC_KEY_MENU_BACK);
-    
+
     setKeyState(
         !zHeld && (held & PAD_BUTTON_B),
         &gcAbort,
@@ -390,60 +398,68 @@ static void handleGameCubeInput(void)
     }
 }
 
+
 /* ------------------------------------------------------------------------- */
 /* ISO9660                                                                   */
 /* ------------------------------------------------------------------------- */
 
 static bool mountIsoFilesystem(void)
 {
-    printf("DoomCube: mounting ISO9660...\n");
+    SYS_Report(
+        "DoomCube: mounting ISO9660...\n");
 
     if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
-        printf("DoomCube: ISO9660_Mount FAILED\n");
+        SYS_Report(
+            "DoomCube: ISO9660_Mount FAILED\n");
+
         return false;
     }
 
     dvdMounted = true;
 
-    printf("DoomCube: mounted dvd:/\n");
+    SYS_Report(
+        "DoomCube: mounted dvd:/\n");
 
     return true;
 }
 
+
 /* ------------------------------------------------------------------------- */
-/* DoomGeneric                                                               */
+/* DoomGeneric / GameCube platform                                           */
 /* ------------------------------------------------------------------------- */
 
-void DG_Init(void)
+static bool GC_PlatformInit(void)
 {
+    if (platformInitialized)
+        return true;
+
     PAD_Init();
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
-        printf(
+        SYS_Report(
             "SDL_Init failed: %s\n",
             SDL_GetError());
 
-        exit(1);
+        return false;
     }
 
     window = SDL_CreateWindow(
-        "DOOM",
+        "DoomCube",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
         GC_OUTPUT_WIDTH,
         GC_OUTPUT_HEIGHT,
         SDL_WINDOW_SHOWN);
-        
 
     if (!window)
     {
-        printf(
+        SYS_Report(
             "SDL_CreateWindow failed: %s\n",
             SDL_GetError());
 
-        exit(1);
+        return false;
     }
 
     renderer = SDL_CreateRenderer(
@@ -453,11 +469,11 @@ void DG_Init(void)
 
     if (!renderer)
     {
-        printf(
+        SYS_Report(
             "SDL_CreateRenderer failed: %s\n",
             SDL_GetError());
 
-        exit(1);
+        return false;
     }
 
     texture = SDL_CreateTexture(
@@ -469,39 +485,22 @@ void DG_Init(void)
 
     if (!texture)
     {
-        printf(
+        SYS_Report(
             "SDL_CreateTexture failed: %s\n",
             SDL_GetError());
 
-        exit(1);
+        return false;
     }
-
-
-/* Diagnostic: actual GameCube renderer output size. */
-    int outputW;
-int outputH;
-
-SDL_GetRendererOutputSize(
-    renderer,
-    &outputW,
-    &outputH
-);
-
-SYS_Report(
-    "DoomCube: SDL renderer output = %dx%d\n",
-    outputW,
-    outputH
-);
 
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
     if (!mountIsoFilesystem())
     {
-        printf(
+        SYS_Report(
             "DoomCube: disc mount unavailable\n");
 
-        exit(1);
+        return false;
     }
 
     if (!GC_MemoryCardInit())
@@ -509,7 +508,21 @@ SYS_Report(
         SYS_Report(
             "DoomCube: Memory Card unavailable; continuing without saves\n");
     }
+
+    platformInitialized = true;
+
+    return true;
 }
+
+
+void DG_Init(void)
+{
+    if (!GC_PlatformInit())
+    {
+        exit(1);
+    }
+}
+
 
 void DG_DrawFrame(void)
 {
@@ -532,15 +545,18 @@ void DG_DrawFrame(void)
     handleGameCubeInput();
 }
 
+
 void DG_SleepMs(uint32_t ms)
 {
     SDL_Delay(ms);
 }
 
+
 uint32_t DG_GetTicksMs(void)
 {
     return SDL_GetTicks();
 }
+
 
 int DG_GetKey(int *pressed, unsigned char *doomKey)
 {
@@ -560,6 +576,7 @@ int DG_GetKey(int *pressed, unsigned char *doomKey)
     return 1;
 }
 
+
 void DG_SetWindowTitle(const char *title)
 {
     if (window)
@@ -569,7 +586,12 @@ void DG_SetWindowTitle(const char *title)
             title);
     }
 }
-/* RUMBLE */
+
+
+/* ------------------------------------------------------------------------- */
+/* Rumble                                                                    */
+/* ------------------------------------------------------------------------- */
+
 void DG_Rumble(int frames)
 {
     if (frames <= 0)
@@ -596,6 +618,7 @@ void DG_Rumble(int frames)
         true);
 }
 
+
 void DG_RumblePattern(
     int onFrames,
     int offFrames,
@@ -621,7 +644,9 @@ void DG_RumblePattern(
         PAD_CHAN0,
         PAD_MOTOR_RUMBLE);
 }
-// For damage done to player.
+
+
+/* For damage done to player. */
 void DG_RumbleDamage(int damage)
 {
     int frames;
@@ -643,25 +668,77 @@ void DG_RumbleDamage(int damage)
 }
 
 
-
 /* ------------------------------------------------------------------------- */
 /* Main                                                                      */
 /* ------------------------------------------------------------------------- */
 
 int main(int argc, char **argv)
 {
+    int availableGames;
+    int selectedGame;
+
+    const gc_game_entry_t *game;
+
+    char *doomArgv[3];
+
     (void)argc;
     (void)argv;
 
-    char *doomArgv[] =
-        {
-            "doomcube",
-            "-iwad",
-            "dvd:/doom1.wad"};
+    doomArgv[0] = "doomcube";
+    doomArgv[1] = "-iwad";
+    doomArgv[2] = NULL;
+
+    if (!GC_PlatformInit())
+    {
+        return 1;
+    }
+
+    availableGames =
+        GC_LauncherScanGames();
+
+    if (availableGames == 0)
+    {
+        SYS_Report(
+            "DoomCube: no supported IWADs found on disc\n");
+
+        return 1;
+    }
+
+    selectedGame =
+        GC_LauncherRun(
+            renderer);
+
+    if (selectedGame < 0)
+    {
+        return 0;
+    }
+
+    game =
+        GC_LauncherGetGame(
+            selectedGame);
+
+    if (!game)
+    {
+        SYS_Report(
+            "DoomCube: invalid launcher selection\n");
+
+        return 1;
+    }
+
+    doomArgv[2] =
+        (char *)game->iwadPath;
+
+    SYS_Report(
+        "DoomCube: starting %s using %s\n",
+        game->name,
+        game->iwadPath);
 
     doomgeneric_Create(
         3,
         doomArgv);
+
+    SYS_Report(
+        "DoomCube: Doom engine initialized\n");
 
     key_prevweapon = GC_KEY_PREVWEAPON;
     key_nextweapon = GC_KEY_NEXTWEAPON;

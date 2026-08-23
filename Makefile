@@ -174,9 +174,10 @@ CFILES := \
 	z_zone.c \
 	i_input.c \
 	i_video.c \
-	doomgeneric.c \
+	gc_launcher.c \
 	gc_memcard.c \
 	gc_save_stdio.c \
+	doomgeneric.c \
 	doomgeneric_gamecube.c
 
 CPPFILES := \
