@@ -11,9 +11,9 @@ Debug/
 Release/
 Build/
 build/
-doomcube.dol
-doomcube.elf
-doomcube.iso
+*.dol
+*.elf
+*.iso
 
 scratch
 

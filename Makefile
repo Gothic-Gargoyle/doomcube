@@ -8,17 +8,29 @@ endif
 include $(DEVKITPRO)/libogc2/gamecube_rules
 
 #---------------------------------------------------------------------------------
+# Version
+#---------------------------------------------------------------------------------
+
+VERSION := 0.1.0-dev
+
+GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || echo -dirty)
+
+BUILD_VERSION := $(VERSION)
+BUILD_ID := $(GIT_HASH)$(GIT_DIRTY)
+
+#---------------------------------------------------------------------------------
 # Project
 #---------------------------------------------------------------------------------
 
-TARGET      := doomcube
+TARGET      := doomcube-v$(BUILD_VERSION)-$(BUILD_ID)
 BUILD       := build
 SOURCES     := . source
 INCLUDES    :=
 LIBDIRS     :=
 
 ISO_DIR := $(CURDIR)/build-iso
-ISO_OUT := $(CURDIR)/doomcube.iso
+ISO_OUT := $(CURDIR)/$(TARGET).iso
 
 GBI_HDR ?= $(CURDIR)/tools/gbi.hdr
 
@@ -41,6 +53,8 @@ CFLAGS := \
 	-O2 \
 	-Wall \
 	-DFEATURE_SOUND \
+	-DDOOMCUBE_APP_VERSION='"$(BUILD_VERSION)"' \
+	-DDOOMCUBE_GIT_ID='"$(BUILD_ID)"' \
 	$(MACHDEP) \
 	$(INCLUDE)
 
@@ -248,6 +262,8 @@ all: $(BUILD)
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
+
+	@echo "Building DoomCube v$(BUILD_VERSION) ($(BUILD_ID))"
 
 	@$(MAKE) \
 		--no-print-directory \

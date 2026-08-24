@@ -191,8 +191,11 @@ static const uint8_t *GC_FontGlyph(char c)
         {31,1,2,4,8,16,31}      /* Z */
     };
 
-    static const uint8_t colon[7] = { 0, 4, 4, 0, 4, 4, 0 };
-    static const uint8_t dash[7]  = { 0, 0, 0, 31, 0, 0, 0 };
+    static const uint8_t colon[7]  = { 0, 4, 4, 0, 4, 4, 0 };
+    static const uint8_t dash[7]   = { 0, 0, 0, 31, 0, 0, 0 };
+    static const uint8_t period[7] = { 0, 0, 0, 0, 0, 4, 4 };
+    static const uint8_t lparen[7] = { 2, 4, 8, 8, 8, 4, 2 };
+    static const uint8_t rparen[7] = { 8, 4, 2, 2, 2, 4, 8 };
 
     static const uint8_t digits[10][7] =
 {
@@ -231,6 +234,9 @@ static const uint8_t copyleft[7] =
     {
         case ':': return colon;
         case '-': return dash;
+        case '.': return period;
+        case '(': return lparen;
+        case ')': return rparen;
         case '@': return copyleft;
         default:  return blank;
     }
@@ -338,6 +344,34 @@ static void GC_DrawLauncher(
     SDL_RenderClear(renderer);
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+    /*
+     * Build identification.
+     *
+     * Keep this small and unobtrusive in the bottom-right corner.
+     * The strings are supplied by the Makefile.
+     */
+    {
+        char versionText[96];
+        int versionWidth;
+
+        snprintf(
+            versionText,
+            sizeof(versionText),
+            "DOOMCUBE V%s (%s)",
+            DOOMCUBE_APP_VERSION,
+            DOOMCUBE_GIT_ID);
+
+        versionWidth =
+            GC_TextWidth(versionText, 1);
+
+        GC_DrawText(
+            renderer,
+            640 - versionWidth - 8,
+            480 - 7 - 8,
+            versionText,
+            1);
+    }
 
     if (logo != NULL)
     {
