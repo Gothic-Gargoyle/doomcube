@@ -17,8 +17,8 @@ doomcube.iso
 scratch
 
 # User-supplied Doom and Timidity data
-data/wad/*.wad
-data/timidity/
+data/wad/*
+data/timidity/*
 
 # Keep the directory structure for the following directories, but ignore their contents
 build-gba/
