@@ -15,10 +15,17 @@ DoomCube currently supports:
 - Final DOOM: TNT - Evilution
 - Final DOOM: The Plutonia Experiment
 
-To play, you will need an appropriate IWAD. If you don't own DOOM, the
+To play, you will need the appropriate WADs. If you don't own DOOM, the
 shareware version (`doom1.wad`) is freely available.
 
-PLEASE NOTE THAT THE MEMORY FILE USES 116 BLOCKS!!
+(SAVE) BEHAVIOUR IS UNTESTED ON REAL HARDWARE, IT MIGHT CORRUPT YOUR SAVES/MEMORY CARD!! ALSO PLEASE NOTE THAT THE MEMORY FILE USES 116 BLOCKS!! 
+
+# Running
+## SD card (untested)
+You can run `doomcube.dol` from an SD card, WADs go in /data/WAD/ and the music patches (see[here](##Music)) go in /data/timidity, not yet tested on real hardware 
+
+## ISO
+After building this project you can run `doomcube.dol` on dolphin, not yet tested on real hardware 
 
 # Building
 
@@ -33,13 +40,13 @@ Then add the libogc2 repositories described by
 [extremscorner/pacman-packages](https://github.com/extremscorner/pacman-packages)
 to:
 
-```text
+```
 /opt/devkitpro/pacman/etc/pacman.conf
 ```
 
-Add the following above `[dkp-libs]` and `[dkp-linux]`:
+by adding the following above `[dkp-libs]` and `[dkp-linux]`:
 
-```ini
+```
 [libogc2-devkitpro]
 Server = https://packages.libogc2.org/devkitpro/linux/$arch
 Server = https://packages.extremscorner.org/devkitpro/linux/$arch
