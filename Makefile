@@ -19,6 +19,8 @@ GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || ec
 BUILD_VERSION := $(VERSION)
 BUILD_ID := $(GIT_HASH)$(GIT_DIRTY)
 
+DEBUG ?= 1
+
 #---------------------------------------------------------------------------------
 # Project
 #---------------------------------------------------------------------------------
@@ -57,6 +59,10 @@ CFLAGS := \
 	-DDOOMCUBE_GIT_ID='"$(BUILD_ID)"' \
 	$(MACHDEP) \
 	$(INCLUDE)
+
+ifeq ($(DEBUG),1)
+CFLAGS += -DDOOMCUBE_DEBUG
+endif
 
 CXXFLAGS := $(CFLAGS)
 

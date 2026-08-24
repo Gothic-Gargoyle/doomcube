@@ -1,3 +1,5 @@
+#include "gc_debug.h"
+
 #include "gc_memcard.h"
 
 #include <ogc/card.h>
@@ -228,7 +230,7 @@ static void cardRemoved(s32 channel, s32 result)
     {
         cardMounted = false;
 
-        SYS_Report(
+        DC_LOG(
             "DoomCube: Memory Card A removed\n"
         );
     }
@@ -243,7 +245,7 @@ void GC_MemoryCardSetGame(gc_savegame_id_t game)
 {
     if (!validGame(game))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: invalid memory-card game id %d\n",
             (int)game
         );
@@ -253,7 +255,7 @@ void GC_MemoryCardSetGame(gc_savegame_id_t game)
 
     currentGame = game;
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: memory-card save selected for %s\n",
         gameName(currentGame)
     );
@@ -332,12 +334,11 @@ bool GC_MemoryCardInit(void)
     s32 result;
     s32 memorySize = 0;
 
-    SYS_Report("\n");
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: ---- MEMORY CARD A ----\n"
     );
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: initializing memory card...\n"
     );
 
@@ -348,7 +349,7 @@ bool GC_MemoryCardInit(void)
 
     if (result < 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Init failed: %ld\n",
             (long)result
         );
@@ -368,7 +369,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_ProbeEx failed: %ld\n",
             (long)result
         );
@@ -376,7 +377,7 @@ bool GC_MemoryCardInit(void)
         return false;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: card size=%ld sector=%ld\n",
         (long)memorySize,
         (long)sectorSize
@@ -390,7 +391,7 @@ bool GC_MemoryCardInit(void)
 
     if (!slotWorkBuffer)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed to allocate %u-byte save work buffer\n",
             (unsigned int)saveRegionSize()
         );
@@ -406,7 +407,7 @@ bool GC_MemoryCardInit(void)
 
     if (!configWorkBuffer)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed to allocate %u-byte config work buffer\n",
             (unsigned int)configRegionSize()
         );
@@ -424,7 +425,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Mount failed: %ld\n",
             (long)result
         );
@@ -436,7 +437,7 @@ bool GC_MemoryCardInit(void)
 
     cardMounted = true;
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: Memory Card A mounted\n"
     );
 
@@ -454,7 +455,7 @@ bool GC_MemoryCardInit(void)
                 &file
             );
 
-            SYS_Report(
+            DC_DEBUG(
                 "DoomCube: existing v2 save file found (%u blocks)\n",
                 (unsigned int)(
                     cardFileSize() /
@@ -465,13 +466,13 @@ bool GC_MemoryCardInit(void)
             return true;
         }
 
-        SYS_Report(
+        DC_WARN(
             "DoomCube: old save file is %ld bytes; v2 requires %u bytes\n",
             (long)file.len,
             (unsigned int)cardFileSize()
         );
 
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: recreating DOOMCUBE save container\n"
         );
 
@@ -486,7 +487,7 @@ bool GC_MemoryCardInit(void)
 
         if (result != CARD_ERROR_READY)
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: CARD_Delete failed: %ld\n",
                 (long)result
             );
@@ -496,7 +497,7 @@ bool GC_MemoryCardInit(void)
     }
     else if (result != CARD_ERROR_NOFILE)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Open failed: %ld\n",
             (long)result
         );
@@ -504,7 +505,7 @@ bool GC_MemoryCardInit(void)
         return false;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: creating %u-byte save file (%u blocks)\n",
         (unsigned int)cardFileSize(),
         (unsigned int)(
@@ -522,7 +523,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Create failed: %ld\n",
             (long)result
         );
@@ -536,7 +537,7 @@ bool GC_MemoryCardInit(void)
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Close failed: %ld\n",
             (long)result
         );
@@ -544,7 +545,7 @@ bool GC_MemoryCardInit(void)
         return false;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: v2 save file created\n"
     );
 
@@ -637,7 +638,7 @@ bool GC_MemoryCardWriteSave(
         !data ||
         size == 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: save write rejected: mounted=%d game=%d slot=%d data=%p size=%u\n",
             cardMounted,
             (int)currentGame,
@@ -651,7 +652,7 @@ bool GC_MemoryCardWriteSave(
 
     if (size > saveCapacity())
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: %s save too large: %u > %u\n",
             gameName(currentGame),
             (unsigned int)size,
@@ -706,7 +707,7 @@ bool GC_MemoryCardWriteSave(
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Open for %s save failed: %ld\n",
             gameName(currentGame),
             (long)result
@@ -728,7 +729,7 @@ bool GC_MemoryCardWriteSave(
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Write for %s failed: %ld\n",
             gameName(currentGame),
             (long)result
@@ -737,7 +738,7 @@ bool GC_MemoryCardWriteSave(
         return false;
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: %s saved: %u bytes\n",
         gameName(currentGame),
         (unsigned int)size
@@ -802,7 +803,7 @@ bool GC_MemoryCardReadSave(
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: CARD_Read for %s failed: %ld\n",
             gameName(currentGame),
             (long)result
@@ -833,7 +834,7 @@ bool GC_MemoryCardReadSave(
 
     if (outputSize < header->size)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: destination buffer too small for %s save\n",
             gameName(currentGame)
         );
@@ -848,7 +849,7 @@ bool GC_MemoryCardReadSave(
         header->size
     );
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: %s loaded: %u bytes\n",
         gameName(currentGame),
         header->size
@@ -949,7 +950,7 @@ bool GC_MemoryCardWriteConfig(
 
     if (size > configCapacity())
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: global config too large: %u > %u\n",
             (unsigned int)size,
             (unsigned int)configCapacity()
@@ -1014,7 +1015,7 @@ bool GC_MemoryCardWriteConfig(
 
     if (result != CARD_ERROR_READY)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: global config CARD_Write failed: %ld\n",
             (long)result
         );
@@ -1022,7 +1023,7 @@ bool GC_MemoryCardWriteConfig(
         return false;
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: global config saved: %u bytes\n",
         (unsigned int)size
     );
@@ -1108,7 +1109,7 @@ bool GC_MemoryCardReadConfig(
         header->size
     );
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: global config loaded: %u bytes\n",
         header->size
     );
@@ -1134,7 +1135,7 @@ void GC_MemoryCardShutdown(void)
 
     freeWorkBuffers();
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: Memory Card A unmounted\n"
     );
 }

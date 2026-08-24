@@ -12,6 +12,8 @@
 
 #include <ogcsys.h>
 
+#include "gc_debug.h"
+
 #include "m_misc.h"
 #include "w_file.h"
 #include "z_zone.h"
@@ -76,7 +78,7 @@ static int W_GameCube_Seek(
             (long)offset,
             SEEK_SET) != 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: WAD seek failed at offset %u\n",
             offset);
 
@@ -275,7 +277,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     unsigned int i;
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: opening DVD-backed WAD: %s\n",
         path);
 
@@ -286,7 +288,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     if (fstream == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed opening WAD: %s\n",
             path);
 
@@ -298,7 +300,7 @@ static wad_file_t *W_GameCube_OpenFile(
             0,
             SEEK_END) != 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: WAD seek-to-end failed\n");
 
         fclose(
@@ -313,7 +315,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     if (length <= 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: invalid WAD size: %ld\n",
             length);
 
@@ -328,7 +330,7 @@ static wad_file_t *W_GameCube_OpenFile(
             0,
             SEEK_SET) != 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: WAD rewind failed\n");
 
         fclose(
@@ -345,7 +347,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     if (result == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed allocating WAD handle\n");
 
         fclose(
@@ -371,7 +373,7 @@ static wad_file_t *W_GameCube_OpenFile(
         {
             unsigned int j;
 
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: failed allocating WAD cache block %u\n",
                 i);
 
@@ -415,11 +417,11 @@ static wad_file_t *W_GameCube_OpenFile(
     result->use_counter =
         0;
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: WAD size: %ld bytes\n",
         length);
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: WAD cache: %u x %u KiB = %u KiB\n",
         GAMECUBE_WAD_CACHE_BLOCK_COUNT,
         GAMECUBE_WAD_CACHE_BLOCK_SIZE / 1024u,
