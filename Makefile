@@ -306,8 +306,13 @@ iso:
 	@rm -rf "$(ISO_DIR)"
 
 	@mkdir -p "$(ISO_DIR)/timidity"
+	@mkdir -p "$(ISO_DIR)/launcher"
+
 
 	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
+	@cp "$(CURDIR)/data/launcher/doomcube.bmp" \
+		"$(ISO_DIR)/launcher/doomcube.bmp"
+
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
 	if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
 		echo "Adding $$wad"; \

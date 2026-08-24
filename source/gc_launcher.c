@@ -3,11 +3,6 @@
 /* ------------------------------------------------------------------------- */
 
 #include "gc_launcher.h"
-#define GC_LAUNCHER_FONT_SCALE  3
-#define GC_LAUNCHER_LINE_HEIGHT 32
-#define GC_LAUNCHER_WIDTH       640
-#define GC_LAUNCHER_DEADZONE    24
-
 #include "gc_memcard.h"
 
 #include <ctype.h>
@@ -19,10 +14,13 @@
 #include <gccore.h>
 #include <ogcsys.h>
 
-#define GC_LAUNCHER_FONT_SCALE  3
-#define GC_LAUNCHER_LINE_HEIGHT 32
-#define GC_LAUNCHER_WIDTH       640
-#define GC_LAUNCHER_DEADZONE    24
+#define GC_LAUNCHER_FONT_SCALE   3
+#define GC_LAUNCHER_LINE_HEIGHT  32
+#define GC_LAUNCHER_WIDTH        640
+#define GC_LAUNCHER_DEADZONE     24
+
+#define GC_LAUNCHER_LOGO_PATH    "dvd:/launcher/doomcube.bmp"
+#define GC_LAUNCHER_LOGO_Y       5
 
 #define GC_MAX_GAMES 5
 
@@ -49,6 +47,84 @@ static bool GC_FileExists(const char *path)
 {
     struct stat info;
     return stat(path, &info) == 0;
+}
+
+static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
+{
+    SDL_Surface *loaded;
+    SDL_Surface *converted;
+    SDL_Texture *texture;
+
+    loaded = SDL_LoadBMP(GC_LAUNCHER_LOGO_PATH);
+
+    if (loaded == NULL)
+    {
+        SYS_Report(
+            "DoomCube: launcher logo load failed: %s\n",
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    SYS_Report(
+        "DoomCube: launcher BMP: %dx%d, format=%s, pitch=%d\n",
+        loaded->w,
+        loaded->h,
+        SDL_GetPixelFormatName(loaded->format->format),
+        loaded->pitch);
+
+    /*
+     * Do not hand SDL_CreateTextureFromSurface() whatever native
+     * pixel format SDL_LoadBMP() happened to produce.
+     *
+     * Convert explicitly to 32-bit RGBA first.  This avoids the
+     * GameCube renderer having to deal with the BMP's native BGR
+     * surface format.
+     */
+    converted = SDL_ConvertSurfaceFormat(
+        loaded,
+        SDL_PIXELFORMAT_RGBA32,
+        0);
+
+    SDL_FreeSurface(loaded);
+
+    if (converted == NULL)
+    {
+        SYS_Report(
+            "DoomCube: launcher logo conversion failed: %s\n",
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    SYS_Report(
+        "DoomCube: converted logo: %dx%d, format=%s, pitch=%d\n",
+        converted->w,
+        converted->h,
+        SDL_GetPixelFormatName(converted->format->format),
+        converted->pitch);
+
+    texture =
+        SDL_CreateTextureFromSurface(
+            renderer,
+            converted);
+
+    SDL_FreeSurface(converted);
+
+    if (texture == NULL)
+    {
+        SYS_Report(
+            "DoomCube: launcher logo texture creation failed: %s\n",
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    SYS_Report(
+        "DoomCube: launcher logo loaded from %s\n",
+        GC_LAUNCHER_LOGO_PATH);
+
+    return texture;
 }
 
 static int GC_LauncherScanGames(void)
@@ -154,8 +230,12 @@ static void GC_DrawChar(
     }
 }
 
-static void GC_DrawText(SDL_Renderer *renderer, int x, int y,
-    const char *text, int scale)
+static void GC_DrawText(
+    SDL_Renderer *renderer,
+    int x,
+    int y,
+    const char *text,
+    int scale)
 {
     size_t i;
     size_t length;
@@ -217,26 +297,70 @@ static int GC_NextAvailableGame(int current, int direction)
     return -1;
 }
 
-static void GC_DrawLauncher(SDL_Renderer *renderer, int selected)
+static void GC_DrawLauncher(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo,
+    int selected)
 {
     int i;
     int shown = 0;
-    const char *title = "DOOMCUBE";
-    int titleWidth;
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-    titleWidth = GC_TextWidth(title, 5);
+    if (logo != NULL)
+{
+    int logoWidth;
+    int logoHeight;
+    SDL_Rect logoRect;
 
-    GC_DrawText(
-        renderer,
-        (GC_LAUNCHER_WIDTH - titleWidth) / 2,
-        75,
-        title,
-        5);
+    if (SDL_QueryTexture(
+            logo,
+            NULL,
+            NULL,
+            &logoWidth,
+            &logoHeight) == 0)
+    {
+        logoRect.x =
+            (GC_LAUNCHER_WIDTH - logoWidth) / 2;
+
+        logoRect.y =
+            GC_LAUNCHER_LOGO_Y;
+
+        logoRect.w =
+            logoWidth;
+
+        logoRect.h =
+            logoHeight;
+
+        SDL_RenderCopy(
+            renderer,
+            logo,
+            NULL,
+            &logoRect);
+    }
+    else
+    {
+        SYS_Report(
+            "DoomCube: SDL_QueryTexture failed: %s\n",
+            SDL_GetError());
+    }
+}
+
+    else
+    {
+        const char *title = "DOOMCUBE";
+        int titleWidth = GC_TextWidth(title, 5);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH - titleWidth) / 2,
+            75,
+            title,
+            5);
+    }
 
     for (i = 0; i < GC_MAX_GAMES; ++i)
     {
@@ -273,7 +397,9 @@ static void GC_DrawLauncher(SDL_Renderer *renderer, int selected)
     SDL_RenderPresent(renderer);
 }
 
-static int GC_LauncherRun(SDL_Renderer *renderer)
+static int GC_LauncherRun(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo)
 {
     int selected;
     int stickHeld = 0;
@@ -283,20 +409,20 @@ static int GC_LauncherRun(SDL_Renderer *renderer)
     if (selected < 0)
         return -1;
 
-    GC_DrawLauncher(renderer, selected);
+    GC_DrawLauncher(renderer, logo, selected);
 
-/*
- * Flush stale controller transition state before entering the launcher.
- */
-for (int i = 0; i < 3; ++i)
-{
-    PAD_ScanPads();
-    (void)PAD_ButtonsDown(0);
-    SDL_Delay(16);
-}
+    /*
+     * Flush stale controller transition state before entering the launcher.
+     */
+    for (int i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
 
     SYS_Report(
-    "DoomCube: entering launcher input loop\n");
+        "DoomCube: entering launcher input loop\n");
 
     while (SYS_MainLoop())
     {
@@ -305,7 +431,7 @@ for (int i = 0; i < 3; ++i)
         int stickDirection = 0;
 
         PAD_ScanPads();
-        
+
         down = PAD_ButtonsDown(0);
         stickY = PAD_StickY(0);
 
@@ -322,7 +448,7 @@ for (int i = 0; i < 3; ++i)
             if (next >= 0)
             {
                 selected = next;
-                GC_DrawLauncher(renderer, selected);
+                GC_DrawLauncher(renderer, logo, selected);
             }
         }
 
@@ -334,7 +460,7 @@ for (int i = 0; i < 3; ++i)
             if (next >= 0)
             {
                 selected = next;
-                GC_DrawLauncher(renderer, selected);
+                GC_DrawLauncher(renderer, logo, selected);
             }
         }
 
@@ -343,6 +469,7 @@ for (int i = 0; i < 3; ++i)
         if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
         {
             GC_MemoryCardSetGame(gcGames[selected].saveGameId);
+
             SYS_Report(
                 "DoomCube: launcher selected %s\n",
                 gcGames[selected].name);
@@ -369,6 +496,7 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
     int availableGames;
     int selectedGame;
     const gc_game_entry_t *game;
+    SDL_Texture *logo;
 
     availableGames =
         GC_LauncherScanGames();
@@ -381,8 +509,15 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
         return NULL;
     }
 
+    logo = GC_LoadLauncherLogo(renderer);
+
     selectedGame =
-        GC_LauncherRun(renderer);
+        GC_LauncherRun(renderer, logo);
+
+    if (logo != NULL)
+    {
+        SDL_DestroyTexture(logo);
+    }
 
     if (selectedGame < 0)
     {

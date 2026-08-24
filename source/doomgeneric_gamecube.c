@@ -624,6 +624,29 @@ static bool GC_PlatformInit(void)
         return false;
     }
 
+    {
+        int outputWidth;
+        int outputHeight;
+
+        if (SDL_GetRendererOutputSize(
+                renderer,
+                &outputWidth,
+                &outputHeight) == 0)
+        {
+            SYS_Report(
+                "DoomCube: SDL renderer output = %dx%d\n",
+                outputWidth,
+                outputHeight);
+        }
+        else
+        {
+            SYS_Report(
+                "DoomCube: SDL_GetRendererOutputSize failed: %s\n",
+                SDL_GetError());
+        }
+    }
+    
+
     texture = SDL_CreateTexture(
         renderer,
         SDL_PIXELFORMAT_RGB888,
