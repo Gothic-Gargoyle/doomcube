@@ -1,98 +1,220 @@
+<p align="center">
+  <img src="data/launcher/doomcube.bmp" alt="DoomCube" width="200">
+</p>
+
 # DoomCube
-Since there wasn't a version of DOOM on the Gamecube with access to the source, i decided to fill in this gap! 
 
-Support for shareware,ultimatedoom, doom2, plutonia and TNT!
+Since there wasn't a version of DOOM for the Nintendo GameCube with source
+code available, I decided to fill that gap!
 
-To try it you will need a WAD file, If you don't own the game, the shareware version (doom1.wad) is freely available .
+DoomCube currently supports:
+
+- DOOM Shareware
+- The Ultimate DOOM
+- DOOM II
+- Final DOOM: TNT - Evilution
+- Final DOOM: The Plutonia Experiment
+
+To play, you will need an appropriate IWAD. If you don't own DOOM, the
+shareware version (`doom1.wad`) is freely available.
+
+PLEASE NOTE THAT THE MEMORY FILE USES 116 BLOCKS!!
 
 # Building
 
-This makes use of libogc2.
+DoomCube uses devkitPPC and libogc2.
 
 ## Changing over to libogc2
-After installing devkitpro as per [the instructions](https://devkitpro.org/wiki/Getting_Started) add [the following lines](https://github.com/extremscorner/pacman-packages) to `/opt/devkitpro/pacman/etc/pacman.conf` above `[dkp-libs]` and `[dkp-linux]`:
+
+First install devkitPro according to the
+[devkitPro Getting Started guide](https://devkitpro.org/wiki/Getting_Started).
+
+Then add the libogc2 repositories described by
+[extremscorner/pacman-packages](https://github.com/extremscorner/pacman-packages)
+to:
+
+```text
+/opt/devkitpro/pacman/etc/pacman.conf
 ```
+
+Add the following above `[dkp-libs]` and `[dkp-linux]`:
+
+```ini
 [libogc2-devkitpro]
 Server = https://packages.libogc2.org/devkitpro/linux/$arch
 Server = https://packages.extremscorner.org/devkitpro/linux/$arch
 ```
-then enter `sudo dkp-pacman -Syuu` to update to make libogc2 the default.
 
-then install the needed libraries:
-`sudo dkp-pacman -S libogc2 libogc2-libdvm libogc2-sdl2 libogc2-sdl2_gfx libogc2-sdl2_image-full libogc2-sdl2_mixer-full libogc2-sdl2_ttf `
+Then update the devkitPro packages:
 
-## WAD
-Place in /data folder.
+```bash
+sudo dkp-pacman -Syuu
+```
+
+Install the libraries required by DoomCube:
+
+```bash
+sudo dkp-pacman -S \
+    libogc2 \
+    libogc2-libdvm \
+    libogc2-sdl2 \
+    libogc2-sdl2_mixer-full
+```
+
+Building an ISO also requires `genisoimage`, `mkisofs`, or `xorriso`.
+
+For example, on Debian/Ubuntu:
+
+```bash
+sudo apt install genisoimage
+```
+
+## WADs
+
+Place your IWADs in:
+
+```text
+data/wad/
+```
+
+Supported filenames are:
+
+```text
+doom1.wad
+doom.wad
+doom2.wad
+tnt.wad
+plutonia.wad
+```
+
+Only WADs present when the ISO is built will be included. The DoomCube launcher
+automatically detects the games available on the disc.
 
 ## Music
-libogc2 exposes Timidity, but youll have to provide patches yourself, the project default has the following:
 
-```
- mkdir -p data/timidity
+DoomCube converts DOOM's MUS music to MIDI at runtime and plays it through
+SDL2_mixer's TiMidity backend.
+
+libogc2 provides the TiMidity implementation, but the instrument patches must
+be supplied separately. DoomCube does not distribute these patches.
+
+The SDL_mixer TiMidity instrument set can be installed with:
+
+```bash
+mkdir -p data/timidity
 cd data/timidity
 
 wget https://www.libsdl.org/projects/old/SDL_mixer/timidity/timidity.tar.gz
-
 tar -xzf timidity.tar.gz
 
 cp -a timidity/. .
+
 rm -rf timidity
 rm timidity.tar.gz
 
 sed -i '4i dir dvd:/timidity\n' timidity.cfg
 
 cd ../..
- ```
-
- verify that the config has `4:dor dvd:/timidity` and that there are 192 patches.
-
 ```
+
+Verify that the configuration contains:
+
+```text
+dir dvd:/timidity
+```
+
+and that all 192 patches are present:
+
+```bash
 grep -n '^dir ' data/timidity/timidity.cfg
 find data/timidity -iname '*.pat' | wc -l
 ```
 
-Then build the project run `make test`, this will create a `doomcube.iso` that you can play on Dolphin, *OG hardware is as of yet untested*.
+The second command should output:
+
+```text
+192
+```
+
+## Building the ISO
+
+Build DoomCube:
+
+```bash
+make
+make iso
+```
+
+This creates:
+
+```text
+doomcube.iso
+```
+
+To clean, rebuild, create the ISO, and launch it in the Flatpak version of
+Dolphin:
+
+```bash
+make test
+```
+
+Real GameCube hardware is currently untested.
 
 # Controls
-Default:
-* Forward = Left analog stick up
-* Backpedal = Left analog stick down
-* Turn Left = C stick left
-* Turn Right = c stick right
-* Strafe Left = Left analog stick left
-* Strafe Right = Left analog stick right
 
-* Run = Left trigger
-* Fire = Right trigger
-* Use = A button
-* Next weapon = X
-* Previous Weapon = Y
+Default controls:
 
-* Map = Z
+- Forward = Left analog stick up
+- Backpedal = Left analog stick down
+- Turn left = C-stick left
+- Turn right = C-stick right
+- Strafe left = Left analog stick left
+- Strafe right = Left analog stick right
+- Run = L trigger
+- Fire = R trigger
+- Use = A
+- Next weapon = X
+- Previous weapon = Y
+- Map = Z
+
+Controls can be customised in the in-game options menu.
 
 # Features
-## Must have
-* genericdoom running on gamecube
-* sound effects 
-* music
 
-## Should have
-* rumble when firing
-* Save file support
-* customisable controls
+## Implemented
 
-## Could have
-* Fuflly fledged savefile with icon and whatnot.
-* fully fledged midi player
-* Better reading of data (WADs get read from disc and this causes stuttering)
-* Gameboy cable support for displaying map on gameboy
-* Local 4 screen MP
-* Online MP
+- DoomGeneric running natively on the Nintendo GameCube
+- DOOM Shareware, Ultimate DOOM, DOOM II, TNT and Plutonia support
+- GameCube controller support
+- Customisable controls
+- Sound effects
+- MUS-to-MIDI conversion
+- MIDI music through SDL2_mixer/TiMidity
+- GameCube controller rumble
+- Memory Card save support
+- Per-game save handling (1 save per game)
+- Multi-IWAD launcher
+- DoomCube launcher artwork
+- Disc-based IWAD loading
 
-## Wont have
+## Known Issues
+
+- MIDI music playback can stop working after DoomCube has been running for some
+  time. Individual tracks appear to play correctly, but music may stop during a
+  later music transition. The exact cause is currently unknown and under
+  investigation.
+- Original GameCube hardware has not yet been tested.
+
+## Could Have
+
+- Fully fledged Memory Card save file with GameCube icon/banner metadata
+- Improved disc I/O/caching to reduce stuttering
+- Game Boy Advance cable support for displaying the automap
+- Local four-player split-screen multiplayer
+- Online multiplayer
+
+# Screenshots
 
 ## Dolphin
-![Dolphin](screenshots/dolphin.png)
 
-## Real Gamecube
-![Real Gamecube](screenshots/Real Gamecube.png)
+![Dolphin](screenshots/dolphin.png)

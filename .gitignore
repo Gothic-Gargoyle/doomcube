@@ -10,14 +10,20 @@ Debug/
 Release/
 Build/
 build/
-doomcube.*
+doomcube.dol
+doomcube.elf
+doomcube.iso
+
 scratch
 
 # User-supplied Doom and Timidity data
 data/wad/*.wad
 data/timidity/
 
-# Keep the directory
-
+# Keep the directory structure for the following directories, but ignore their contents
+build-gba/
 build-gba-test/
 build-iso
+doomgeneric.sln
+source/doomgeneric.vcxproj.filters
+.vscode
