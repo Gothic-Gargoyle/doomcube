@@ -8,6 +8,7 @@
 
 #include "gc_launcher.h"
 #include "gc_memcard.h"
+#include "gc_controls.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,10 +28,6 @@
 #define GC_OUTPUT_HEIGHT 480
 
 #define KEYQUEUE_SIZE 64
-#define STICK_DEADZONE 24
-#define CSTICK_DEADZONE 24
-#define MAP_CSTICK_DEADZONE 40
-#define TRIGGER_THRESHOLD 40
 
 #define GC_KEY_BASE 0xd0
 
@@ -145,37 +142,17 @@ static void setKeyState(int wanted, int *state, unsigned char key)
 
 static void handleGameCubeInput(void)
 {
-    PAD_ScanPads();
+    gc_control_state_t controls;
+    int zHeld;
 
-    u16 held = PAD_ButtonsHeld(0);
+    GC_ControlsPoll(
+        &controls);
 
-    s8 stickX = PAD_StickX(0);
-    s8 stickY = PAD_StickY(0);
+    zHeld =
+        controls.mapModifier;
 
-    s8 cstickX = PAD_SubStickX(0);
-    s8 cstickY = PAD_SubStickY(0);
-
-    u8 triggerR = PAD_TriggerR(0);
-
-    int up = stickY > STICK_DEADZONE;
-    int down = stickY < -STICK_DEADZONE;
-    int left = stickX < -STICK_DEADZONE;
-    int right = stickX > STICK_DEADZONE;
-
-    int zHeld = !!(held & PAD_TRIGGER_Z);
-
-    int cLeft = !zHeld && cstickX < -CSTICK_DEADZONE;
-    int cRight = !zHeld && cstickX > CSTICK_DEADZONE;
-
-
-    /*
-     * Z acts as an automap modifier.
-     *
-     * Tapping Z by itself toggles the automap.
-     * Using another automap control while Z is held suppresses
-     * the toggle when Z is released.
-     */
-    if (zHeld && !gcZHeld)
+    if (zHeld &&
+        !gcZHeld)
     {
         gcZHeld = 1;
         gcZUsed = 0;
@@ -183,84 +160,177 @@ static void handleGameCubeInput(void)
 
     if (zHeld)
     {
-        int mapNorth = 0;
-        int mapSouth = 0;
-        int mapEast = 0;
-        int mapWest = 0;
+        int mapNorth =
+            controls.mapNorth;
 
-        int zoomIn;
-        int zoomOut;
-        int maxZoom;
-        int follow;
+        int mapSouth =
+            controls.mapSouth;
 
-        int mark;
-        int clearMark;
-        int grid;
+        int mapEast =
+            controls.mapEast;
 
-        if (abs(cstickX) > MAP_CSTICK_DEADZONE)
-        {
-            mapEast = cstickX > 0;
-            mapWest = cstickX < 0;
-        }
+        int mapWest =
+            controls.mapWest;
 
-        if (abs(cstickY) > MAP_CSTICK_DEADZONE)
-        {
-            mapNorth = cstickY > 0;
-            mapSouth = cstickY < 0;
-        }
+        int zoomIn =
+            controls.mapZoomIn;
 
-       zoomIn = !!(held & PAD_BUTTON_UP);
-       zoomOut = !!(held & PAD_BUTTON_DOWN);
-       maxZoom = !!(held & PAD_BUTTON_LEFT);
-       follow = !!(held & PAD_BUTTON_RIGHT);
+        int zoomOut =
+            controls.mapZoomOut;
 
-       mark = !!(held & PAD_BUTTON_A);
-       clearMark = !!(held & PAD_BUTTON_B);
-       grid = !!(held & PAD_BUTTON_X);
+        int maxZoom =
+            controls.mapMaxZoom;
 
-        if (mapNorth || mapSouth || mapEast || mapWest ||
-            zoomIn || zoomOut || maxZoom || follow ||
-            mark || clearMark || grid)
+        int follow =
+            controls.mapFollow;
+
+        int mark =
+            controls.mapMark;
+
+        int clearMark =
+            controls.mapClearMark;
+
+        int grid =
+            controls.mapGrid;
+
+        if (mapNorth ||
+            mapSouth ||
+            mapEast ||
+            mapWest ||
+            zoomIn ||
+            zoomOut ||
+            maxZoom ||
+            follow ||
+            mark ||
+            clearMark ||
+            grid)
         {
             gcZUsed = 1;
         }
 
-        setKeyState(mapNorth, &gcMapNorth, GC_KEY_MAP_NORTH);
-        setKeyState(mapSouth, &gcMapSouth, GC_KEY_MAP_SOUTH);
-        setKeyState(mapEast, &gcMapEast, GC_KEY_MAP_EAST);
-        setKeyState(mapWest, &gcMapWest, GC_KEY_MAP_WEST);
+        setKeyState(
+            mapNorth,
+            &gcMapNorth,
+            GC_KEY_MAP_NORTH);
 
-        setKeyState(zoomIn, &gcMapZoomIn, GC_KEY_MAP_ZOOMIN);
-        setKeyState(zoomOut, &gcMapZoomOut, GC_KEY_MAP_ZOOMOUT);
-        setKeyState(maxZoom, &gcMapMaxZoom, GC_KEY_MAP_MAXZOOM);
-        setKeyState(follow, &gcMapFollow, GC_KEY_MAP_FOLLOW);
+        setKeyState(
+            mapSouth,
+            &gcMapSouth,
+            GC_KEY_MAP_SOUTH);
 
-        setKeyState(grid, &gcMapGrid, GC_KEY_MAP_GRID);
-        setKeyState(mark, &gcMapMark, GC_KEY_MAP_MARK);
-        setKeyState(clearMark, &gcMapClearMark, GC_KEY_MAP_CLEARMARK);
+        setKeyState(
+            mapEast,
+            &gcMapEast,
+            GC_KEY_MAP_EAST);
+
+        setKeyState(
+            mapWest,
+            &gcMapWest,
+            GC_KEY_MAP_WEST);
+
+        setKeyState(
+            zoomIn,
+            &gcMapZoomIn,
+            GC_KEY_MAP_ZOOMIN);
+
+        setKeyState(
+            zoomOut,
+            &gcMapZoomOut,
+            GC_KEY_MAP_ZOOMOUT);
+
+        setKeyState(
+            maxZoom,
+            &gcMapMaxZoom,
+            GC_KEY_MAP_MAXZOOM);
+
+        setKeyState(
+            follow,
+            &gcMapFollow,
+            GC_KEY_MAP_FOLLOW);
+
+        setKeyState(
+            grid,
+            &gcMapGrid,
+            GC_KEY_MAP_GRID);
+
+        setKeyState(
+            mark,
+            &gcMapMark,
+            GC_KEY_MAP_MARK);
+
+        setKeyState(
+            clearMark,
+            &gcMapClearMark,
+            GC_KEY_MAP_CLEARMARK);
     }
     else
     {
-        setKeyState(0, &gcMapNorth, GC_KEY_MAP_NORTH);
-        setKeyState(0, &gcMapSouth, GC_KEY_MAP_SOUTH);
-        setKeyState(0, &gcMapEast, GC_KEY_MAP_EAST);
-        setKeyState(0, &gcMapWest, GC_KEY_MAP_WEST);
+        setKeyState(
+            0,
+            &gcMapNorth,
+            GC_KEY_MAP_NORTH);
 
-        setKeyState(0, &gcMapZoomIn, GC_KEY_MAP_ZOOMIN);
-        setKeyState(0, &gcMapZoomOut, GC_KEY_MAP_ZOOMOUT);
-        setKeyState(0, &gcMapMaxZoom, GC_KEY_MAP_MAXZOOM);
-        setKeyState(0, &gcMapFollow, GC_KEY_MAP_FOLLOW);
+        setKeyState(
+            0,
+            &gcMapSouth,
+            GC_KEY_MAP_SOUTH);
 
-        setKeyState(0, &gcMapGrid, GC_KEY_MAP_GRID);
-        setKeyState(0, &gcMapMark, GC_KEY_MAP_MARK);
-        setKeyState(0, &gcMapClearMark, GC_KEY_MAP_CLEARMARK);
+        setKeyState(
+            0,
+            &gcMapEast,
+            GC_KEY_MAP_EAST);
+
+        setKeyState(
+            0,
+            &gcMapWest,
+            GC_KEY_MAP_WEST);
+
+        setKeyState(
+            0,
+            &gcMapZoomIn,
+            GC_KEY_MAP_ZOOMIN);
+
+        setKeyState(
+            0,
+            &gcMapZoomOut,
+            GC_KEY_MAP_ZOOMOUT);
+
+        setKeyState(
+            0,
+            &gcMapMaxZoom,
+            GC_KEY_MAP_MAXZOOM);
+
+        setKeyState(
+            0,
+            &gcMapFollow,
+            GC_KEY_MAP_FOLLOW);
+
+        setKeyState(
+            0,
+            &gcMapGrid,
+            GC_KEY_MAP_GRID);
+
+        setKeyState(
+            0,
+            &gcMapMark,
+            GC_KEY_MAP_MARK);
+
+        setKeyState(
+            0,
+            &gcMapClearMark,
+            GC_KEY_MAP_CLEARMARK);
 
         if (gcZHeld)
         {
             if (!gcZUsed)
             {
-                queueKey(1, GC_KEY_MAP_TOGGLE);
-                queueKey(0, GC_KEY_MAP_TOGGLE);
+                queueKey(
+                    1,
+                    GC_KEY_MAP_TOGGLE);
+
+                queueKey(
+                    0,
+                    GC_KEY_MAP_TOGGLE);
             }
 
             gcZHeld = 0;
@@ -269,84 +339,82 @@ static void handleGameCubeInput(void)
     }
 
     setKeyState(
-        up,
+        controls.moveUp,
         &gcUp,
         KEY_UPARROW);
 
     setKeyState(
-        down,
+        controls.moveDown,
         &gcDown,
         KEY_DOWNARROW);
 
     setKeyState(
-        left,
+        controls.moveLeft,
         &gcLeft,
         KEY_LEFTARROW);
 
     setKeyState(
-        right,
+        controls.moveRight,
         &gcRight,
         KEY_RIGHTARROW);
 
     setKeyState(
-        cLeft,
+        controls.strafeLeft,
         &gcStrafeLeft,
         KEY_STRAFE_L);
 
     setKeyState(
-        cRight,
+        controls.strafeRight,
         &gcStrafeRight,
         KEY_STRAFE_R);
 
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_X),
+        controls.fire,
+        &gcFire,
+        KEY_FIRE);
+
+    setKeyState(
+        controls.nextWeapon,
         &gcNextWeapon,
         key_nextweapon);
 
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_Y),
+        controls.prevWeapon,
         &gcPrevWeapon,
         key_prevweapon);
 
     setKeyState(
-        held & PAD_TRIGGER_L,
+        controls.run,
         &gcRun,
         KEY_RSHIFT);
 
     setKeyState(
-        held & PAD_TRIGGER_R,
-        &gcFire,
-        KEY_FIRE);    
-
-    /* Various things the A button does. */
-    setKeyState(
-        !zHeld && (held & PAD_BUTTON_A),
+        controls.use,
         &gcUse,
         KEY_USE);
 
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_A),
+        controls.menuConfirm,
         &gcConfirm,
         GC_KEY_MENU_CONFIRM);
 
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_A),
+        controls.menuConfirm,
         &gcEnter,
         GC_KEY_MENU_ENTER);
 
-    /* Various things the B button does. */
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_B),
+        controls.menuBack,
         &gcBack,
         GC_KEY_MENU_BACK);
 
     setKeyState(
-        !zHeld && (held & PAD_BUTTON_B),
+        controls.menuBack,
         &gcAbort,
         GC_KEY_MENU_ABORT);
 
     setKeyState(
-        held & PAD_BUTTON_START,
+        controls.menuStart,
         &gcEscape,
         KEY_ESCAPE);
 
@@ -377,11 +445,13 @@ static void handleGameCubeInput(void)
                         PAD_MOTOR_STOP);
 
                     gcRumbleOn = false;
-                    gcRumbleFrames = gcRumbleOffFrames;
+                    gcRumbleFrames =
+                        gcRumbleOffFrames;
                 }
                 else
                 {
-                    gcRumbleFrames = gcRumbleOnFrames;
+                    gcRumbleFrames =
+                        gcRumbleOnFrames;
                 }
             }
             else
@@ -391,13 +461,12 @@ static void handleGameCubeInput(void)
                     PAD_MOTOR_RUMBLE);
 
                 gcRumbleOn = true;
-                gcRumbleFrames = gcRumbleOnFrames;
+                gcRumbleFrames =
+                    gcRumbleOnFrames;
             }
         }
     }
 }
-
-
 /* ------------------------------------------------------------------------- */
 /* ISO9660                                                                   */
 /* ------------------------------------------------------------------------- */

@@ -175,6 +175,7 @@ CFILES := \
 	i_input.c \
 	i_video.c \
 	gc_config.c \
+	gc_controls.c \
 	gc_launcher.c \
 	gc_memcard.c \
 	gc_save_stdio.c \
