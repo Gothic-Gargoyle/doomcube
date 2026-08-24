@@ -194,15 +194,44 @@ static const uint8_t *GC_FontGlyph(char c)
     static const uint8_t colon[7] = { 0, 4, 4, 0, 4, 4, 0 };
     static const uint8_t dash[7]  = { 0, 0, 0, 31, 0, 0, 0 };
 
+    static const uint8_t digits[10][7] =
+{
+    {14,17,19,21,25,17,14}, /* 0 */
+    {4,12,4,4,4,4,14},      /* 1 */
+    {14,17,1,2,4,8,31},     /* 2 */
+    {30,1,1,14,1,1,30},     /* 3 */
+    {2,6,10,18,31,2,2},     /* 4 */
+    {31,16,16,30,1,1,30},   /* 5 */
+    {14,16,16,30,17,17,14}, /* 6 */
+    {31,1,2,4,8,8,8},       /* 7 */
+    {14,17,17,14,17,17,14}, /* 8 */
+    {14,17,17,15,1,1,14}    /* 9 */
+};
+
+static const uint8_t copyleft[7] =
+{
+    14, /* 01110 */
+    17, /* 10001 */
+    13, /* 10110 */
+    9, /* 10010 */
+    13, /* 10110 */
+    17, /* 10001 */
+    14  /* 01110 */
+};
+
     unsigned char uc = (unsigned char)toupper((unsigned char)c);
 
     if (uc >= 'A' && uc <= 'Z')
         return glyphs[uc - 'A'];
+    
+    if (uc >= '0' && uc <= '9')
+        return digits[uc - '0'];
 
     switch (uc)
     {
         case ':': return colon;
         case '-': return dash;
+        case '@': return copyleft;
         default:  return blank;
     }
 }
@@ -311,44 +340,43 @@ static void GC_DrawLauncher(
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
     if (logo != NULL)
-{
-    int logoWidth;
-    int logoHeight;
-    SDL_Rect logoRect;
-
-    if (SDL_QueryTexture(
-            logo,
-            NULL,
-            NULL,
-            &logoWidth,
-            &logoHeight) == 0)
     {
-        logoRect.x =
-            (GC_LAUNCHER_WIDTH - logoWidth) / 2;
+        int logoWidth;
+        int logoHeight;
+        SDL_Rect logoRect;
 
-        logoRect.y =
-            GC_LAUNCHER_LOGO_Y;
+        if (SDL_QueryTexture(
+                logo,
+                NULL,
+                NULL,
+                &logoWidth,
+                &logoHeight) == 0)
+        {
+            logoRect.x =
+                (GC_LAUNCHER_WIDTH - logoWidth) / 2;
 
-        logoRect.w =
-            logoWidth;
+            logoRect.y =
+                GC_LAUNCHER_LOGO_Y;
 
-        logoRect.h =
-            logoHeight;
+            logoRect.w =
+                logoWidth;
 
-        SDL_RenderCopy(
-            renderer,
-            logo,
-            NULL,
-            &logoRect);
+            logoRect.h =
+                logoHeight;
+
+            SDL_RenderCopy(
+                renderer,
+                logo,
+                NULL,
+                &logoRect);
+        }
+        else
+        {
+            SYS_Report(
+                "DoomCube: SDL_QueryTexture failed: %s\n",
+                SDL_GetError());
+        }
     }
-    else
-    {
-        SYS_Report(
-            "DoomCube: SDL_QueryTexture failed: %s\n",
-            SDL_GetError());
-    }
-}
-
     else
     {
         const char *title = "DOOMCUBE";
@@ -381,7 +409,10 @@ static void GC_DrawLauncher(
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         }
 
-        textWidth = GC_TextWidth(gcGames[i].name, GC_LAUNCHER_FONT_SCALE);
+        textWidth =
+            GC_TextWidth(
+                gcGames[i].name,
+                GC_LAUNCHER_FONT_SCALE);
 
         GC_DrawText(
             renderer,
@@ -393,7 +424,77 @@ static void GC_DrawLauncher(
         ++shown;
     }
 
-    GC_DrawText(renderer, 205, 395, "A - START", 2);
+    {
+        const char *startText = "A - START";
+        const char *copyright =
+            "@ COPYLEFT 2026 SPERGE BRIGADE STUDIOS";
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH - GC_TextWidth(startText, 2)) / 2,
+            395,
+            startText,
+            2);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH - GC_TextWidth(copyright, 2)) / 2,
+            425,
+            copyright,
+            2);
+    }
+
+    SDL_RenderPresent(renderer);
+}
+
+
+static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
+{
+    const char *text = "LOADING";
+    int textWidth;
+    SDL_Rect box =
+    {
+        190,
+        205,
+        260,
+        70
+    };
+
+    /*
+     * Draw an opaque box over the existing launcher screen.
+     * Avoid alpha/blending tricks here so the GameCube SDL renderer
+     * has as little work to do as possible.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        155,
+        0,
+        255);
+
+    SDL_RenderFillRect(
+        renderer,
+        &box);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+
+    textWidth =
+        GC_TextWidth(
+            text,
+            GC_LAUNCHER_FONT_SCALE);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH - textWidth) / 2,
+        228,
+        text,
+        GC_LAUNCHER_FONT_SCALE);
+
     SDL_RenderPresent(renderer);
 }
 
@@ -467,15 +568,22 @@ static int GC_LauncherRun(
         stickHeld = stickDirection != 0;
 
         if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
-        {
-            GC_MemoryCardSetGame(gcGames[selected].saveGameId);
+{
+    /*
+     * Present a loading indication before returning from the launcher.
+     * IWAD/game initialization happens after this function returns and
+     * can take long enough to otherwise look like a freeze.
+     */
+    GC_DrawLoadingOverlay(renderer);
 
-            SYS_Report(
-                "DoomCube: launcher selected %s\n",
-                gcGames[selected].name);
+    GC_MemoryCardSetGame(gcGames[selected].saveGameId);
 
-            return selected;
-        }
+    SYS_Report(
+        "DoomCube: launcher selected %s\n",
+        gcGames[selected].name);
+
+    return selected;
+}
 
         SDL_Delay(16);
     }
