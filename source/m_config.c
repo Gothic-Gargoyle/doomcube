@@ -1076,6 +1076,24 @@ static default_t extra_defaults_list[] =
 
     CONFIG_VARIABLE_INT(dclick_use),
 
+    CONFIG_VARIABLE_INT(gc_move_up),
+    CONFIG_VARIABLE_INT(gc_move_down),
+    CONFIG_VARIABLE_INT(gc_move_left),
+    CONFIG_VARIABLE_INT(gc_move_right), 
+
+    CONFIG_VARIABLE_INT(gc_strafe_left),
+    CONFIG_VARIABLE_INT(gc_strafe_right),   
+
+    CONFIG_VARIABLE_INT(gc_fire),
+    CONFIG_VARIABLE_INT(gc_use),
+    CONFIG_VARIABLE_INT(gc_run),    
+
+    CONFIG_VARIABLE_INT(gc_next_weapon),
+    CONFIG_VARIABLE_INT(gc_prev_weapon),    
+
+    CONFIG_VARIABLE_INT(gc_menu_confirm),
+    CONFIG_VARIABLE_INT(gc_menu_back),
+
 #ifdef FEATURE_SOUND
 
     //!

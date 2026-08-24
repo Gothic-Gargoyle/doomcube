@@ -121,4 +121,5 @@ bool GC_ControlsIsCapturing(void);
 
 gc_action_t GC_ControlsCaptureAction(void);
 
+void GC_ControlsBindConfig(void);
 #endif

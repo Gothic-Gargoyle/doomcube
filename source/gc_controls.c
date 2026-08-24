@@ -3,7 +3,7 @@
 #include <gccore.h>
 
 #include <stdlib.h>
-
+#include "m_config.h"
 
 #define GC_STICK_DEADZONE       24
 #define GC_CSTICK_DEADZONE      24
@@ -30,7 +30,7 @@ static u8 gcTriggerR;
 /* Bindings                                                                  */
 /* ------------------------------------------------------------------------- */
 
-static gc_input_t gcBindings[GC_ACTION_COUNT] =
+static int gcBindings[GC_ACTION_COUNT] =
 {
     [GC_ACTION_MOVE_UP]      = GC_INPUT_STICK_UP,
     [GC_ACTION_MOVE_DOWN]    = GC_INPUT_STICK_DOWN,
@@ -398,7 +398,7 @@ gc_input_t GC_ControlsGetBinding(
     }
 
     return
-        gcBindings[action];
+        (gc_input_t)gcBindings[action];
 }
 
 
@@ -420,6 +420,61 @@ void GC_ControlsSetBinding(
 
     gcBindings[action] =
         input;
+}
+
+void GC_ControlsBindConfig(void)
+{
+    M_BindVariable(
+        "gc_move_up",
+        &gcBindings[GC_ACTION_MOVE_UP]);
+
+    M_BindVariable(
+        "gc_move_down",
+        &gcBindings[GC_ACTION_MOVE_DOWN]);
+
+    M_BindVariable(
+        "gc_move_left",
+        &gcBindings[GC_ACTION_MOVE_LEFT]);
+
+    M_BindVariable(
+        "gc_move_right",
+        &gcBindings[GC_ACTION_MOVE_RIGHT]);
+
+    M_BindVariable(
+        "gc_strafe_left",
+        &gcBindings[GC_ACTION_STRAFE_LEFT]);
+
+    M_BindVariable(
+        "gc_strafe_right",
+        &gcBindings[GC_ACTION_STRAFE_RIGHT]);
+
+    M_BindVariable(
+        "gc_fire",
+        &gcBindings[GC_ACTION_FIRE]);
+
+    M_BindVariable(
+        "gc_use",
+        &gcBindings[GC_ACTION_USE]);
+
+    M_BindVariable(
+        "gc_run",
+        &gcBindings[GC_ACTION_RUN]);
+
+    M_BindVariable(
+        "gc_next_weapon",
+        &gcBindings[GC_ACTION_NEXT_WEAPON]);
+
+    M_BindVariable(
+        "gc_prev_weapon",
+        &gcBindings[GC_ACTION_PREV_WEAPON]);
+
+    M_BindVariable(
+        "gc_menu_confirm",
+        &gcBindings[GC_ACTION_MENU_CONFIRM]);
+
+    M_BindVariable(
+        "gc_menu_back",
+        &gcBindings[GC_ACTION_MENU_BACK]);
 }
 
 

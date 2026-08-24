@@ -19,7 +19,7 @@
 //	and call the startup functions.
 //
 
-
+#include "gc_controls.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -346,6 +346,8 @@ void D_BindVariables(void)
     M_BindWeaponControls();
     M_BindMapControls();
     M_BindMenuControls();
+    GC_ControlsBindConfig();
+
     M_BindChatControls(MAXPLAYERS);
 
     key_multi_msgplayer[0] = HUSTR_KEYGREEN;
