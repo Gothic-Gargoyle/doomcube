@@ -6,6 +6,7 @@
 *.user
 *~
 .vs/
+.vscode/
 Debug/
 Release/
 Build/
@@ -26,4 +27,3 @@ build-gba-test/
 build-iso
 doomgeneric.sln
 source/doomgeneric.vcxproj.filters
-.vscode
