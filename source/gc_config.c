@@ -1,3 +1,5 @@
+#include "gc_debug.h"
+
 #include "gc_config.h"
 
 #include "gc_memcard.h"
@@ -10,7 +12,7 @@ bool GC_ConfigSave(
 {
     if (!data || size == 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: refusing to save empty configuration\n");
 
         return false;
@@ -20,13 +22,13 @@ bool GC_ConfigSave(
             data,
             size))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: global configuration write failed\n");
 
         return false;
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: global configuration saved (%u bytes)\n",
         (unsigned int)size);
 
@@ -51,13 +53,13 @@ bool GC_ConfigLoad(
             bufferSize,
             actualSize))
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: no global configuration found\n");
 
         return false;
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: global configuration loaded (%u bytes)\n",
         (unsigned int)*actualSize);
 

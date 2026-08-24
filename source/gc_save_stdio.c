@@ -1,3 +1,5 @@
+#include "gc_debug.h"
+
 #include "gc_save_stdio.h"
 #include "gc_memcard.h"
 
@@ -211,7 +213,7 @@ FILE *GC_SaveFOpen(
         stream->slot =
             slot;
 
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: fopen slot %d read (%u bytes)\n",
             slot,
             (unsigned int)actualSize
@@ -246,7 +248,7 @@ FILE *GC_SaveFOpen(
         tempSaveSize =
             0;
 
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: fopen temporary save for write\n"
         );
 
@@ -438,7 +440,7 @@ else
             tempSaveValid =
                 true;
 
-            SYS_Report(
+            DC_DEBUG(
                 "DoomCube: temporary Doom save complete (%u bytes)\n",
                 (unsigned int)tempSaveSize
             );
@@ -511,14 +513,14 @@ int GC_SaveRename(
     if (!tempSaveValid ||
         tempSaveSize == 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: rename without temporary save\n"
         );
 
         return -1;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: committing slot %d (%u bytes)\n",
         slot,
         (unsigned int)tempSaveSize
@@ -529,7 +531,7 @@ int GC_SaveRename(
             tempSaveData,
             tempSaveSize))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: slot %d commit FAILED\n",
             slot
         );
@@ -537,7 +539,7 @@ int GC_SaveRename(
         return -1;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: slot %d commit OK\n",
         slot
     );

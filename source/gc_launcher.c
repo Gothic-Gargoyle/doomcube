@@ -2,6 +2,8 @@
 /* DoomCube launcher                                                         */
 /* ------------------------------------------------------------------------- */
 
+#include "gc_debug.h"
+
 #include "gc_launcher.h"
 #include "gc_memcard.h"
 
@@ -59,14 +61,14 @@ static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
 
     if (loaded == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: launcher logo load failed: %s\n",
             SDL_GetError());
 
         return NULL;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: launcher BMP: %dx%d, format=%s, pitch=%d\n",
         loaded->w,
         loaded->h,
@@ -90,14 +92,14 @@ static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
 
     if (converted == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: launcher logo conversion failed: %s\n",
             SDL_GetError());
 
         return NULL;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: converted logo: %dx%d, format=%s, pitch=%d\n",
         converted->w,
         converted->h,
@@ -113,14 +115,14 @@ static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
 
     if (texture == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: launcher logo texture creation failed: %s\n",
             SDL_GetError());
 
         return NULL;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: launcher logo loaded from %s\n",
         GC_LAUNCHER_LOGO_PATH);
 
@@ -133,7 +135,7 @@ static int GC_LauncherScanGames(void)
 
     gcAvailableGameCount = 0;
 
-    SYS_Report("DoomCube: ---- AVAILABLE GAMES ----\n");
+    DC_LOG("DoomCube: ---- AVAILABLE GAMES ----\n");
 
     for (i = 0; i < GC_MAX_GAMES; ++i)
     {
@@ -144,13 +146,13 @@ static int GC_LauncherScanGames(void)
 
         ++gcAvailableGameCount;
 
-        SYS_Report(
+        DC_LOG(
             "DoomCube: found %s (%s)\n",
             gcGames[i].name,
             gcGames[i].iwadPath);
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: %d game(s) available\n",
         gcAvailableGameCount);
 
@@ -406,7 +408,7 @@ static void GC_DrawLauncher(
         }
         else
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: SDL_QueryTexture failed: %s\n",
                 SDL_GetError());
         }
@@ -556,7 +558,7 @@ static int GC_LauncherRun(
         SDL_Delay(16);
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: entering launcher input loop\n");
 
     while (SYS_MainLoop())
@@ -612,7 +614,7 @@ static int GC_LauncherRun(
 
     GC_MemoryCardSetGame(gcGames[selected].saveGameId);
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: launcher selected %s\n",
         gcGames[selected].name);
 
@@ -645,7 +647,7 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
 
     if (availableGames == 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: no supported IWADs found on disc\n");
 
         return NULL;
@@ -671,13 +673,13 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
 
     if (!game)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: invalid launcher selection\n");
 
         return NULL;
     }
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: launcher selected %s (%s)\n",
         game->name,
         game->iwadPath);

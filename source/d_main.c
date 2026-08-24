@@ -1370,9 +1370,6 @@ void D_DoomMain (void)
 
     // Find main IWAD file and load it.
     iwadfile = D_FindIWAD(IWAD_MASK_DOOM, &gamemission);
-    SYS_Report(
-        "DoomCube: D_DoomMain after D_FindIWAD: %s\n",
-        iwadfile != NULL ? iwadfile : "(null)");
 
     // None found?
 

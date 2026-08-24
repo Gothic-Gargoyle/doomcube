@@ -5,6 +5,8 @@
 
 #include <ogc/system.h>
 
+#include "gc_debug.h"
+
 #include "doomtype.h"
 #include "i_sound.h"
 #include "memio.h"
@@ -50,8 +52,8 @@ static boolean GC_MusicInit(void)
     Uint16 format;
     const char *cfg;
 
-    SYS_Report(
-        "DoomCube: GC_MusicInit\n"
+    DC_LOG(
+        "DoomCube: initializing music\n"
     );
 
     /*
@@ -65,13 +67,13 @@ static boolean GC_MusicInit(void)
             &format,
             &channels))
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: SDL_mixer audio not open; opening it\n"
         );
 
         if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: SDL audio init failed: %s\n",
                 SDL_GetError()
             );
@@ -87,7 +89,7 @@ static boolean GC_MusicInit(void)
                 2,
                 1024) < 0)
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: Mix_OpenAudio failed: %s\n",
                 Mix_GetError()
             );
@@ -102,7 +104,7 @@ static boolean GC_MusicInit(void)
     }
     else
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: SDL_mixer already open: "
             "freq=%d channels=%d format=0x%x\n",
             freq,
@@ -119,7 +121,7 @@ static boolean GC_MusicInit(void)
      */
     if (!Mix_SetTimidityCfg(GC_TIMIDITY_CFG))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: Mix_SetTimidityCfg failed: %s\n",
             Mix_GetError()
         );
@@ -139,7 +141,7 @@ static boolean GC_MusicInit(void)
 
     cfg = Mix_GetTimidityCfg();
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: TiMidity config: %s\n",
         cfg != NULL ? cfg : "(null)"
     );
@@ -150,7 +152,7 @@ static boolean GC_MusicInit(void)
 
     music_initialized = true;
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: MUS/MIDI TiMidity backend ready\n"
     );
 
@@ -164,7 +166,7 @@ static boolean GC_MusicInit(void)
 
 static void GC_MusicShutdown(void)
 {
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: GC_MusicShutdown initialized=%d playing=%d\n",
         music_initialized,
         Mix_PlayingMusic()
@@ -177,7 +179,7 @@ static void GC_MusicShutdown(void)
 
     if (owns_audio)
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: closing owned SDL_mixer audio device\n"
         );
 
@@ -191,7 +193,7 @@ static void GC_MusicShutdown(void)
 
     music_initialized = false;
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: music backend shut down\n"
     );
 }
@@ -226,7 +228,7 @@ static void GC_SetMusicVolume(int volume)
 
 static void GC_PauseMusic(void)
 {
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: PauseMusic playing=%d paused=%d\n",
         Mix_PlayingMusic(),
         Mix_PausedMusic()
@@ -242,7 +244,7 @@ static void GC_PauseMusic(void)
 
 static void GC_ResumeMusic(void)
 {
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: ResumeMusic playing=%d paused=%d\n",
         Mix_PlayingMusic(),
         Mix_PausedMusic()
@@ -295,7 +297,7 @@ static boolean GC_ConvertMusToMidi(
 
     if (input == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: mem_fopen_read failed\n"
         );
 
@@ -307,7 +309,7 @@ static boolean GC_ConvertMusToMidi(
 
     if (output == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: mem_fopen_write failed\n"
         );
 
@@ -323,7 +325,7 @@ static boolean GC_ConvertMusToMidi(
             input,
             output))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: MUS -> MIDI conversion FAILED\n"
         );
 
@@ -345,7 +347,7 @@ static boolean GC_ConvertMusToMidi(
     if (buffer == NULL ||
         buffer_len == 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: MUS -> MIDI produced empty output\n"
         );
 
@@ -360,7 +362,7 @@ static boolean GC_ConvertMusToMidi(
 
     if (copy == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed allocating MIDI buffer: %lu bytes\n",
             (unsigned long)buffer_len
         );
@@ -386,30 +388,6 @@ static boolean GC_ConvertMusToMidi(
     return true;
 }
 
-
-static void GC_TestPatchOpen(void)
-{
-    FILE *f;
-
-    f = fopen(
-        "dvd:/timidity/instruments/cymride2.pat",
-        "rb");
-
-    if (f == NULL)
-    {
-        SYS_Report(
-            "DoomCube: TEST patch fopen FAILED\n");
-
-        return;
-    }
-
-    SYS_Report(
-        "DoomCube: TEST patch fopen OK\n");
-
-    fclose(f);
-}
-
-
 /* ------------------------------------------------------------------------- */
 /* Register                                                                  */
 /* ------------------------------------------------------------------------- */
@@ -424,7 +402,7 @@ static void *GC_RegisterSong(
     void *midi_data;
     size_t midi_len;
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: RegisterSong data=%p len=%d\n",
         data,
         len
@@ -434,7 +412,7 @@ static void *GC_RegisterSong(
         data == NULL ||
         len <= 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: RegisterSong rejected "
             "initialized=%d data=%p len=%d\n",
             music_initialized,
@@ -453,7 +431,7 @@ static void *GC_RegisterSong(
 
     if (handle == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: failed allocating music handle\n"
         );
 
@@ -462,7 +440,7 @@ static void *GC_RegisterSong(
 
     if (GC_IsMidi(data, len))
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: source lump is already MIDI (%d bytes)\n",
             len
         );
@@ -472,7 +450,7 @@ static void *GC_RegisterSong(
 
         if (handle->midi_data == NULL)
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: failed allocating direct MIDI buffer\n"
             );
 
@@ -492,7 +470,7 @@ static void *GC_RegisterSong(
     }
     else
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: converting MUS (%d bytes)\n",
             len
         );
@@ -506,7 +484,7 @@ static void *GC_RegisterSong(
                 &midi_data,
                 &midi_len))
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: conversion FAILED\n"
             );
 
@@ -518,7 +496,7 @@ static void *GC_RegisterSong(
         handle->midi_data = midi_data;
         handle->midi_len = midi_len;
 
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: conversion OK: %lu MIDI bytes\n",
             (unsigned long)midi_len
         );
@@ -526,7 +504,7 @@ static void *GC_RegisterSong(
 
     if (handle->midi_len > (size_t)INT_MAX)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: MIDI lump too large: %lu bytes\n",
             (unsigned long)handle->midi_len
         );
@@ -545,7 +523,7 @@ static void *GC_RegisterSong(
 
     if (rw == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: SDL_RWFromConstMem FAILED: %s\n",
             SDL_GetError()
         );
@@ -558,15 +536,13 @@ static void *GC_RegisterSong(
 
     SDL_ClearError();
 
-    GC_TestPatchOpen();
-
     handle->music =
         Mix_LoadMUS_RW(
             rw,
             1
         );
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: Mix_LoadMUS_RW => %p error='%s'\n",
         (void *)handle->music,
         Mix_GetError()
@@ -574,7 +550,7 @@ static void *GC_RegisterSong(
 
     if (handle->music == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: Mix_LoadMUS_RW FAILED\n"
         );
 
@@ -584,7 +560,7 @@ static void *GC_RegisterSong(
         return NULL;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: RegisterSong => handle=%p music=%p "
         "midi=%p len=%lu\n",
         (void *)handle,
@@ -606,7 +582,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
     gc_music_handle_t *handle =
         (gc_music_handle_t *)handle_ptr;
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: UnRegisterSong handle=%p "
         "playing=%d paused=%d\n",
         handle_ptr,
@@ -616,7 +592,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
     if (handle == NULL)
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: UnRegisterSong NULL handle\n"
         );
 
@@ -631,14 +607,14 @@ static void GC_UnRegisterSong(void *handle_ptr)
      */
     Mix_HaltMusic();
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: after defensive halt playing=%d\n",
         Mix_PlayingMusic()
     );
 
     if (handle->music != NULL)
     {
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: freeing Mix_Music %p\n",
             (void *)handle->music
         );
@@ -649,12 +625,12 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
         handle->music = NULL;
 
-        SYS_Report(
+        DC_DEBUG(
             "DoomCube: Mix_Music freed\n"
         );
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: freeing MIDI buffer %p (%lu bytes)\n",
         handle->midi_data,
         (unsigned long)handle->midi_len
@@ -667,7 +643,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
     free(handle);
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: UnRegisterSong complete\n"
     );
 }
@@ -684,7 +660,7 @@ static void GC_PlaySong(
     gc_music_handle_t *handle =
         (gc_music_handle_t *)handle_ptr;
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: PlaySong handle=%p looping=%d\n",
         handle_ptr,
         looping
@@ -692,7 +668,7 @@ static void GC_PlaySong(
 
     if (!music_initialized)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: PlaySong rejected: backend not initialized\n"
         );
 
@@ -701,7 +677,7 @@ static void GC_PlaySong(
 
     if (handle == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: PlaySong rejected: NULL handle\n"
         );
 
@@ -710,7 +686,7 @@ static void GC_PlaySong(
 
     if (handle->music == NULL)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: PlaySong rejected: NULL Mix_Music\n"
         );
 
@@ -719,7 +695,7 @@ static void GC_PlaySong(
 
     SDL_ClearError();
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: Mix_PlayMusic music=%p\n",
         (void *)handle->music
     );
@@ -728,7 +704,7 @@ static void GC_PlaySong(
             handle->music,
             looping ? -1 : 0) < 0)
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: Mix_PlayMusic FAILED: %s\n",
             Mix_GetError()
         );
@@ -736,7 +712,7 @@ static void GC_PlaySong(
         return;
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: Mix_PlayMusic OK "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),
@@ -747,7 +723,7 @@ static void GC_PlaySong(
 
 static void GC_StopSong(void)
 {
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: StopSong before halt "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),
@@ -759,7 +735,7 @@ static void GC_StopSong(void)
         Mix_HaltMusic();
     }
 
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: StopSong after halt "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),

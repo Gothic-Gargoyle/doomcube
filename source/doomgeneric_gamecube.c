@@ -2,6 +2,8 @@
 
 #include <SDL2/SDL.h>
 
+#include "gc_debug.h"
+
 #include "doomkeys.h"
 #include "doomgeneric.h"
 #include "m_controls.h"
@@ -631,12 +633,12 @@ static void handleGameCubeInput(void)
 
 static bool mountIsoFilesystem(void)
 {
-    SYS_Report(
+    DC_DEBUG(
         "DoomCube: mounting ISO9660...\n");
 
     if (!ISO9660_Mount("dvd", &__io_gcdvd))
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: ISO9660_Mount FAILED\n");
 
         return false;
@@ -644,7 +646,7 @@ static bool mountIsoFilesystem(void)
 
     dvdMounted = true;
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: mounted dvd:/\n");
 
     return true;
@@ -668,7 +670,7 @@ static bool GC_PlatformInit(void)
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
-        SYS_Report(
+        DC_WARN(
             "SDL_Init failed: %s\n",
             SDL_GetError());
 
@@ -685,7 +687,7 @@ static bool GC_PlatformInit(void)
 
     if (!window)
     {
-        SYS_Report(
+        DC_WARN(
             "SDL_CreateWindow failed: %s\n",
             SDL_GetError());
 
@@ -699,7 +701,7 @@ static bool GC_PlatformInit(void)
 
     if (!renderer)
     {
-        SYS_Report(
+        DC_WARN(
             "SDL_CreateRenderer failed: %s\n",
             SDL_GetError());
 
@@ -715,14 +717,14 @@ static bool GC_PlatformInit(void)
                 &outputWidth,
                 &outputHeight) == 0)
         {
-            SYS_Report(
+            DC_LOG(
                 "DoomCube: SDL renderer output = %dx%d\n",
                 outputWidth,
                 outputHeight);
         }
         else
         {
-            SYS_Report(
+            DC_WARN(
                 "DoomCube: SDL_GetRendererOutputSize failed: %s\n",
                 SDL_GetError());
         }
@@ -738,7 +740,7 @@ static bool GC_PlatformInit(void)
 
     if (!texture)
     {
-        SYS_Report(
+        DC_WARN(
             "SDL_CreateTexture failed: %s\n",
             SDL_GetError());
 
@@ -750,7 +752,7 @@ static bool GC_PlatformInit(void)
 
     if (!mountIsoFilesystem())
     {
-        SYS_Report(
+        DC_WARN(
             "DoomCube: disc mount unavailable\n");
 
         return false;
@@ -758,7 +760,7 @@ static bool GC_PlatformInit(void)
 
    if (!GC_MemoryCardInit())
 {
-    SYS_Report(
+    DC_WARN(
         "DoomCube: Memory Card unavailable; continuing without saves\n");
 }
 platformInitialized = true;
@@ -952,7 +954,7 @@ int main(int argc, char **argv)
         (char *)selectedIwad
     };
 
-    SYS_Report(
+    DC_LOG(
         "DoomCube: starting Doom engine with %s\n",
         selectedIwad);
 
