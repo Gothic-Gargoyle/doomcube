@@ -58,6 +58,7 @@ static gc_input_t gcBindings[GC_ACTION_COUNT] =
 
 static bool gcCapturing;
 static bool gcCaptureArmed;
+static bool gcCaptureReleaseWait;
 
 static gc_action_t gcCaptureAction;
 
@@ -193,55 +194,69 @@ void GC_ControlsPoll(void)
     gcTriggerR =
         PAD_TriggerR(0);
 
-
-    /*
-     * Controller binding capture.
-     *
-     * First wait until the button used to select the menu entry
-     * has been released. Then accept the next physical input.
-     */
-    if (gcCapturing)
+/*
+ * A binding was just assigned.
+ *
+ * Suppress normal controller input until every bindable
+ * input has been released.
+ */
+if (gcCaptureReleaseWait)
+{
+    if (GC_FirstInputHeld() == GC_INPUT_NONE)
     {
-        gc_input_t input =
-            GC_FirstInputHeld();
+        gcCaptureReleaseWait =
+            false;
+    }
 
-        if (!gcCaptureArmed)
+    return;
+}
+
+
+/*
+ * Controller binding capture.
+ *
+ * First wait until the button used to select the menu entry
+ * has been released. Then accept the next physical input.
+ */
+if (gcCapturing)
+{
+    gc_input_t input =
+        GC_FirstInputHeld();
+
+    if (!gcCaptureArmed)
+    {
+        if (input == GC_INPUT_NONE)
         {
-            if (input == GC_INPUT_NONE)
-            {
-                gcCaptureArmed =
-                    true;
-            }
-
-            return;
+            gcCaptureArmed =
+                true;
         }
 
-if (input != GC_INPUT_NONE)
-{
-    GC_ControlsSetBinding(
-        gcCaptureAction,
-        input);
+        return;
+    }
 
-    gcCapturing =
-        false;
+    if (input != GC_INPUT_NONE)
+    {
+        GC_ControlsSetBinding(
+            gcCaptureAction,
+            input);
 
-    gcCaptureArmed =
-        false;
+        gcCapturing =
+            false;
 
-    /*
-     * Consume the input that completed the binding.
-     * It must not also operate the menu this frame.
-     */
-    gcHeld = 0;
-    gcStickX = 0;
-    gcStickY = 0;
-    gcCStickX = 0;
-    gcCStickY = 0;
-    gcTriggerR = 0;
-}
+        gcCaptureArmed =
+            false;
+
+        /*
+         * Do not let the newly assigned input also operate
+         * the menu. Wait for it to be released first.
+         */
+        gcCaptureReleaseWait =
+            true;
+
+        return;
     }
 }
-
+}
 
 /* ------------------------------------------------------------------------- */
 /* Remappable actions                                                        */
@@ -250,8 +265,11 @@ if (input != GC_INPUT_NONE)
 bool GC_ControlHeld(
     gc_action_t action)
 {
-    if (gcCapturing)
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
         return false;
+    }
 
     if (action < 0 ||
         action >= GC_ACTION_COUNT)
@@ -264,13 +282,15 @@ bool GC_ControlHeld(
             gcBindings[action]);
 }
 
-
 /* ------------------------------------------------------------------------- */
 /* Fixed controls                                                            */
 /* ------------------------------------------------------------------------- */
 
 bool GC_MenuStartHeld(void)
 {
+    if (gcCaptureReleaseWait)
+        return false;
+
     return
         (gcHeld & PAD_BUTTON_START) != 0;
 }
@@ -532,6 +552,9 @@ void GC_ControlsBeginCapture(
         true;
 
     gcCaptureArmed =
+        false;
+
+    gcCaptureReleaseWait =
         false;
 }
 

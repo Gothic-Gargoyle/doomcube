@@ -1317,10 +1317,10 @@ void M_DrawGameCubeMovement(void)
 
     if (GC_ControlsIsCapturing())
     {
-        M_WriteText(
-            95,
-            180,
-            "START TO CANCEL");
+M_WriteText(
+    95,
+    35,
+    "START TO CANCEL");
     }
 }
 void M_DrawGameCubeActions(void)
@@ -1374,9 +1374,9 @@ void M_DrawGameCubeActions(void)
     if (GC_ControlsIsCapturing())
     {
         M_WriteText(
-            95,
-            180,
-            "START TO CANCEL");
+    95,
+    35,
+    "START TO CANCEL");
     }
 }
 
