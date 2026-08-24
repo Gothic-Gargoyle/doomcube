@@ -216,18 +216,29 @@ void GC_ControlsPoll(void)
             return;
         }
 
-        if (input != GC_INPUT_NONE)
-        {
-            GC_ControlsSetBinding(
-                gcCaptureAction,
-                input);
+if (input != GC_INPUT_NONE)
+{
+    GC_ControlsSetBinding(
+        gcCaptureAction,
+        input);
 
-            gcCapturing =
-                false;
+    gcCapturing =
+        false;
 
-            gcCaptureArmed =
-                false;
-        }
+    gcCaptureArmed =
+        false;
+
+    /*
+     * Consume the input that completed the binding.
+     * It must not also operate the menu this frame.
+     */
+    gcHeld = 0;
+    gcStickX = 0;
+    gcStickY = 0;
+    gcCStickX = 0;
+    gcCStickY = 0;
+    gcTriggerR = 0;
+}
     }
 }
 

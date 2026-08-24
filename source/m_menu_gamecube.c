@@ -57,6 +57,7 @@
 #include "sounds.h"
 
 #include "m_menu.h"
+#include "gc_controls.h"
 
 
 extern patch_t*		hu_font[HU_FONTSIZE];
@@ -118,7 +119,7 @@ boolean			inhelpscreens;
 boolean			menuactive;
 
 #define SKULLXOFF		-32
-#define LINEHEIGHT		16
+#define LINEHEIGHT		14
 
 extern boolean		sendpause;
 char			savegamestrings[10][SAVESTRINGSIZE];
@@ -173,6 +174,20 @@ menu_t*	currentMenu;
 //
 // PROTOTYPES
 //
+
+void M_GameCubeControls(int choice);
+void M_GameCubeMovement(int choice);
+void M_GameCubeActions(int choice);
+
+void M_GameCubeBindMovement(int choice);
+void M_GameCubeBindAction(int choice);
+void M_GameCubeResetControls(int choice);
+
+void M_DrawGameCubeControls(void);
+
+void M_DrawGameCubeMovement(void);
+void M_DrawGameCubeActions(void);
+
 void M_NewGame(int choice);
 void M_Episode(int choice);
 void M_ChooseSkill(int choice);
@@ -338,6 +353,7 @@ enum
     mousesens,
     option_empty2,
     soundvol,
+    gccontrols,
     opt_end
 } options_e;
 
@@ -350,7 +366,8 @@ menuitem_t OptionsMenu[]=
     {-1,"",0,'\0'},
     {2,"M_MSENS",	M_ChangeSensitivity,'m'},
     {-1,"",0,'\0'},
-    {1,"M_SVOL",	M_Sound,'s'}
+    {1,"M_SVOL",	M_Sound,'s'},
+    {1,"", M_GameCubeControls,'c'}
 };
 
 menu_t  OptionsDef =
@@ -363,6 +380,150 @@ menu_t  OptionsDef =
     0
 };
 
+/* ------------------------------------------------------------------------- */
+/* GameCube controls menus                                                   */
+/* ------------------------------------------------------------------------- */
+
+enum
+{
+    gc_controls_movement,
+    gc_controls_actions,
+    gc_controls_reset,
+    gc_controls_end
+};
+
+enum
+{
+    gc_move_forward,
+    gc_move_backward,
+    gc_move_left,
+    gc_move_right,
+    gc_strafe_left,
+    gc_strafe_right,
+    gc_movement_end
+};
+
+enum
+{
+    gc_action_fire,
+    gc_action_use,
+    gc_action_run,
+    gc_action_nextweapon,
+    gc_action_prevweapon,
+    gc_action_confirm,
+    gc_action_back,
+    gc_actions_end
+};
+
+
+static const gc_action_t gcMovementActions[gc_movement_end] =
+{
+    GC_ACTION_MOVE_UP,
+    GC_ACTION_MOVE_DOWN,
+    GC_ACTION_MOVE_LEFT,
+    GC_ACTION_MOVE_RIGHT,
+    GC_ACTION_STRAFE_LEFT,
+    GC_ACTION_STRAFE_RIGHT
+};
+
+
+static const char *gcMovementNames[gc_movement_end] =
+{
+    "FORWARD",
+    "BACKWARD",
+    "TURN LEFT",
+    "TURN RIGHT",
+    "STRAFE LEFT",
+    "STRAFE RIGHT"
+};
+
+
+static const gc_action_t gcGameplayActions[gc_actions_end] =
+{
+    GC_ACTION_FIRE,
+    GC_ACTION_USE,
+    GC_ACTION_RUN,
+    GC_ACTION_NEXT_WEAPON,
+    GC_ACTION_PREV_WEAPON,
+    GC_ACTION_MENU_CONFIRM,
+    GC_ACTION_MENU_BACK
+};
+
+
+static const char *gcGameplayNames[gc_actions_end] =
+{
+    "FIRE",
+    "USE",
+    "RUN",
+    "NEXT WEAPON",
+    "PREV WEAPON",
+    "MENU CONFIRM",
+    "MENU BACK"
+};
+
+
+menuitem_t GameCubeControlsMenu[] =
+{
+    {1,"", M_GameCubeMovement,'m'},
+    {1,"", M_GameCubeActions,'a'},
+    {1,"", M_GameCubeResetControls,'r'}
+};
+
+
+menu_t GameCubeControlsDef =
+{
+    gc_controls_end,
+    &OptionsDef,
+    GameCubeControlsMenu,
+    M_DrawGameCubeControls,
+    70, 70,
+    0
+};
+
+
+menuitem_t GameCubeMovementMenu[] =
+{
+    {1,"", M_GameCubeBindMovement,'f'},
+    {1,"", M_GameCubeBindMovement,'b'},
+    {1,"", M_GameCubeBindMovement,'l'},
+    {1,"", M_GameCubeBindMovement,'r'},
+    {1,"", M_GameCubeBindMovement,'a'},
+    {1,"", M_GameCubeBindMovement,'d'}
+};
+
+
+menu_t GameCubeMovementDef =
+{
+    gc_movement_end,
+    &GameCubeControlsDef,
+    GameCubeMovementMenu,
+    M_DrawGameCubeMovement,
+    35, 55,
+    0
+};
+
+
+menuitem_t GameCubeActionsMenu[] =
+{
+    {1,"", M_GameCubeBindAction,'f'},
+    {1,"", M_GameCubeBindAction,'u'},
+    {1,"", M_GameCubeBindAction,'r'},
+    {1,"", M_GameCubeBindAction,'n'},
+    {1,"", M_GameCubeBindAction,'p'},
+    {1,"", M_GameCubeBindAction,'c'},
+    {1,"", M_GameCubeBindAction,'b'}
+};
+
+
+menu_t GameCubeActionsDef =
+{
+    gc_actions_end,
+    &GameCubeControlsDef,
+    GameCubeActionsMenu,
+    M_DrawGameCubeActions,
+    35, 50,
+    0
+};
 //
 // Read This! MENU 1 & 2
 //
@@ -980,6 +1141,32 @@ void M_Episode(int choice)
 
 
 
+void M_DrawGameCubeControls(void)
+{
+    M_WriteText(
+        70,
+        25,
+        "GAMECUBE CONTROLS");
+
+    M_WriteText(
+        GameCubeControlsDef.x,
+        GameCubeControlsDef.y +
+            LINEHEIGHT * gc_controls_movement,
+        "MOVEMENT");
+
+    M_WriteText(
+        GameCubeControlsDef.x,
+        GameCubeControlsDef.y +
+            LINEHEIGHT * gc_controls_actions,
+        "ACTIONS");
+
+    M_WriteText(
+        GameCubeControlsDef.x,
+        GameCubeControlsDef.y +
+            LINEHEIGHT * gc_controls_reset,
+        "RESET DEFAULTS");
+}
+
 //
 // M_Options
 //
@@ -1004,6 +1191,11 @@ void M_DrawOptions(void)
 
     M_DrawThermo(OptionsDef.x,OptionsDef.y+LINEHEIGHT*(scrnsize+1),
 		 9,screenSize);
+    
+         M_WriteText(
+        OptionsDef.x,
+        OptionsDef.y + LINEHEIGHT * gccontrols,
+        "GAMECUBE CONTROLS");
 }
 
 void M_Options(int choice)
@@ -1011,7 +1203,182 @@ void M_Options(int choice)
     M_SetupNextMenu(&OptionsDef);
 }
 
+void M_GameCubeControls(int choice)
+{
+    (void)choice;
 
+    M_SetupNextMenu(
+        &GameCubeControlsDef);
+}
+
+
+void M_GameCubeMovement(int choice)
+{
+    (void)choice;
+
+    M_SetupNextMenu(
+        &GameCubeMovementDef);
+}
+
+
+void M_GameCubeActions(int choice)
+{
+    (void)choice;
+
+    M_SetupNextMenu(
+        &GameCubeActionsDef);
+}
+
+
+void M_GameCubeBindMovement(int choice)
+{
+    if (choice < 0 ||
+        choice >= gc_movement_end)
+    {
+        return;
+    }
+
+    GC_ControlsBeginCapture(
+        gcMovementActions[choice]);
+}
+
+
+void M_GameCubeBindAction(int choice)
+{
+    if (choice < 0 ||
+        choice >= gc_actions_end)
+    {
+        return;
+    }
+
+    GC_ControlsBeginCapture(
+        gcGameplayActions[choice]);
+}
+
+
+void M_GameCubeResetControls(int choice)
+{
+    (void)choice;
+
+    GC_ControlsResetDefaults();
+
+    players[consoleplayer].message =
+        "GAMECUBE CONTROLS RESET";
+}
+
+
+void M_DrawGameCubeMovement(void)
+{
+    int i;
+
+    M_WriteText(
+        75,
+        20,
+        "MOVEMENT");
+
+    for (i = 0;
+         i < gc_movement_end;
+         ++i)
+    {
+        const char *binding;
+
+        if (GC_ControlsIsCapturing() &&
+            GC_ControlsCaptureAction() == gcMovementActions[i])
+        {
+            binding =
+                "PRESS INPUT";
+        }
+        else
+        {
+            binding =
+                GC_ControlsInputName(
+                    GC_ControlsGetBinding(
+                        gcMovementActions[i]));
+        }
+
+        /*
+         * Action label: left column.
+         */
+        M_WriteText(
+            35,
+            GameCubeMovementDef.y +
+                LINEHEIGHT * i,
+            (char *)gcMovementNames[i]);
+
+        /*
+         * Binding/status: fixed right column.
+         */
+        M_WriteText(
+            190,
+            GameCubeMovementDef.y +
+                LINEHEIGHT * i,
+            (char *)binding);
+    }
+
+    if (GC_ControlsIsCapturing())
+    {
+        M_WriteText(
+            95,
+            180,
+            "START TO CANCEL");
+    }
+}
+void M_DrawGameCubeActions(void)
+{
+    int i;
+
+    M_WriteText(
+        80,
+        15,
+        "ACTIONS");
+
+    for (i = 0;
+         i < gc_actions_end;
+         ++i)
+    {
+        const char *binding;
+
+        if (GC_ControlsIsCapturing() &&
+            GC_ControlsCaptureAction() == gcGameplayActions[i])
+        {
+            binding =
+                "PRESS INPUT";
+        }
+        else
+        {
+            binding =
+                GC_ControlsInputName(
+                    GC_ControlsGetBinding(
+                        gcGameplayActions[i]));
+        }
+
+        /*
+         * Action label: left column.
+         */
+        M_WriteText(
+            35,
+            GameCubeActionsDef.y +
+                LINEHEIGHT * i,
+            (char *)gcGameplayNames[i]);
+
+        /*
+         * Binding/status: fixed right column.
+         */
+        M_WriteText(
+            190,
+            GameCubeActionsDef.y +
+                LINEHEIGHT * i,
+            (char *)binding);
+    }
+
+    if (GC_ControlsIsCapturing())
+    {
+        M_WriteText(
+            95,
+            180,
+            "START TO CANCEL");
+    }
+}
 
 //
 //      Toggle messages on/off
@@ -1563,6 +1930,27 @@ boolean M_Responder (event_t* ev)
     
     if (key == -1)
 	return false;
+
+    /*
+ * While assigning a GameCube control, normal menu input is suppressed.
+ *
+ * Start remains fixed, so pressing Start cancels assignment instead of
+ * accidentally leaving the controls menu with capture still active.
+ */
+if (GC_ControlsIsCapturing())
+{
+    if (key == key_menu_activate ||
+        key == KEY_ESCAPE)
+    {
+        GC_ControlsCancelCapture();
+
+        S_StartSound(
+            NULL,
+            sfx_swtchx);
+    }
+
+    return true;
+}
 
     // Save Game string input
     if (saveStringEnter)
