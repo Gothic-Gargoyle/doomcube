@@ -71,6 +71,7 @@
 
 
 #include "g_game.h"
+#include "gc_controls.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -391,7 +392,21 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
 	    cmd->angleturn -= angleturn[tspeed]; 
 	if (joyxmove < 0) 
 	    cmd->angleturn += angleturn[tspeed]; 
-    } 
+    }
+
+    /*
+     * GameCube analogue turning.
+     *
+     * Positive stick X means right, while Doom uses negative
+     * angleturn values for turning right.
+     */
+    if (GC_ControlHasAnalogAxis(
+            GC_ACTION_MOVE_LEFT,
+            GC_ACTION_MOVE_RIGHT))
+    {
+        cmd->angleturn -=
+            GC_ControlsAnalogTurn();
+    }
  
     if (gamekeydown[key_up]) 
     {
@@ -409,6 +424,27 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
     if (joyymove > 0) 
         forward -= forwardmove[speed]; 
 
+    /*
+     * GameCube analogue forward/backward movement.
+     *
+     * MOVE_DOWN is the negative direction and MOVE_UP is the
+     * positive direction, so a positive axis value means forward.
+     */
+    if (GC_ControlHasAnalogAxis(
+            GC_ACTION_MOVE_DOWN,
+            GC_ACTION_MOVE_UP))
+    {
+        int analog_forward =
+            GC_ControlsAnalogMovement(
+                GC_ACTION_MOVE_DOWN,
+                GC_ACTION_MOVE_UP);
+
+        forward +=
+            analog_forward *
+            forwardmove[speed] /
+            127;
+    }
+
     if (gamekeydown[key_strafeleft]
      || joybuttons[joybstrafeleft]
      || mousebuttons[mousebstrafeleft]
@@ -423,6 +459,33 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
      || joystrafemove > 0)
     {
         side += sidemove[speed]; 
+    }
+
+    /*
+     * GameCube analogue strafing.
+     *
+     * Left is negative and right is positive, matching Doom's
+     * sidemove convention.
+     */
+    if (GC_ControlHasAnalogAxis(
+            GC_ACTION_STRAFE_LEFT,
+            GC_ACTION_STRAFE_RIGHT))
+    {
+        int analog_side =
+            GC_ControlsAnalogMovement(
+                GC_ACTION_STRAFE_LEFT,
+                GC_ACTION_STRAFE_RIGHT);
+
+        /*
+         * GameCube analogue strafing uses the same maximum speed
+         * as forward/back movement. Vanilla Doom's running strafe
+         * speed is only 40 versus 50 forward, which feels unusually
+         * sluggish on an analogue console controller.
+         */
+        side +=
+            analog_side *
+            forwardmove[speed] /
+            127;
     }
 
     // buttons

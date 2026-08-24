@@ -1,14 +1,20 @@
 #include "gc_controls.h"
 
 #include <gccore.h>
+#include <ogc/system.h>
 
 #include <stdlib.h>
 #include "m_config.h"
 
-#define GC_STICK_DEADZONE       24
+#define GC_STICK_DEADZONE       16
 #define GC_CSTICK_DEADZONE      24
 #define GC_MAP_CSTICK_DEADZONE  40
 #define GC_TRIGGER_THRESHOLD    40
+
+#define GC_TURN_SENSITIVITY_MIN      25
+#define GC_TURN_SENSITIVITY_MAX     200
+#define GC_TURN_SENSITIVITY_DEFAULT 100
+#define GC_ANALOG_TURN_MAX          2048
 
 
 /* ------------------------------------------------------------------------- */
@@ -24,6 +30,9 @@ static s8 gcCStickX;
 static s8 gcCStickY;
 
 static u8 gcTriggerR;
+
+static int gcTurnSensitivity =
+    GC_TURN_SENSITIVITY_DEFAULT;
 
 
 /* ------------------------------------------------------------------------- */
@@ -185,6 +194,7 @@ void GC_ControlsPoll(void)
     gcStickY =
         PAD_StickY(0);
 
+
     gcCStickX =
         PAD_SubStickX(0);
 
@@ -282,6 +292,312 @@ bool GC_ControlHeld(
             gcBindings[action]);
 }
 
+bool GC_ControlHasAnalogAxis(
+    gc_action_t negative_action,
+    gc_action_t positive_action)
+{
+    gc_input_t negative;
+    gc_input_t positive;
+
+    if (negative_action < 0 ||
+        negative_action >= GC_ACTION_COUNT ||
+        positive_action < 0 ||
+        positive_action >= GC_ACTION_COUNT)
+    {
+        return false;
+    }
+
+    negative = gcBindings[negative_action];
+    positive = gcBindings[positive_action];
+
+    if (negative == GC_INPUT_STICK_LEFT &&
+        positive == GC_INPUT_STICK_RIGHT)
+    {
+        return true;
+    }
+
+    if (negative == GC_INPUT_STICK_DOWN &&
+        positive == GC_INPUT_STICK_UP)
+    {
+        return true;
+    }
+
+    if (negative == GC_INPUT_CSTICK_LEFT &&
+        positive == GC_INPUT_CSTICK_RIGHT)
+    {
+        return true;
+    }
+
+    if (negative == GC_INPUT_CSTICK_DOWN &&
+        positive == GC_INPUT_CSTICK_UP)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+int GC_ControlAnalogAxis(
+    gc_action_t negative_action,
+    gc_action_t positive_action)
+{
+    gc_input_t negative;
+    gc_input_t positive;
+
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return 0;
+    }
+
+    if (!GC_ControlHasAnalogAxis(
+            negative_action,
+            positive_action))
+    {
+        return 0;
+    }
+
+    negative = gcBindings[negative_action];
+    positive = gcBindings[positive_action];
+
+    if (negative == GC_INPUT_STICK_LEFT &&
+        positive == GC_INPUT_STICK_RIGHT)
+    {
+        return gcStickX;
+    }
+
+    if (negative == GC_INPUT_STICK_DOWN &&
+        positive == GC_INPUT_STICK_UP)
+    {
+        return gcStickY;
+    }
+
+    if (negative == GC_INPUT_CSTICK_LEFT &&
+        positive == GC_INPUT_CSTICK_RIGHT)
+    {
+        return gcCStickX;
+    }
+
+    if (negative == GC_INPUT_CSTICK_DOWN &&
+        positive == GC_INPUT_CSTICK_UP)
+    {
+        return gcCStickY;
+    }
+
+    return 0;
+}
+
+
+/*
+ * Return a proportional -127..127 movement value for a pair of
+ * actions bound to opposite directions of one physical analogue axis.
+ *
+ * The physical deadzone is removed and the remaining range is
+ * rescaled so that:
+ *
+ *     deadzone edge -> 0
+ *     full deflection -> 127
+ *
+ * This is intended for forward/backward and strafing. Turning has
+ * its own sensitivity-scaled function below.
+ */
+int GC_ControlsAnalogMovement(
+    gc_action_t negative_action,
+    gc_action_t positive_action)
+{
+    gc_input_t negative;
+    gc_input_t positive;
+    int value;
+    int magnitude;
+    int deadzone;
+    int maximum;
+
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return 0;
+    }
+
+    /*
+     * Z owns the controller movement inputs while the automap
+     * layer is active.
+     */
+    if ((gcHeld & PAD_TRIGGER_Z) != 0)
+    {
+        return 0;
+    }
+
+    if (!GC_ControlHasAnalogAxis(
+            negative_action,
+            positive_action))
+    {
+        return 0;
+    }
+
+    negative =
+        gcBindings[negative_action];
+
+    positive =
+        gcBindings[positive_action];
+
+    value =
+        GC_ControlAnalogAxis(
+            negative_action,
+            positive_action);
+
+    if ((negative == GC_INPUT_STICK_LEFT &&
+         positive == GC_INPUT_STICK_RIGHT) ||
+        (negative == GC_INPUT_STICK_DOWN &&
+         positive == GC_INPUT_STICK_UP))
+    {
+        deadzone = GC_STICK_DEADZONE;
+
+        /*
+         * Real GameCube main sticks do not normally reach the
+         * signed 8-bit theoretical maximum of 127.
+         *
+         * Testing showed cardinal maxima around 97..112.
+         * Treat 100 as full intended deflection so Doom can
+         * reach full movement speed on real controllers.
+         */
+        maximum = 100;
+    }
+    else
+    {
+        deadzone = GC_CSTICK_DEADZONE;
+        maximum = 127;
+    }
+
+    magnitude = abs(value);
+
+    if (magnitude <= deadzone)
+    {
+        return 0;
+    }
+
+    /*
+     * Clamp physical values beyond the nominal full-deflection
+     * point, then remove the deadzone and rescale to 0..127.
+     */
+    if (magnitude > maximum)
+    {
+        magnitude = maximum;
+    }
+
+    magnitude =
+        (magnitude - deadzone) * 127 /
+        (maximum - deadzone);
+
+    if (value < 0)
+    {
+        magnitude = -magnitude;
+    }
+
+    return magnitude;
+}
+
+int GC_ControlsAnalogTurn(void)
+{
+    int value;
+    int magnitude;
+    int deadzone;
+    int scaled;
+
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return 0;
+    }
+
+    /*
+     * Z owns the C-stick while the automap layer is active.
+     */
+    if ((gcHeld & PAD_TRIGGER_Z) != 0)
+    {
+        return 0;
+    }
+
+    if (!GC_ControlHasAnalogAxis(
+            GC_ACTION_MOVE_LEFT,
+            GC_ACTION_MOVE_RIGHT))
+    {
+        return 0;
+    }
+
+    value =
+        GC_ControlAnalogAxis(
+            GC_ACTION_MOVE_LEFT,
+            GC_ACTION_MOVE_RIGHT);
+
+    if (gcBindings[GC_ACTION_MOVE_LEFT] ==
+            GC_INPUT_STICK_LEFT &&
+        gcBindings[GC_ACTION_MOVE_RIGHT] ==
+            GC_INPUT_STICK_RIGHT)
+    {
+        deadzone = GC_STICK_DEADZONE;
+    }
+    else
+    {
+        deadzone = GC_CSTICK_DEADZONE;
+    }
+
+    magnitude = abs(value);
+
+    if (magnitude <= deadzone)
+    {
+        return 0;
+    }
+
+    /*
+     * Remove the deadzone and rescale the remaining physical
+     * range back to 0..127.
+     */
+    magnitude =
+        (magnitude - deadzone) * 127 /
+        (127 - deadzone);
+
+    /*
+     * At 100 percent sensitivity, full stick deflection gives
+     * 2048 angleturn units per tic.
+     */
+    scaled =
+        magnitude *
+        GC_ANALOG_TURN_MAX *
+        gcTurnSensitivity /
+        (127 * 100);
+
+    if (value < 0)
+    {
+        scaled = -scaled;
+    }
+
+    return scaled;
+}
+
+
+int GC_ControlsGetTurnSensitivity(void)
+{
+    return gcTurnSensitivity;
+}
+
+
+void GC_ControlsSetTurnSensitivity(
+    int sensitivity)
+{
+    if (sensitivity < GC_TURN_SENSITIVITY_MIN)
+    {
+        sensitivity = GC_TURN_SENSITIVITY_MIN;
+    }
+
+    if (sensitivity > GC_TURN_SENSITIVITY_MAX)
+    {
+        sensitivity = GC_TURN_SENSITIVITY_MAX;
+    }
+
+    gcTurnSensitivity = sensitivity;
+}
+
+
 /* ------------------------------------------------------------------------- */
 /* Fixed controls                                                            */
 /* ------------------------------------------------------------------------- */
@@ -293,6 +609,58 @@ bool GC_MenuStartHeld(void)
 
     return
         (gcHeld & PAD_BUTTON_START) != 0;
+}
+
+
+bool GC_MenuMainStickUpHeld(void)
+{
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return false;
+    }
+
+    return
+        gcStickY > GC_STICK_DEADZONE;
+}
+
+
+bool GC_MenuMainStickDownHeld(void)
+{
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return false;
+    }
+
+    return
+        gcStickY < -GC_STICK_DEADZONE;
+}
+
+
+bool GC_MenuMainStickLeftHeld(void)
+{
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return false;
+    }
+
+    return
+        gcStickX < -GC_STICK_DEADZONE;
+}
+
+
+bool GC_MenuMainStickRightHeld(void)
+{
+    if (gcCapturing ||
+        gcCaptureReleaseWait)
+    {
+        return false;
+    }
+
+    return
+        gcStickX > GC_STICK_DEADZONE;
 }
 
 
@@ -475,11 +843,18 @@ void GC_ControlsBindConfig(void)
     M_BindVariable(
         "gc_menu_back",
         &gcBindings[GC_ACTION_MENU_BACK]);
+
+    M_BindVariable(
+        "gc_turn_sensitivity",
+        &gcTurnSensitivity);
 }
 
 
 void GC_ControlsResetDefaults(void)
 {
+    gcTurnSensitivity =
+        GC_TURN_SENSITIVITY_DEFAULT;
+
     gcBindings[GC_ACTION_MOVE_UP] =
         GC_INPUT_STICK_UP;
 

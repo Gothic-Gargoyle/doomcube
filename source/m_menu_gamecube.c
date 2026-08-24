@@ -181,6 +181,7 @@ void M_GameCubeActions(int choice);
 
 void M_GameCubeBindMovement(int choice);
 void M_GameCubeBindAction(int choice);
+void M_GameCubeTurnSensitivity(int choice);
 void M_GameCubeResetControls(int choice);
 
 void M_DrawGameCubeControls(void);
@@ -388,6 +389,7 @@ enum
 {
     gc_controls_movement,
     gc_controls_actions,
+    gc_controls_sensitivity,
     gc_controls_reset,
     gc_controls_end
 };
@@ -466,6 +468,7 @@ menuitem_t GameCubeControlsMenu[] =
 {
     {1,"", M_GameCubeMovement,'m'},
     {1,"", M_GameCubeActions,'a'},
+    {2,"", M_GameCubeTurnSensitivity,'t'},
     {1,"", M_GameCubeResetControls,'r'}
 };
 
@@ -1163,6 +1166,28 @@ void M_DrawGameCubeControls(void)
     M_WriteText(
         GameCubeControlsDef.x,
         GameCubeControlsDef.y +
+            LINEHEIGHT * gc_controls_sensitivity,
+        "TURN SENSITIVITY");
+
+    {
+        char sensitivity[16];
+
+        snprintf(
+            sensitivity,
+            sizeof(sensitivity),
+            "%d%%",
+            GC_ControlsGetTurnSensitivity());
+
+        M_WriteText(
+            235,
+            GameCubeControlsDef.y +
+                LINEHEIGHT * gc_controls_sensitivity,
+            sensitivity);
+    }
+
+    M_WriteText(
+        GameCubeControlsDef.x,
+        GameCubeControlsDef.y +
             LINEHEIGHT * gc_controls_reset,
         "RESET DEFAULTS");
 }
@@ -1253,6 +1278,25 @@ void M_GameCubeBindAction(int choice)
 
     GC_ControlsBeginCapture(
         gcGameplayActions[choice]);
+}
+
+
+void M_GameCubeTurnSensitivity(int choice)
+{
+    int sensitivity =
+        GC_ControlsGetTurnSensitivity();
+
+    if (choice == 0)
+    {
+        sensitivity -= 5;
+    }
+    else
+    {
+        sensitivity += 5;
+    }
+
+    GC_ControlsSetTurnSensitivity(
+        sensitivity);
 }
 
 

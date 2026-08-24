@@ -1567,6 +1567,26 @@ static default_t extra_defaults_list[] =
     //
 
     CONFIG_VARIABLE_KEY(key_multi_msgplayer8),
+
+    /*
+     * DoomCube / GameCube controller configuration.
+     */
+    CONFIG_VARIABLE_INT(gc_move_up),
+    CONFIG_VARIABLE_INT(gc_move_down),
+    CONFIG_VARIABLE_INT(gc_move_left),
+    CONFIG_VARIABLE_INT(gc_move_right),
+    CONFIG_VARIABLE_INT(gc_strafe_left),
+    CONFIG_VARIABLE_INT(gc_strafe_right),
+
+    CONFIG_VARIABLE_INT(gc_fire),
+    CONFIG_VARIABLE_INT(gc_use),
+    CONFIG_VARIABLE_INT(gc_run),
+    CONFIG_VARIABLE_INT(gc_next_weapon),
+    CONFIG_VARIABLE_INT(gc_prev_weapon),
+    CONFIG_VARIABLE_INT(gc_menu_confirm),
+    CONFIG_VARIABLE_INT(gc_menu_back),
+
+    CONFIG_VARIABLE_INT(gc_turn_sensitivity),
 };
 
 static default_collection_t extra_defaults =
@@ -2200,15 +2220,10 @@ void M_LoadDefaults (void)
                     GC_CONFIG_BUFFER_SIZE - 1,
                     &size))
             {
-                if (GC_ConfigLoad(
-        buffer,
-        GC_CONFIG_BUFFER_SIZE - 1,
-        &size))
-{
-    GC_ParseConfigBuffer(
-        buffer,
-        size);
-} }
+                GC_ParseConfigBuffer(
+                    buffer,
+                    size);
+            }
 
             free(buffer);
         }

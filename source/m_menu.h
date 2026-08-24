@@ -58,4 +58,8 @@ extern int screenblocks;
 
 
 
+
+/* Current Doom menu state. */
+extern boolean menuactive;
+
 #endif    

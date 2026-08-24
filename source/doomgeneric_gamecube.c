@@ -8,6 +8,7 @@
 
 #include "gc_launcher.h"
 #include "gc_memcard.h"
+#include "m_menu.h"
 #include "gc_controls.h"
 
 #include <stdbool.h>
@@ -352,41 +353,127 @@ static void handleGameCubeInput(void)
 
     if (!zHeld)
     {
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_MOVE_UP),
-            &gcUp,
-            KEY_UPARROW);
+        /*
+         * Analogue forward/backward movement is applied directly
+         * to forwardmove by the GameCube-specific ticcmd hook.
+         * Only emit Doom key events when this pair is not mapped
+         * to a physical analogue axis.
+         */
+        /*
+         * Gameplay uses the main stick as a true analogue axis.
+         * Doom's menus still expect ordinary directional key events,
+         * so restore digital stick directions while a menu is active.
+         */
+        /*
+         * Menus always use the physical main stick.
+         *
+         * Gameplay remains remappable and analogue, but menu
+         * navigation must never depend on gameplay bindings.
+         */
+        if (menuactive)
+        {
+            setKeyState(
+                GC_MenuMainStickUpHeld(),
+                &gcUp,
+                KEY_UPARROW);
 
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_MOVE_DOWN),
-            &gcDown,
-            KEY_DOWNARROW);
+            setKeyState(
+                GC_MenuMainStickDownHeld(),
+                &gcDown,
+                KEY_DOWNARROW);
+        }
+        else if (GC_ControlHasAnalogAxis(
+                     GC_ACTION_MOVE_DOWN,
+                     GC_ACTION_MOVE_UP))
+        {
+            setKeyState(0, &gcUp, KEY_UPARROW);
+            setKeyState(0, &gcDown, KEY_DOWNARROW);
+        }
+        else
+        {
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_MOVE_UP),
+                &gcUp,
+                KEY_UPARROW);
 
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_MOVE_LEFT),
-            &gcLeft,
-            KEY_LEFTARROW);
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_MOVE_DOWN),
+                &gcDown,
+                KEY_DOWNARROW);
+        }
 
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_MOVE_RIGHT),
-            &gcRight,
-            KEY_RIGHTARROW);
+        /*
+         * Analogue stick turning is applied directly to angleturn
+         * by the GameCube-specific ticcmd hook.  Do not also emit
+         * digital arrow keys when MOVE_LEFT / MOVE_RIGHT form an
+         * analogue axis.
+         */
+        /*
+         * Same rule horizontally: analogue turning in-game,
+         * ordinary left/right navigation in Doom menus.
+         */
+        /*
+         * Menus always use physical main-stick X for left/right.
+         *
+         * This deliberately ignores MOVE_LEFT / MOVE_RIGHT bindings,
+         * so a C-stick gameplay binding cannot operate menu sliders.
+         */
+        if (menuactive)
+        {
+            setKeyState(
+                GC_MenuMainStickLeftHeld(),
+                &gcLeft,
+                KEY_LEFTARROW);
 
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_STRAFE_LEFT),
-            &gcStrafeLeft,
-            KEY_STRAFE_L);
+            setKeyState(
+                GC_MenuMainStickRightHeld(),
+                &gcRight,
+                KEY_RIGHTARROW);
+        }
+        else if (GC_ControlHasAnalogAxis(
+                     GC_ACTION_MOVE_LEFT,
+                     GC_ACTION_MOVE_RIGHT))
+        {
+            setKeyState(0, &gcLeft, KEY_LEFTARROW);
+            setKeyState(0, &gcRight, KEY_RIGHTARROW);
+        }
+        else
+        {
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_MOVE_LEFT),
+                &gcLeft,
+                KEY_LEFTARROW);
 
-        setKeyState(
-            GC_ControlHeld(
-                GC_ACTION_STRAFE_RIGHT),
-            &gcStrafeRight,
-            KEY_STRAFE_R);
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_MOVE_RIGHT),
+                &gcRight,
+                KEY_RIGHTARROW);
+        }
+
+        /*
+         * As above, an analogue strafe pair is consumed directly
+         * by G_BuildTiccmd(). Digital/remapped bindings continue
+         * to use Doom's normal key path.
+         */
+        if (GC_ControlHasAnalogAxis(
+                GC_ACTION_STRAFE_LEFT,
+                GC_ACTION_STRAFE_RIGHT))
+        {
+            setKeyState(0, &gcStrafeLeft, KEY_STRAFE_L);
+            setKeyState(0, &gcStrafeRight, KEY_STRAFE_R);
+        }
+        else
+        {
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_STRAFE_LEFT),
+                &gcStrafeLeft,
+                KEY_STRAFE_L);
+
+            setKeyState(
+                GC_ControlHeld(GC_ACTION_STRAFE_RIGHT),
+                &gcStrafeRight,
+                KEY_STRAFE_R);
+        }
 
         setKeyState(
             GC_ControlHeld(

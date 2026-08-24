@@ -74,6 +74,26 @@ bool GC_ControlHeld(
 gc_input_t GC_ControlsGetBinding(
     gc_action_t action);
 
+bool GC_ControlHasAnalogAxis(
+    gc_action_t negative_action,
+    gc_action_t positive_action);
+
+int GC_ControlAnalogAxis(
+    gc_action_t negative_action,
+    gc_action_t positive_action);
+
+int GC_ControlsAnalogTurn(void);
+
+int GC_ControlsAnalogMovement(
+    gc_action_t negative_action,
+    gc_action_t positive_action);
+
+int GC_ControlsGetTurnSensitivity(void);
+
+void GC_ControlsSetTurnSensitivity(
+    int sensitivity);
+
+
 void GC_ControlsSetBinding(
     gc_action_t action,
     gc_input_t input);
@@ -91,6 +111,11 @@ const char *GC_ControlsInputName(
  * not remappable.
  */
 bool GC_MenuStartHeld(void);
+
+bool GC_MenuMainStickUpHeld(void);
+bool GC_MenuMainStickDownHeld(void);
+bool GC_MenuMainStickLeftHeld(void);
+bool GC_MenuMainStickRightHeld(void);
 
 bool GC_MapModifierHeld(void);
 
