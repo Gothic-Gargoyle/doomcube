@@ -1171,20 +1171,16 @@ void D_DoomMain (void)
     int numiwadlumps;
 #endif
 
-    SYS_Report("DoomCube: D_DoomMain ENTER\n");
 
     I_AtExit(D_Endoom, false);
 
-    SYS_Report("DoomCube: D_DoomMain after I_AtExit\n");
 
     // print banner
 
     I_PrintBanner(PACKAGE_STRING);
 
-    SYS_Report("DoomCube: D_DoomMain before Z_Init\n");
     DEH_printf("Z_Init: Init zone memory allocation daemon. \n");
     Z_Init ();
-    SYS_Report("DoomCube: D_DoomMain after Z_Init\n");
 
 #ifdef FEATURE_MULTIPLAYER
     //!
@@ -1358,28 +1354,21 @@ void D_DoomMain (void)
     }
     
     // init subsystems
-    SYS_Report("DoomCube: D_DoomMain before V_Init\n");
     DEH_printf("V_Init: allocate screens.\n");
     V_Init ();
-    SYS_Report("DoomCube: D_DoomMain after V_Init\n");
 
     // Load configuration files before initialising other subsystems.
     DEH_printf("M_LoadDefaults: Load system defaults.\n");
     M_SetConfigFilenames("default.cfg", PROGRAM_PREFIX "doom.cfg");
 
-    SYS_Report("DoomCube: D_DoomMain before D_BindVariables\n");
     D_BindVariables();
-    SYS_Report("DoomCube: D_DoomMain after D_BindVariables\n");
 
-    SYS_Report("DoomCube: D_DoomMain before M_LoadDefaults\n");
     M_LoadDefaults();
-    SYS_Report("DoomCube: D_DoomMain after M_LoadDefaults\n");
 
     // Save configuration at exit.
     I_AtExit(M_SaveDefaults, false);
 
     // Find main IWAD file and load it.
-    SYS_Report("DoomCube: D_DoomMain before D_FindIWAD\n");
     iwadfile = D_FindIWAD(IWAD_MASK_DOOM, &gamemission);
     SYS_Report(
         "DoomCube: D_DoomMain after D_FindIWAD: %s\n",

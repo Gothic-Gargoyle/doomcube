@@ -657,15 +657,10 @@ static bool mountIsoFilesystem(void)
 
 static bool GC_PlatformInit(void)
 {
-   SYS_Report(
-       "DoomCube: GC_PlatformInit entered, platformInitialized=%d\n",
-       platformInitialized);
-
+   
    if (platformInitialized)
    {
-       SYS_Report(
-           "DoomCube: platform already initialized; skipping init\n");
-
+       
        return true;
    }
 
@@ -768,9 +763,6 @@ static bool GC_PlatformInit(void)
 }
 platformInitialized = true;
 
-SYS_Report(
-    "DoomCube: platformInitialized set to %d\n",
-    platformInitialized);
 
 return true;
 }
@@ -964,9 +956,7 @@ int main(int argc, char **argv)
         "DoomCube: starting Doom engine with %s\n",
         selectedIwad);
 
-        SYS_Report(
-        "DoomCube: before Doom start platformInitialized=%d\n",
-        platformInitialized);
+        
 
     doomgeneric_Create(
         3,
