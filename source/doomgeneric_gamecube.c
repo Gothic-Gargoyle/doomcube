@@ -142,14 +142,17 @@ static void setKeyState(int wanted, int *state, unsigned char key)
 
 static void handleGameCubeInput(void)
 {
-    gc_control_state_t controls;
     int zHeld;
 
-    GC_ControlsPoll(
-        &controls);
+    GC_ControlsPoll();
 
     zHeld =
-        controls.mapModifier;
+        GC_MapModifierHeld();
+
+
+    /* ------------------------------------------------------------------ */
+    /* Z tap / automap modifier                                           */
+    /* ------------------------------------------------------------------ */
 
     if (zHeld &&
         !gcZHeld)
@@ -158,40 +161,42 @@ static void handleGameCubeInput(void)
         gcZUsed = 0;
     }
 
+
     if (zHeld)
     {
         int mapNorth =
-            controls.mapNorth;
+            GC_MapNorthHeld();
 
         int mapSouth =
-            controls.mapSouth;
+            GC_MapSouthHeld();
 
         int mapEast =
-            controls.mapEast;
+            GC_MapEastHeld();
 
         int mapWest =
-            controls.mapWest;
+            GC_MapWestHeld();
 
         int zoomIn =
-            controls.mapZoomIn;
+            GC_MapZoomInHeld();
 
         int zoomOut =
-            controls.mapZoomOut;
+            GC_MapZoomOutHeld();
 
         int maxZoom =
-            controls.mapMaxZoom;
+            GC_MapMaxZoomHeld();
 
         int follow =
-            controls.mapFollow;
+            GC_MapFollowHeld();
 
         int mark =
-            controls.mapMark;
+            GC_MapMarkHeld();
 
         int clearMark =
-            controls.mapClearMark;
+            GC_MapClearMarkHeld();
 
         int grid =
-            controls.mapGrid;
+            GC_MapGridHeld();
+
 
         if (mapNorth ||
             mapSouth ||
@@ -207,6 +212,7 @@ static void handleGameCubeInput(void)
         {
             gcZUsed = 1;
         }
+
 
         setKeyState(
             mapNorth,
@@ -320,6 +326,7 @@ static void handleGameCubeInput(void)
             &gcMapClearMark,
             GC_KEY_MAP_CLEARMARK);
 
+
         if (gcZHeld)
         {
             if (!gcZUsed)
@@ -338,85 +345,146 @@ static void handleGameCubeInput(void)
         }
     }
 
-    setKeyState(
-        controls.moveUp,
-        &gcUp,
-        KEY_UPARROW);
+
+    /* ------------------------------------------------------------------ */
+    /* Normal remappable controls                                         */
+    /* ------------------------------------------------------------------ */
+
+    if (!zHeld)
+    {
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MOVE_UP),
+            &gcUp,
+            KEY_UPARROW);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MOVE_DOWN),
+            &gcDown,
+            KEY_DOWNARROW);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MOVE_LEFT),
+            &gcLeft,
+            KEY_LEFTARROW);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MOVE_RIGHT),
+            &gcRight,
+            KEY_RIGHTARROW);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_STRAFE_LEFT),
+            &gcStrafeLeft,
+            KEY_STRAFE_L);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_STRAFE_RIGHT),
+            &gcStrafeRight,
+            KEY_STRAFE_R);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_FIRE),
+            &gcFire,
+            KEY_FIRE);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_USE),
+            &gcUse,
+            KEY_USE);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_RUN),
+            &gcRun,
+            KEY_RSHIFT);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_NEXT_WEAPON),
+            &gcNextWeapon,
+            key_nextweapon);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_PREV_WEAPON),
+            &gcPrevWeapon,
+            key_prevweapon);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MENU_CONFIRM),
+            &gcConfirm,
+            GC_KEY_MENU_CONFIRM);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MENU_CONFIRM),
+            &gcEnter,
+            GC_KEY_MENU_ENTER);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MENU_BACK),
+            &gcBack,
+            GC_KEY_MENU_BACK);
+
+        setKeyState(
+            GC_ControlHeld(
+                GC_ACTION_MENU_BACK),
+            &gcAbort,
+            GC_KEY_MENU_ABORT);
+    }
+    else
+    {
+        /*
+         * Z owns the normal controls while its automap layer is active.
+         * Release anything Doom previously considered held.
+         */
+
+        setKeyState(0, &gcUp, KEY_UPARROW);
+        setKeyState(0, &gcDown, KEY_DOWNARROW);
+        setKeyState(0, &gcLeft, KEY_LEFTARROW);
+        setKeyState(0, &gcRight, KEY_RIGHTARROW);
+
+        setKeyState(0, &gcStrafeLeft, KEY_STRAFE_L);
+        setKeyState(0, &gcStrafeRight, KEY_STRAFE_R);
+
+        setKeyState(0, &gcFire, KEY_FIRE);
+        setKeyState(0, &gcUse, KEY_USE);
+        setKeyState(0, &gcRun, KEY_RSHIFT);
+
+        setKeyState(0, &gcNextWeapon, key_nextweapon);
+        setKeyState(0, &gcPrevWeapon, key_prevweapon);
+
+        setKeyState(0, &gcConfirm, GC_KEY_MENU_CONFIRM);
+        setKeyState(0, &gcEnter, GC_KEY_MENU_ENTER);
+
+        setKeyState(0, &gcBack, GC_KEY_MENU_BACK);
+        setKeyState(0, &gcAbort, GC_KEY_MENU_ABORT);
+    }
+
+
+    /* ------------------------------------------------------------------ */
+    /* Start is fixed                                                     */
+    /* ------------------------------------------------------------------ */
 
     setKeyState(
-        controls.moveDown,
-        &gcDown,
-        KEY_DOWNARROW);
-
-    setKeyState(
-        controls.moveLeft,
-        &gcLeft,
-        KEY_LEFTARROW);
-
-    setKeyState(
-        controls.moveRight,
-        &gcRight,
-        KEY_RIGHTARROW);
-
-    setKeyState(
-        controls.strafeLeft,
-        &gcStrafeLeft,
-        KEY_STRAFE_L);
-
-    setKeyState(
-        controls.strafeRight,
-        &gcStrafeRight,
-        KEY_STRAFE_R);
-
-    setKeyState(
-        controls.fire,
-        &gcFire,
-        KEY_FIRE);
-
-    setKeyState(
-        controls.nextWeapon,
-        &gcNextWeapon,
-        key_nextweapon);
-
-    setKeyState(
-        controls.prevWeapon,
-        &gcPrevWeapon,
-        key_prevweapon);
-
-    setKeyState(
-        controls.run,
-        &gcRun,
-        KEY_RSHIFT);
-
-    setKeyState(
-        controls.use,
-        &gcUse,
-        KEY_USE);
-
-    setKeyState(
-        controls.menuConfirm,
-        &gcConfirm,
-        GC_KEY_MENU_CONFIRM);
-
-    setKeyState(
-        controls.menuConfirm,
-        &gcEnter,
-        GC_KEY_MENU_ENTER);
-
-    setKeyState(
-        controls.menuBack,
-        &gcBack,
-        GC_KEY_MENU_BACK);
-
-    setKeyState(
-        controls.menuBack,
-        &gcAbort,
-        GC_KEY_MENU_ABORT);
-
-    setKeyState(
-        controls.menuStart,
+        GC_MenuStartHeld(),
         &gcEscape,
         KEY_ESCAPE);
+
+
+    /* ------------------------------------------------------------------ */
+    /* Rumble                                                             */
+    /* ------------------------------------------------------------------ */
 
     if (gcRumbleFrames > 0)
     {
@@ -445,6 +513,7 @@ static void handleGameCubeInput(void)
                         PAD_MOTOR_STOP);
 
                     gcRumbleOn = false;
+
                     gcRumbleFrames =
                         gcRumbleOffFrames;
                 }
@@ -461,12 +530,14 @@ static void handleGameCubeInput(void)
                     PAD_MOTOR_RUMBLE);
 
                 gcRumbleOn = true;
+
                 gcRumbleFrames =
                     gcRumbleOnFrames;
             }
         }
     }
 }
+
 /* ------------------------------------------------------------------------- */
 /* ISO9660                                                                   */
 /* ------------------------------------------------------------------------- */
