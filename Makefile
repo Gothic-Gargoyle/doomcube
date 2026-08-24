@@ -118,6 +118,7 @@ CFILES := \
 	i_sound.c \
 	i_sdlsound.c \
 	i_music_gamecube.c \
+	mus2mid.c \
 	i_system.c \
 	i_timer.c \
 	memio.c \
@@ -296,12 +297,15 @@ iso:
 		test -f "$(CURDIR)/data/wad/plutonia.wad" || \
 		( echo "ERROR: no supported Doom IWAD found in data/wad/." && false )
 
-	@test -d "$(CURDIR)/data/music" || \
-		( echo "ERROR: data/music is missing." && false )
+	@test -d "$(CURDIR)/data/timidity" || \
+		( echo "ERROR: data/timidity is missing." && false )
+
+	@test -f "$(CURDIR)/data/timidity/timidity.cfg" || \
+		( echo "ERROR: data/timidity/timidity.cfg is missing." && false )
 
 	@rm -rf "$(ISO_DIR)"
 
-	@mkdir -p "$(ISO_DIR)/music"
+	@mkdir -p "$(ISO_DIR)/timidity"
 
 	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
@@ -310,8 +314,9 @@ iso:
 		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/$$wad"; \
 	fi; \
 done
-	@cp "$(CURDIR)"/data/music/*.ogg "$(ISO_DIR)/music/"
-
+	@echo "Adding TiMidity instrument data"
+	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/timidity/"
+	
 	@echo
 	@echo "ISO contents:"
 	@du -sh "$(ISO_DIR)"

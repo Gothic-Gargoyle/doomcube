@@ -13,14 +13,11 @@ build/
 doomcube.*
 scratch
 
-# User-supplied Doom data
+# User-supplied Doom and Timidity data
 data/wad/*.wad
-
-# Sycraft / external soundtrack files
-data/music/*.ogg
-data/music/*.mp3
+data/timidity/
 
 # Keep the directory
-!data/music/.gitkeep
+
 build-gba-test/
 build-iso

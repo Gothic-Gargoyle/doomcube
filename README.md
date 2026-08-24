@@ -25,13 +25,31 @@ then install the needed libraries:
 Place in /data folder.
 
 ## Music
-No MIDI as of now, we got to make do with audio files..
+libogc2 exposes Timidity, but youll have to provide patches yourself, the project default has the following:
 
-Place OGG files in data/music/ folder, using Doom lump-style names, e.g.:
+```
+ mkdir -p data/timidity
+cd data/timidity
 
-d_e1m1.ogg
-d_e1m2.ogg
-d_intro.ogg
+wget https://www.libsdl.org/projects/old/SDL_mixer/timidity/timidity.tar.gz
+
+tar -xzf timidity.tar.gz
+
+cp -a timidity/. .
+rm -rf timidity
+rm timidity.tar.gz
+
+sed -i '4i dir dvd:/timidity\n' timidity.cfg
+
+cd ../..
+ ```
+
+ verify that the config has `4:dor dvd:/timidity` and that there are 192 patches.
+
+```
+grep -n '^dir ' data/timidity/timidity.cfg
+find data/timidity -iname '*.pat' | wc -l
+```
 
 Then build the project run `make test`, this will create a `doomcube.iso` that you can play on Dolphin, *OG hardware is as of yet untested*.
 
