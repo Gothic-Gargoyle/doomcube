@@ -22,7 +22,7 @@ shareware version (`doom1.wad`) is freely available.
 
 # Running
 ## SD card (untested)
-You can run `doomcube.dol` from an SD card, WADs go in /data/WAD/ and the music patches ([see here](##Music)) go in /data/timidity, not yet tested on real hardware!!
+You can run `doomcube.dol` from an SD card, WADs go in /data/WAD/ and the music patches ([see here](##Music)) go in /data/timidity, not yet tested on dolphin or real hardware!!
 
 ## ISO
 After building this project you can run `doomcube.dol` on dolphin, not yet tested on real hardware!!
