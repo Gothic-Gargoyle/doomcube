@@ -387,6 +387,29 @@ static boolean GC_ConvertMusToMidi(
 }
 
 
+static void GC_TestPatchOpen(void)
+{
+    FILE *f;
+
+    f = fopen(
+        "dvd:/timidity/instruments/cymride2.pat",
+        "rb");
+
+    if (f == NULL)
+    {
+        SYS_Report(
+            "DoomCube: TEST patch fopen FAILED\n");
+
+        return;
+    }
+
+    SYS_Report(
+        "DoomCube: TEST patch fopen OK\n");
+
+    fclose(f);
+}
+
+
 /* ------------------------------------------------------------------------- */
 /* Register                                                                  */
 /* ------------------------------------------------------------------------- */
@@ -534,6 +557,8 @@ static void *GC_RegisterSong(
     }
 
     SDL_ClearError();
+
+    GC_TestPatchOpen();
 
     handle->music =
         Mix_LoadMUS_RW(
