@@ -302,16 +302,13 @@ run:
 # ISO
 #---------------------------------------------------------------------------------
 
-iso:
+iso: all
 	@test -n "$(MKISOFS)" || \
 		( echo "ERROR: genisoimage, mkisofs or xorriso is required." && false )
 
 	@test -f "$(GBI_HDR)" || \
 		( echo "ERROR: missing $(GBI_HDR)" && false )
 
-	@test -f "$(CURDIR)/$(TARGET).dol" || \
-		( echo "ERROR: $(TARGET).dol is missing." && false )
-	
 	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
 		test -f "$(CURDIR)/data/wad/doom.wad" || \
 		test -f "$(CURDIR)/data/wad/doom2.wad" || \
@@ -327,9 +324,11 @@ iso:
 
 	@rm -rf "$(ISO_DIR)"
 
-	@mkdir -p "$(ISO_DIR)/timidity"
+	@mkdir -p "$(ISO_DIR)/data/wad"
+	@mkdir -p "$(ISO_DIR)/data/pwad"
+	@mkdir -p "$(ISO_DIR)/data/deh"
+	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
-
 
 	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
 	@cp "$(CURDIR)/data/launcher/doomcube.bmp" \
@@ -338,11 +337,12 @@ iso:
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
 	if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
 		echo "Adding $$wad"; \
-		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/$$wad"; \
+		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/data/wad/$$wad"; \
 	fi; \
 done
+
 	@echo "Adding TiMidity instrument data"
-	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/timidity/"
+	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/data/timidity/"
 	
 	@echo
 	@echo "ISO contents:"

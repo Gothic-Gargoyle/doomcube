@@ -16,8 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-#define GC_TIMIDITY_CFG "dvd:/timidity/timidity.cfg"
+#define GC_TIMIDITY_CFG "dvd:/data/timidity/timidity.cfg"
 
 
 typedef struct

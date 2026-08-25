@@ -27,3 +27,4 @@ build-gba-test/
 build-iso
 doomgeneric.sln
 source/doomgeneric.vcxproj.filters
+.map

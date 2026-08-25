@@ -36,11 +36,11 @@ typedef struct
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
-    { "DOOM SHAREWARE", "dvd:/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
-    { "DOOM",           "dvd:/doom.wad",     false, GC_SAVEGAME_DOOM },
-    { "DOOM II",        "dvd:/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
-    { "TNT: EVILUTION", "dvd:/tnt.wad",      false, GC_SAVEGAME_TNT },
-    { "PLUTONIA",       "dvd:/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
+    { "DOOM SHAREWARE", "dvd:/data/wad/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
+    { "DOOM",           "dvd:/data/wad/doom.wad",     false, GC_SAVEGAME_DOOM },
+    { "DOOM II",        "dvd:/data/wad/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
+    { "TNT: EVILUTION", "dvd:/data/wad/tnt.wad",      false, GC_SAVEGAME_TNT },
+    { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
 };
 
 static int gcAvailableGameCount;

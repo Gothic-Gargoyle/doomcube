@@ -270,7 +270,7 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
         return false;
     }
 
-    if (strcmp(iwadPath, "dvd:/doom1.wad") == 0)
+    if (strcmp(iwadPath, "dvd:/data/wad/doom1.wad") == 0)
     {
         currentGame =
             GC_SAVEGAME_DOOM1;
@@ -278,7 +278,7 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
         return true;
     }
 
-    if (strcmp(iwadPath, "dvd:/doom.wad") == 0)
+    if (strcmp(iwadPath, "dvd:/data/wad/doom.wad") == 0)
     {
         currentGame =
             GC_SAVEGAME_DOOM;
@@ -286,7 +286,7 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
         return true;
     }
 
-    if (strcmp(iwadPath, "dvd:/doom2.wad") == 0)
+    if (strcmp(iwadPath, "dvd:/data/wad/doom2.wad") == 0)
     {
         currentGame =
             GC_SAVEGAME_DOOM2;
@@ -294,7 +294,7 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
         return true;
     }
 
-    if (strcmp(iwadPath, "dvd:/tnt.wad") == 0)
+    if (strcmp(iwadPath, "dvd:/data/wad/tnt.wad") == 0)
     {
         currentGame =
             GC_SAVEGAME_TNT;
@@ -302,7 +302,7 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
         return true;
     }
 
-    if (strcmp(iwadPath, "dvd:/plutonia.wad") == 0)
+    if (strcmp(iwadPath, "dvd:/data/wad/plutonia.wad") == 0)
     {
         currentGame =
             GC_SAVEGAME_PLUTONIA;
