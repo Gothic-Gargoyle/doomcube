@@ -306,8 +306,26 @@ iso: all
 	@test -f "$(CURDIR)/tools/native-gcm/mkdoomcube.py" || \
 		( echo "ERROR: missing native GCM builder." && false )
 
-	@test -f "$(CURDIR)/tools/native-gcm/apploader.bin" || \
-		( echo "ERROR: missing tools/native-gcm/apploader.bin" && false )
+	@test -f "$(CURDIR)/tools/native-gcm/apploader.c" || \
+		( echo "ERROR: missing tools/native-gcm/apploader.c" && false )
+
+	@test -d "$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" || \
+		( echo "ERROR: missing build-deps/cubeboot-tools." && false )
+
+	@echo "Building DoomCube apploader"
+	@cp "$(CURDIR)/tools/native-gcm/apploader.c" \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.c"
+
+	@$(MAKE) -C \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" \
+		clean
+
+	@$(MAKE) -C \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader"
+
+	@cp \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.bin" \
+		"$(CURDIR)/tools/native-gcm/apploader.bin"
 
 	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
 		test -f "$(CURDIR)/data/wad/doom.wad" || \
