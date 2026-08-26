@@ -11,7 +11,9 @@ include $(DEVKITPRO)/libogc2/gamecube_rules
 # Version
 #---------------------------------------------------------------------------------
 
-VERSION := 0.1.0-dev
+BASE_VERSION ?= 0.1.0
+VERSION ?= $(BASE_VERSION)-dev
+RC ?= 1
 
 GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || echo -dirty)
@@ -19,7 +21,14 @@ GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || ec
 BUILD_VERSION := $(VERSION)
 BUILD_ID := $(GIT_HASH)$(GIT_DIRTY)
 
+# Development builds include normal debug diagnostics by default.
+#
+# TRACE is reserved for very verbose per-operation diagnostics.
+#
+# Public RC/final release targets explicitly disable both.
+# release-debug deliberately enables both for diagnostic builds.
 DEBUG ?= 1
+TRACE ?= 0
 
 #---------------------------------------------------------------------------------
 # Project
@@ -62,6 +71,10 @@ CFLAGS := \
 
 ifeq ($(DEBUG),1)
 CFLAGS += -DDOOMCUBE_DEBUG
+endif
+
+ifeq ($(TRACE),1)
+CFLAGS += -DDOOMCUBE_TRACE
 endif
 
 CXXFLAGS := $(CFLAGS)
@@ -451,9 +464,88 @@ DOOMCUBE_APPLOADER_BIN := $(CURDIR)/tools/native-gcm/apploader.bin
 
 DOOMCUBE_BUNDLE_BUILDER := $(CURDIR)/tools/release/build_bundle.py
 
-.PHONY: release
+.PHONY: rc release release-debug release-bundle
 
-release: all
+# ------------------------------------------------------------------
+# Public build flavours
+# ------------------------------------------------------------------
+#
+# make
+#     Development build:
+#       VERSION = <base>-dev
+#       DEBUG   = 1
+#       TRACE   = 0
+#
+# make rc
+#     Release candidate:
+#       VERSION = <base>-rc<RC>
+#       DEBUG   = 0
+#       TRACE   = 0
+#
+# make release
+#     Final production release:
+#       VERSION = <base>
+#       DEBUG   = 0
+#       TRACE   = 0
+#
+# make release-debug
+#     Player-installable diagnostic release:
+#       VERSION = <base>-debug
+#       DEBUG   = 1
+#       TRACE   = 1
+#
+# Each packaged flavour starts from a clean object tree. This prevents
+# objects compiled with one DOOMCUBE_DEBUG setting from leaking into a
+# differently configured release.
+
+rc:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube release candidate $(BASE_VERSION)-rc$(RC)"
+	@echo " Production logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=0 \
+		TRACE=0 \
+		VERSION="$(BASE_VERSION)-rc$(RC)" \
+		release-bundle
+
+release:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube release $(BASE_VERSION)"
+	@echo " Production logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=0 \
+		TRACE=0 \
+		VERSION="$(BASE_VERSION)" \
+		release-bundle
+
+release-debug:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube diagnostic release $(BASE_VERSION)-debug"
+	@echo " Verbose DEBUG/TRACE logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=1 \
+		TRACE=1 \
+		VERSION="$(BASE_VERSION)-debug" \
+		release-bundle
+
+# Internal packaging implementation.
+#
+# Do not call this target for normal release work; use rc, release or
+# release-debug so the correct logging configuration and clean rebuild
+# are guaranteed.
+release-bundle: all
 	@echo
 	@echo "============================================================"
 	@echo " DoomCube player release"

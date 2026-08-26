@@ -230,7 +230,7 @@ static void cardRemoved(s32 channel, s32 result)
     {
         cardMounted = false;
 
-        DC_LOG(
+        DC_INFO(
             "DoomCube: Memory Card A removed\n"
         );
     }
@@ -437,7 +437,7 @@ bool GC_MemoryCardInit(void)
 
     cardMounted = true;
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: Memory Card A mounted\n"
     );
 
@@ -738,7 +738,7 @@ bool GC_MemoryCardWriteSave(
         return false;
     }
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: %s saved: %u bytes\n",
         gameName(currentGame),
         (unsigned int)size
@@ -849,7 +849,7 @@ bool GC_MemoryCardReadSave(
         header->size
     );
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: %s loaded: %u bytes\n",
         gameName(currentGame),
         header->size
@@ -1023,7 +1023,7 @@ bool GC_MemoryCardWriteConfig(
         return false;
     }
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: global config saved: %u bytes\n",
         (unsigned int)size
     );
@@ -1109,7 +1109,7 @@ bool GC_MemoryCardReadConfig(
         header->size
     );
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: global config loaded: %u bytes\n",
         header->size
     );
@@ -1135,7 +1135,7 @@ void GC_MemoryCardShutdown(void)
 
     freeWorkBuffers();
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: Memory Card A unmounted\n"
     );
 }

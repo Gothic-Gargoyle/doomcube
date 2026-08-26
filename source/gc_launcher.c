@@ -135,7 +135,7 @@ static int GC_LauncherScanGames(void)
 
     gcAvailableGameCount = 0;
 
-    DC_LOG("DoomCube: ---- AVAILABLE GAMES ----\n");
+    DC_DEBUG("DoomCube: ---- AVAILABLE GAMES ----\n");
 
     for (i = 0; i < GC_MAX_GAMES; ++i)
     {
@@ -146,13 +146,13 @@ static int GC_LauncherScanGames(void)
 
         ++gcAvailableGameCount;
 
-        DC_LOG(
+        DC_DEBUG(
             "DoomCube: found %s (%s)\n",
             gcGames[i].name,
             gcGames[i].iwadPath);
     }
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: %d game(s) available\n",
         gcAvailableGameCount);
 
@@ -679,7 +679,7 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
         return NULL;
     }
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: launcher selected %s (%s)\n",
         game->name,
         game->iwadPath);

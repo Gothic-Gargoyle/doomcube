@@ -277,7 +277,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     unsigned int i;
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: opening DVD-backed WAD: %s\n",
         path);
 
@@ -417,7 +417,7 @@ static wad_file_t *W_GameCube_OpenFile(
     result->use_counter =
         0;
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: WAD size: %ld bytes\n",
         length);
 
