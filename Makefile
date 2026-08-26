@@ -90,7 +90,6 @@ LIBS := \
 	-lSDL2 \
 	-lopengx \
 	-laesnd \
-	-liso9660 \
 	-logc \
 	-lz \
 	-lstdc++ \
@@ -197,6 +196,7 @@ CFILES := \
 	i_video.c \
 	gc_config.c \
 	gc_controls.c \
+	gc_dvd_fst.c \
 	gc_launcher.c \
 	gc_memcard.c \
 	gc_save_stdio.c \

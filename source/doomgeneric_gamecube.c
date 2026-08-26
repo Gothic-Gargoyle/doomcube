@@ -21,7 +21,7 @@
 #include <ogcsys.h>
 #include <gccore.h>
 
-#include <iso9660.h>
+#include "gc_dvd_fst.h"
 #include <ogc/dvd.h>
 
 #define DOOMGENERIC_RESX 640
@@ -634,12 +634,12 @@ static void handleGameCubeInput(void)
 static bool mountIsoFilesystem(void)
 {
     DC_DEBUG(
-        "DoomCube: mounting ISO9660...\n");
+        "DoomCube: mounting native GameCube FST...\n");
 
-    if (!ISO9660_Mount("dvd", &__io_gcdvd))
+    if (!GC_DVDFST_Mount())
     {
         DC_WARN(
-            "DoomCube: ISO9660_Mount FAILED\n");
+            "DoomCube: native FST mount FAILED\n");
 
         return false;
     }
@@ -647,7 +647,7 @@ static bool mountIsoFilesystem(void)
     dvdMounted = true;
 
     DC_LOG(
-        "DoomCube: mounted dvd:/\n");
+        "DoomCube: mounted native dvd:/\n");
 
     return true;
 }
@@ -768,7 +768,6 @@ platformInitialized = true;
 
 return true;
 }
-
 
 void DG_Init(void)
 {
@@ -1001,8 +1000,7 @@ int main(int argc, char **argv)
 
     if (dvdMounted)
     {
-        ISO9660_Unmount(
-            "dvd");
+        GC_DVDFST_Unmount();
     }
 
     return 0;
