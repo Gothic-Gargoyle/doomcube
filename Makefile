@@ -455,7 +455,15 @@ endif
 # DOOMCUBE_RELEASE_TARGET
 
 DOOMCUBE_RELEASE_DIR := $(CURDIR)/dist
-DOOMCUBE_RELEASE_ZIP := $(DOOMCUBE_RELEASE_DIR)/$(TARGET).zip
+
+# Public package filename.
+#
+# Developer/default builds continue to fall back to TARGET, which carries
+# the Git build ID. RC/final/diagnostic release targets override this with
+# a clean versioned archive name.
+RELEASE_ARCHIVE_NAME ?= $(TARGET).zip
+
+DOOMCUBE_RELEASE_ZIP := $(DOOMCUBE_RELEASE_DIR)/$(RELEASE_ARCHIVE_NAME)
 
 DOOMCUBE_APPLOADER_SRC := $(CURDIR)/tools/native-gcm/apploader.c
 DOOMCUBE_APPLOADER_DIR := $(CURDIR)/build-deps/cubeboot-tools/ppc/apploader
@@ -510,6 +518,7 @@ rc:
 		DEBUG=0 \
 		TRACE=0 \
 		VERSION="$(BASE_VERSION)-rc$(RC)" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION)-rc$(RC).zip" \
 		release-bundle
 
 release:
@@ -524,6 +533,7 @@ release:
 		DEBUG=0 \
 		TRACE=0 \
 		VERSION="$(BASE_VERSION)" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION).zip" \
 		release-bundle
 
 release-debug:
@@ -538,6 +548,7 @@ release-debug:
 		DEBUG=1 \
 		TRACE=1 \
 		VERSION="$(BASE_VERSION)-debug" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION)-debug.zip" \
 		release-bundle
 
 # Internal packaging implementation.
@@ -595,7 +606,7 @@ release-bundle: all
 		--launcher "$(CURDIR)/data/launcher/doomcube.bmp" \
 		--timidity "$(CURDIR)/data/timidity" \
 		--dist "$(DOOMCUBE_RELEASE_DIR)" \
-		--archive-name "$(TARGET).zip"
+		--archive-name "$(RELEASE_ARCHIVE_NAME)"
 
 	@test -f "$(DOOMCUBE_RELEASE_ZIP)" || \
 		( echo "ERROR: release ZIP was not created."; false )
