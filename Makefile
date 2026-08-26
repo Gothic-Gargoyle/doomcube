@@ -15,6 +15,17 @@ BASE_VERSION ?= 0.1.0
 VERSION ?= $(BASE_VERSION)-dev
 RC ?= 1
 
+# Use all available host CPU threads for builds by default.
+# JOBS can still be overridden explicitly, e.g.:
+#   make JOBS=4
+JOBS ?= $(shell nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+
+# Only the top-level make enables parallelism. Recursive makes inherit
+# GNU make's jobserver so the whole build stays within the same limit.
+ifeq ($(MAKELEVEL),0)
+MAKEFLAGS += -j$(JOBS)
+endif
+
 GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || echo -dirty)
 
