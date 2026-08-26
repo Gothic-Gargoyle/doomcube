@@ -28,7 +28,7 @@ bool GC_ConfigSave(
         return false;
     }
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: global configuration saved (%u bytes)\n",
         (unsigned int)size);
 
@@ -59,7 +59,7 @@ bool GC_ConfigLoad(
         return false;
     }
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: global configuration loaded (%u bytes)\n",
         (unsigned int)*actualSize);
 

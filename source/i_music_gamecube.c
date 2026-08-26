@@ -16,8 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-#define GC_TIMIDITY_CFG "dvd:/timidity/timidity.cfg"
+#define GC_TIMIDITY_CFG "dvd:/data/timidity/timidity.cfg"
 
 
 typedef struct
@@ -52,7 +51,7 @@ static boolean GC_MusicInit(void)
     Uint16 format;
     const char *cfg;
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: initializing music\n"
     );
 
@@ -141,7 +140,7 @@ static boolean GC_MusicInit(void)
 
     cfg = Mix_GetTimidityCfg();
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: TiMidity config: %s\n",
         cfg != NULL ? cfg : "(null)"
     );
@@ -152,7 +151,7 @@ static boolean GC_MusicInit(void)
 
     music_initialized = true;
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: MUS/MIDI TiMidity backend ready\n"
     );
 
@@ -228,7 +227,7 @@ static void GC_SetMusicVolume(int volume)
 
 static void GC_PauseMusic(void)
 {
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: PauseMusic playing=%d paused=%d\n",
         Mix_PlayingMusic(),
         Mix_PausedMusic()
@@ -244,7 +243,7 @@ static void GC_PauseMusic(void)
 
 static void GC_ResumeMusic(void)
 {
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: ResumeMusic playing=%d paused=%d\n",
         Mix_PlayingMusic(),
         Mix_PausedMusic()
@@ -402,7 +401,7 @@ static void *GC_RegisterSong(
     void *midi_data;
     size_t midi_len;
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: RegisterSong data=%p len=%d\n",
         data,
         len
@@ -440,7 +439,7 @@ static void *GC_RegisterSong(
 
     if (GC_IsMidi(data, len))
     {
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: source lump is already MIDI (%d bytes)\n",
             len
         );
@@ -470,7 +469,7 @@ static void *GC_RegisterSong(
     }
     else
     {
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: converting MUS (%d bytes)\n",
             len
         );
@@ -496,7 +495,7 @@ static void *GC_RegisterSong(
         handle->midi_data = midi_data;
         handle->midi_len = midi_len;
 
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: conversion OK: %lu MIDI bytes\n",
             (unsigned long)midi_len
         );
@@ -542,7 +541,7 @@ static void *GC_RegisterSong(
             1
         );
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: Mix_LoadMUS_RW => %p error='%s'\n",
         (void *)handle->music,
         Mix_GetError()
@@ -560,7 +559,7 @@ static void *GC_RegisterSong(
         return NULL;
     }
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: RegisterSong => handle=%p music=%p "
         "midi=%p len=%lu\n",
         (void *)handle,
@@ -582,7 +581,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
     gc_music_handle_t *handle =
         (gc_music_handle_t *)handle_ptr;
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: UnRegisterSong handle=%p "
         "playing=%d paused=%d\n",
         handle_ptr,
@@ -592,7 +591,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
     if (handle == NULL)
     {
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: UnRegisterSong NULL handle\n"
         );
 
@@ -607,14 +606,14 @@ static void GC_UnRegisterSong(void *handle_ptr)
      */
     Mix_HaltMusic();
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: after defensive halt playing=%d\n",
         Mix_PlayingMusic()
     );
 
     if (handle->music != NULL)
     {
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: freeing Mix_Music %p\n",
             (void *)handle->music
         );
@@ -625,12 +624,12 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
         handle->music = NULL;
 
-        DC_DEBUG(
+        DC_TRACE(
             "DoomCube: Mix_Music freed\n"
         );
     }
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: freeing MIDI buffer %p (%lu bytes)\n",
         handle->midi_data,
         (unsigned long)handle->midi_len
@@ -643,7 +642,7 @@ static void GC_UnRegisterSong(void *handle_ptr)
 
     free(handle);
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: UnRegisterSong complete\n"
     );
 }
@@ -660,7 +659,7 @@ static void GC_PlaySong(
     gc_music_handle_t *handle =
         (gc_music_handle_t *)handle_ptr;
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: PlaySong handle=%p looping=%d\n",
         handle_ptr,
         looping
@@ -695,7 +694,7 @@ static void GC_PlaySong(
 
     SDL_ClearError();
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: Mix_PlayMusic music=%p\n",
         (void *)handle->music
     );
@@ -712,7 +711,7 @@ static void GC_PlaySong(
         return;
     }
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: Mix_PlayMusic OK "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),
@@ -723,7 +722,7 @@ static void GC_PlaySong(
 
 static void GC_StopSong(void)
 {
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: StopSong before halt "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),
@@ -735,7 +734,7 @@ static void GC_StopSong(void)
         Mix_HaltMusic();
     }
 
-    DC_DEBUG(
+    DC_TRACE(
         "DoomCube: StopSong after halt "
         "playing=%d paused=%d\n",
         Mix_PlayingMusic(),

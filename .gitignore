@@ -27,3 +27,13 @@ build-gba-test/
 build-iso
 doomgeneric.sln
 source/doomgeneric.vcxproj.filters
+.map
+build-deps
+
+# DoomCube generated native-disc artifacts
+/build-native-disc/
+/tools/native-gcm/apploader.bin
+
+# Generated release bundles
+/dist/
+tools/release/__pycache__/build_bundle.cpython-314.pyc

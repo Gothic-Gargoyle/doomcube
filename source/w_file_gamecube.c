@@ -1,7 +1,7 @@
 //
 // DoomCube DVD-backed WAD file backend with a small multi-block LRU cache.
 //
-// Large IWADs remain on dvd:/ instead of being copied entirely into RAM.
+// Large WADs remain on storage instead of being copied entirely into RAM.
 // Random WAD access is serviced through multiple 64 KiB cache blocks so
 // frequently revisited regions remain resident without consuming much RAM.
 //
@@ -277,7 +277,7 @@ static wad_file_t *W_GameCube_OpenFile(
 
     unsigned int i;
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: opening DVD-backed WAD: %s\n",
         path);
 
@@ -417,7 +417,7 @@ static wad_file_t *W_GameCube_OpenFile(
     result->use_counter =
         0;
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: WAD size: %ld bytes\n",
         length);
 

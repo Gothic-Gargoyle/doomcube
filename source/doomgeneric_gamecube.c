@@ -21,7 +21,7 @@
 #include <ogcsys.h>
 #include <gccore.h>
 
-#include <iso9660.h>
+#include "gc_dvd_fst.h"
 #include <ogc/dvd.h>
 
 #define DOOMGENERIC_RESX 640
@@ -634,20 +634,20 @@ static void handleGameCubeInput(void)
 static bool mountIsoFilesystem(void)
 {
     DC_DEBUG(
-        "DoomCube: mounting ISO9660...\n");
+        "DoomCube: mounting native GameCube FST...\n");
 
-    if (!ISO9660_Mount("dvd", &__io_gcdvd))
+    if (!GC_DVDFST_Mount())
     {
         DC_WARN(
-            "DoomCube: ISO9660_Mount FAILED\n");
+            "DoomCube: native FST mount FAILED\n");
 
         return false;
     }
 
     dvdMounted = true;
 
-    DC_LOG(
-        "DoomCube: mounted dvd:/\n");
+    DC_INFO(
+        "DoomCube: mounted native dvd:/\n");
 
     return true;
 }
@@ -670,7 +670,7 @@ static bool GC_PlatformInit(void)
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
-        DC_WARN(
+        DC_ERROR(
             "SDL_Init failed: %s\n",
             SDL_GetError());
 
@@ -687,7 +687,7 @@ static bool GC_PlatformInit(void)
 
     if (!window)
     {
-        DC_WARN(
+        DC_ERROR(
             "SDL_CreateWindow failed: %s\n",
             SDL_GetError());
 
@@ -701,7 +701,7 @@ static bool GC_PlatformInit(void)
 
     if (!renderer)
     {
-        DC_WARN(
+        DC_ERROR(
             "SDL_CreateRenderer failed: %s\n",
             SDL_GetError());
 
@@ -717,7 +717,7 @@ static bool GC_PlatformInit(void)
                 &outputWidth,
                 &outputHeight) == 0)
         {
-            DC_LOG(
+            DC_DEBUG(
                 "DoomCube: SDL renderer output = %dx%d\n",
                 outputWidth,
                 outputHeight);
@@ -740,7 +740,7 @@ static bool GC_PlatformInit(void)
 
     if (!texture)
     {
-        DC_WARN(
+        DC_ERROR(
             "SDL_CreateTexture failed: %s\n",
             SDL_GetError());
 
@@ -752,7 +752,7 @@ static bool GC_PlatformInit(void)
 
     if (!mountIsoFilesystem())
     {
-        DC_WARN(
+        DC_ERROR(
             "DoomCube: disc mount unavailable\n");
 
         return false;
@@ -768,7 +768,6 @@ platformInitialized = true;
 
 return true;
 }
-
 
 void DG_Init(void)
 {
@@ -954,7 +953,7 @@ int main(int argc, char **argv)
         (char *)selectedIwad
     };
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: starting Doom engine with %s\n",
         selectedIwad);
 
@@ -1001,8 +1000,7 @@ int main(int argc, char **argv)
 
     if (dvdMounted)
     {
-        ISO9660_Unmount(
-            "dvd");
+        GC_DVDFST_Unmount();
     }
 
     return 0;

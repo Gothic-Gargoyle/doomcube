@@ -11,7 +11,20 @@ include $(DEVKITPRO)/libogc2/gamecube_rules
 # Version
 #---------------------------------------------------------------------------------
 
-VERSION := 0.1.0-dev
+BASE_VERSION ?= 0.1.0
+VERSION ?= $(BASE_VERSION)-dev
+RC ?= 1
+
+# Use all available host CPU threads for builds by default.
+# JOBS can still be overridden explicitly, e.g.:
+#   make JOBS=4
+JOBS ?= $(shell nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+
+# Only the top-level make enables parallelism. Recursive makes inherit
+# GNU make's jobserver so the whole build stays within the same limit.
+ifeq ($(MAKELEVEL),0)
+MAKEFLAGS += -j$(JOBS)
+endif
 
 GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || echo -dirty)
@@ -19,7 +32,14 @@ GIT_DIRTY := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || ec
 BUILD_VERSION := $(VERSION)
 BUILD_ID := $(GIT_HASH)$(GIT_DIRTY)
 
+# Development builds include normal debug diagnostics by default.
+#
+# TRACE is reserved for very verbose per-operation diagnostics.
+#
+# Public RC/final release targets explicitly disable both.
+# release-debug deliberately enables both for diagnostic builds.
 DEBUG ?= 1
+TRACE ?= 0
 
 #---------------------------------------------------------------------------------
 # Project
@@ -64,6 +84,10 @@ ifeq ($(DEBUG),1)
 CFLAGS += -DDOOMCUBE_DEBUG
 endif
 
+ifeq ($(TRACE),1)
+CFLAGS += -DDOOMCUBE_TRACE
+endif
+
 CXXFLAGS := $(CFLAGS)
 
 LDFLAGS := \
@@ -90,7 +114,6 @@ LIBS := \
 	-lSDL2 \
 	-lopengx \
 	-laesnd \
-	-liso9660 \
 	-logc \
 	-lz \
 	-lstdc++ \
@@ -197,6 +220,7 @@ CFILES := \
 	i_video.c \
 	gc_config.c \
 	gc_controls.c \
+	gc_dvd_fst.c \
 	gc_launcher.c \
 	gc_memcard.c \
 	gc_save_stdio.c \
@@ -299,19 +323,34 @@ run:
 	wiiload $(TARGET).dol
 
 #---------------------------------------------------------------------------------
-# ISO
+# Native GameCube ISO
 #---------------------------------------------------------------------------------
 
-iso:
-	@test -n "$(MKISOFS)" || \
-		( echo "ERROR: genisoimage, mkisofs or xorriso is required." && false )
+iso: all
+	@test -f "$(CURDIR)/tools/native-gcm/mkdoomcube.py" || \
+		( echo "ERROR: missing native GCM builder." && false )
 
-	@test -f "$(GBI_HDR)" || \
-		( echo "ERROR: missing $(GBI_HDR)" && false )
+	@test -f "$(CURDIR)/tools/native-gcm/apploader.c" || \
+		( echo "ERROR: missing tools/native-gcm/apploader.c" && false )
 
-	@test -f "$(CURDIR)/$(TARGET).dol" || \
-		( echo "ERROR: $(TARGET).dol is missing." && false )
-	
+	@test -d "$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" || \
+		( echo "ERROR: missing build-deps/cubeboot-tools." && false )
+
+	@echo "Building DoomCube apploader"
+	@cp "$(CURDIR)/tools/native-gcm/apploader.c" \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.c"
+
+	@$(MAKE) -C \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" \
+		clean
+
+	@$(MAKE) -C \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader"
+
+	@cp \
+		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.bin" \
+		"$(CURDIR)/tools/native-gcm/apploader.bin"
+
 	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
 		test -f "$(CURDIR)/data/wad/doom.wad" || \
 		test -f "$(CURDIR)/data/wad/doom2.wad" || \
@@ -327,40 +366,47 @@ iso:
 
 	@rm -rf "$(ISO_DIR)"
 
-	@mkdir -p "$(ISO_DIR)/timidity"
+	@mkdir -p "$(ISO_DIR)/data/wad"
+	@mkdir -p "$(ISO_DIR)/data/pwad"
+	@mkdir -p "$(ISO_DIR)/data/deh"
+	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
 
-
-	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
 	@cp "$(CURDIR)/data/launcher/doomcube.bmp" \
 		"$(ISO_DIR)/launcher/doomcube.bmp"
 
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
-	if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
-		echo "Adding $$wad"; \
-		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/$$wad"; \
-	fi; \
-done
+		if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
+			echo "Adding $$wad"; \
+			cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/data/wad/$$wad"; \
+		fi; \
+	done
+
+	@if [ -d "$(CURDIR)/data/pwad" ]; then \
+		cp -a "$(CURDIR)/data/pwad/." "$(ISO_DIR)/data/pwad/"; \
+	fi
+
+	@if [ -d "$(CURDIR)/data/deh" ]; then \
+		cp -a "$(CURDIR)/data/deh/." "$(ISO_DIR)/data/deh/"; \
+	fi
+
 	@echo "Adding TiMidity instrument data"
-	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/timidity/"
-	
+	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/data/timidity/"
+
 	@echo
-	@echo "ISO contents:"
+	@echo "Native disc contents:"
 	@du -sh "$(ISO_DIR)"
 	@echo
 
-	$(MKISOFS) \
-		-R \
-		-J \
-		-G "$(GBI_HDR)" \
-		-no-emul-boot \
-		-eltorito-platform PPC \
-		-b bootldr.dol \
-		-o "$(ISO_OUT)" \
-		"$(ISO_DIR)"
+	python3 "$(CURDIR)/tools/native-gcm/mkdoomcube.py" \
+		--dol "$(CURDIR)/$(TARGET).dol" \
+		--apploader "$(CURDIR)/tools/native-gcm/apploader.bin" \
+		--root "$(ISO_DIR)" \
+		--output "$(ISO_OUT)" \
+		--title "DOOMCUBE"
 
 	@echo
-	@echo "Built ISO:"
+	@echo "Built native GameCube ISO:"
 	@ls -lh "$(ISO_OUT)"
 	@echo
 
@@ -413,3 +459,171 @@ g_game.o p_saveg.o m_menu_gamecube.o: CFLAGS += \
 -include $(DEPENDS)
 
 endif
+
+#---------------------------------------------------------------------------------
+# Player release bundle
+#---------------------------------------------------------------------------------
+# DOOMCUBE_RELEASE_TARGET
+
+DOOMCUBE_RELEASE_DIR := $(CURDIR)/dist
+
+# Public package filename.
+#
+# Developer/default builds continue to fall back to TARGET, which carries
+# the Git build ID. RC/final/diagnostic release targets override this with
+# a clean versioned archive name.
+RELEASE_ARCHIVE_NAME ?= $(TARGET).zip
+
+DOOMCUBE_RELEASE_ZIP := $(DOOMCUBE_RELEASE_DIR)/$(RELEASE_ARCHIVE_NAME)
+
+DOOMCUBE_APPLOADER_SRC := $(CURDIR)/tools/native-gcm/apploader.c
+DOOMCUBE_APPLOADER_DIR := $(CURDIR)/build-deps/cubeboot-tools/ppc/apploader
+DOOMCUBE_COMMON_DIR    := $(CURDIR)/build-deps/cubeboot-tools/ppc/common
+DOOMCUBE_APPLOADER_BIN := $(CURDIR)/tools/native-gcm/apploader.bin
+
+DOOMCUBE_BUNDLE_BUILDER := $(CURDIR)/tools/release/build_bundle.py
+
+.PHONY: rc release release-debug release-bundle
+
+# ------------------------------------------------------------------
+# Public build flavours
+# ------------------------------------------------------------------
+#
+# make
+#     Development build:
+#       VERSION = <base>-dev
+#       DEBUG   = 1
+#       TRACE   = 0
+#
+# make rc
+#     Release candidate:
+#       VERSION = <base>-rc<RC>
+#       DEBUG   = 0
+#       TRACE   = 0
+#
+# make release
+#     Final production release:
+#       VERSION = <base>
+#       DEBUG   = 0
+#       TRACE   = 0
+#
+# make release-debug
+#     Player-installable diagnostic release:
+#       VERSION = <base>-debug
+#       DEBUG   = 1
+#       TRACE   = 1
+#
+# Each packaged flavour starts from a clean object tree. This prevents
+# objects compiled with one DOOMCUBE_DEBUG setting from leaking into a
+# differently configured release.
+
+rc:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube release candidate $(BASE_VERSION)-rc$(RC)"
+	@echo " Production logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=0 \
+		TRACE=0 \
+		VERSION="$(BASE_VERSION)-rc$(RC)" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION)-rc$(RC).zip" \
+		release-bundle
+
+release:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube release $(BASE_VERSION)"
+	@echo " Production logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=0 \
+		TRACE=0 \
+		VERSION="$(BASE_VERSION)" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION).zip" \
+		release-bundle
+
+release-debug:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube diagnostic release $(BASE_VERSION)-debug"
+	@echo " Verbose DEBUG/TRACE logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) clean
+	@$(MAKE) \
+		DEBUG=1 \
+		TRACE=1 \
+		VERSION="$(BASE_VERSION)-debug" \
+		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION)-debug.zip" \
+		release-bundle
+
+# Internal packaging implementation.
+#
+# Do not call this target for normal release work; use rc, release or
+# release-debug so the correct logging configuration and clean rebuild
+# are guaranteed.
+release-bundle: all
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube player release"
+	@echo "============================================================"
+	@echo
+
+	@test -f "$(DOOMCUBE_APPLOADER_SRC)" || \
+		( echo "ERROR: missing tracked apploader source:"; \
+		  echo "  $(DOOMCUBE_APPLOADER_SRC)"; false )
+
+	@test -d "$(DOOMCUBE_APPLOADER_DIR)" || \
+		( echo "ERROR: cubeboot-tools apploader directory is missing."; \
+		  echo "Run the developer setup first."; false )
+
+	@test -d "$(DOOMCUBE_COMMON_DIR)" || \
+		( echo "ERROR: cubeboot-tools common directory is missing."; false )
+
+	@test -f "$(DOOMCUBE_BUNDLE_BUILDER)" || \
+		( echo "ERROR: release bundle builder is missing:"; \
+		  echo "  $(DOOMCUBE_BUNDLE_BUILDER)"; false )
+
+	@echo "Building DoomCube-owned apploader..."
+
+	@cp \
+		"$(DOOMCUBE_APPLOADER_SRC)" \
+		"$(DOOMCUBE_APPLOADER_DIR)/apploader.c"
+
+	@$(MAKE) -C "$(DOOMCUBE_COMMON_DIR)"
+	@$(MAKE) -C "$(DOOMCUBE_APPLOADER_DIR)" clean
+	@$(MAKE) -C "$(DOOMCUBE_APPLOADER_DIR)"
+
+	@test -f "$(DOOMCUBE_APPLOADER_DIR)/apploader.bin" || \
+		( echo "ERROR: apploader build did not produce apploader.bin."; false )
+
+	@cp \
+		"$(DOOMCUBE_APPLOADER_DIR)/apploader.bin" \
+		"$(DOOMCUBE_APPLOADER_BIN)"
+
+	@echo
+	@echo "Building player release bundle..."
+
+	@python3 "$(DOOMCUBE_BUNDLE_BUILDER)" \
+		--dol "$(CURDIR)/$(TARGET).dol" \
+		--apploader "$(DOOMCUBE_APPLOADER_BIN)" \
+		--builder "$(CURDIR)/tools/native-gcm/mkdoomcube.py" \
+		--packer "$(CURDIR)/tools/release/pack.py" \
+		--launcher "$(CURDIR)/data/launcher/doomcube.bmp" \
+		--timidity "$(CURDIR)/data/timidity" \
+		--dist "$(DOOMCUBE_RELEASE_DIR)" \
+		--archive-name "$(RELEASE_ARCHIVE_NAME)"
+
+	@test -f "$(DOOMCUBE_RELEASE_ZIP)" || \
+		( echo "ERROR: release ZIP was not created."; false )
+
+	@echo
+	@ls -lh "$(DOOMCUBE_RELEASE_ZIP)"
+	@echo
+	@echo "$(DOOMCUBE_RELEASE_ZIP)"
+	@echo

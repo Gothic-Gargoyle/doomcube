@@ -36,11 +36,11 @@ typedef struct
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
-    { "DOOM SHAREWARE", "dvd:/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
-    { "DOOM",           "dvd:/doom.wad",     false, GC_SAVEGAME_DOOM },
-    { "DOOM II",        "dvd:/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
-    { "TNT: EVILUTION", "dvd:/tnt.wad",      false, GC_SAVEGAME_TNT },
-    { "PLUTONIA",       "dvd:/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
+    { "DOOM SHAREWARE", "dvd:/data/wad/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
+    { "DOOM",           "dvd:/data/wad/doom.wad",     false, GC_SAVEGAME_DOOM },
+    { "DOOM II",        "dvd:/data/wad/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
+    { "TNT: EVILUTION", "dvd:/data/wad/tnt.wad",      false, GC_SAVEGAME_TNT },
+    { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
 };
 
 static int gcAvailableGameCount;
@@ -135,7 +135,7 @@ static int GC_LauncherScanGames(void)
 
     gcAvailableGameCount = 0;
 
-    DC_LOG("DoomCube: ---- AVAILABLE GAMES ----\n");
+    DC_DEBUG("DoomCube: ---- AVAILABLE GAMES ----\n");
 
     for (i = 0; i < GC_MAX_GAMES; ++i)
     {
@@ -146,13 +146,13 @@ static int GC_LauncherScanGames(void)
 
         ++gcAvailableGameCount;
 
-        DC_LOG(
+        DC_DEBUG(
             "DoomCube: found %s (%s)\n",
             gcGames[i].name,
             gcGames[i].iwadPath);
     }
 
-    DC_LOG(
+    DC_DEBUG(
         "DoomCube: %d game(s) available\n",
         gcAvailableGameCount);
 
@@ -679,7 +679,7 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
         return NULL;
     }
 
-    DC_LOG(
+    DC_INFO(
         "DoomCube: launcher selected %s (%s)\n",
         game->name,
         game->iwadPath);
