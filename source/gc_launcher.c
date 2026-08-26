@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -25,6 +26,13 @@
 #define GC_LAUNCHER_LOGO_Y       5
 
 #define GC_MAX_GAMES 5
+
+#define GC_PWAD_MANIFEST_PATH "dvd:/data/pwad/doomcube.lst"
+#define GC_PWAD_DIRECTORY     "dvd:/data/pwad"
+
+#define GC_MAX_PWADS          64
+#define GC_PWAD_NAME_MAX      128
+#define GC_PWAD_PATH_MAX      256
 
 typedef struct
 {
@@ -43,12 +51,144 @@ static gc_game_entry_t gcGames[GC_MAX_GAMES] =
     { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
 };
 
+typedef struct
+{
+    char name[GC_PWAD_NAME_MAX];
+    char path[GC_PWAD_PATH_MAX];
+} gc_pwad_entry_t;
+
+static gc_pwad_entry_t gcPwads[GC_MAX_PWADS];
+
 static int gcAvailableGameCount;
+static int gcAvailablePwadCount;
 
 static bool GC_FileExists(const char *path)
 {
     struct stat info;
     return stat(path, &info) == 0;
+}
+
+static int GC_LauncherScanPwads(void)
+{
+    FILE *manifest;
+    char line[GC_PWAD_NAME_MAX + 4];
+
+    gcAvailablePwadCount = 0;
+
+    DC_DEBUG("DoomCube: ---- AVAILABLE PWADS ----\n");
+
+    manifest =
+        fopen(
+            GC_PWAD_MANIFEST_PATH,
+            "rb");
+
+    if (manifest == NULL)
+    {
+        DC_DEBUG(
+            "DoomCube: no PWAD manifest found\n");
+
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), manifest) != NULL)
+    {
+        size_t length;
+        int written;
+
+        /*
+         * The generated manifest contains one filename per line.
+         * Strip either Unix or Windows-style line endings.
+         */
+        length = strcspn(line, "\r\n");
+
+        /*
+         * If the buffer filled without reaching a line ending, the
+         * manifest entry is too long for DoomCube's launcher.
+         */
+        if (line[length] == '\0' &&
+            !feof(manifest) &&
+            length == sizeof(line) - 1)
+        {
+            int c;
+
+            while ((c = fgetc(manifest)) != '\n' &&
+                   c != EOF)
+            {
+                /* Drain the rest of the oversized line. */
+            }
+
+            DC_WARN(
+                "DoomCube: PWAD manifest entry too long; skipping\n");
+
+            continue;
+        }
+
+        line[length] = '\0';
+
+        if (line[0] == '\0')
+        {
+            continue;
+        }
+
+        if (gcAvailablePwadCount >= GC_MAX_PWADS)
+        {
+            DC_WARN(
+                "DoomCube: PWAD limit reached (%d)\n",
+                GC_MAX_PWADS);
+
+            break;
+        }
+
+        written =
+            snprintf(
+                gcPwads[gcAvailablePwadCount].path,
+                sizeof(gcPwads[gcAvailablePwadCount].path),
+                "%s/%s",
+                GC_PWAD_DIRECTORY,
+                line);
+
+        if (written < 0 ||
+            (size_t)written >=
+                sizeof(gcPwads[gcAvailablePwadCount].path))
+        {
+            DC_WARN(
+                "DoomCube: PWAD path too long: %s\n",
+                line);
+
+            continue;
+        }
+
+        if (!GC_FileExists(
+                gcPwads[gcAvailablePwadCount].path))
+        {
+            DC_WARN(
+                "DoomCube: PWAD listed but missing: %s\n",
+                line);
+
+            continue;
+        }
+
+        snprintf(
+            gcPwads[gcAvailablePwadCount].name,
+            sizeof(gcPwads[gcAvailablePwadCount].name),
+            "%s",
+            line);
+
+        DC_DEBUG(
+            "DoomCube: found PWAD %s (%s)\n",
+            gcPwads[gcAvailablePwadCount].name,
+            gcPwads[gcAvailablePwadCount].path);
+
+        ++gcAvailablePwadCount;
+    }
+
+    fclose(manifest);
+
+    DC_DEBUG(
+        "DoomCube: %d PWAD(s) available\n",
+        gcAvailablePwadCount);
+
+    return gcAvailablePwadCount;
 }
 
 static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
@@ -644,6 +784,8 @@ const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
 
     availableGames =
         GC_LauncherScanGames();
+
+    GC_LauncherScanPwads();
 
     if (availableGames == 0)
     {

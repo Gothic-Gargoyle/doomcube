@@ -17,6 +17,8 @@ GC_MAGIC = 0xC2339F3D
 
 ALIGN = 0x20
 
+PWAD_MANIFEST_NAME = "doomcube.lst"
+
 
 def align(value: int, alignment: int = ALIGN) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
@@ -43,6 +45,47 @@ class Node:
         self.index = -1
 
         self.children: list[Node] = []
+
+
+def write_pwad_manifest(root: Path) -> None:
+    """
+    Generate the PWAD list consumed by the DoomCube launcher.
+
+    The launcher does not need directory-enumeration support from the
+    GameCube DVD filesystem: it can read this ordinary file instead.
+
+    Manifest format:
+        one PWAD filename per UTF-8 line
+
+    Only top-level .wad files in data/pwad are listed.
+    """
+    pwad_dir = root / "data" / "pwad"
+
+    if not pwad_dir.is_dir():
+        return
+
+    pwads = sorted(
+        (
+            entry.name
+            for entry in pwad_dir.iterdir()
+            if entry.is_file()
+            and entry.suffix.lower() == ".wad"
+            and "\n" not in entry.name
+            and "\r" not in entry.name
+        ),
+        key=str.casefold,
+    )
+
+    manifest = pwad_dir / PWAD_MANIFEST_NAME
+
+    manifest.write_text(
+        "".join(f"{name}\n" for name in pwads),
+        encoding="utf-8",
+    )
+
+    print(
+        f"PWAD manifest : {len(pwads)} file(s)"
+    )
 
 
 def build_tree(root: Path) -> Node:
@@ -280,6 +323,8 @@ def main() -> None:
         raise SystemExit(
             f"ERROR: root directory missing: {args.root}"
         )
+
+    write_pwad_manifest(args.root)
 
     root = build_tree(args.root)
     entries = flatten_tree(root)
