@@ -299,15 +299,15 @@ run:
 	wiiload $(TARGET).dol
 
 #---------------------------------------------------------------------------------
-# ISO
+# Native GameCube ISO
 #---------------------------------------------------------------------------------
 
 iso: all
-	@test -n "$(MKISOFS)" || \
-		( echo "ERROR: genisoimage, mkisofs or xorriso is required." && false )
+	@test -f "$(CURDIR)/tools/native-gcm/mkdoomcube.py" || \
+		( echo "ERROR: missing native GCM builder." && false )
 
-	@test -f "$(GBI_HDR)" || \
-		( echo "ERROR: missing $(GBI_HDR)" && false )
+	@test -f "$(CURDIR)/tools/native-gcm/apploader.bin" || \
+		( echo "ERROR: missing tools/native-gcm/apploader.bin" && false )
 
 	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
 		test -f "$(CURDIR)/data/wad/doom.wad" || \
@@ -330,37 +330,41 @@ iso: all
 	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
 
-	@cp "$(CURDIR)/$(TARGET).dol" "$(ISO_DIR)/bootldr.dol"
 	@cp "$(CURDIR)/data/launcher/doomcube.bmp" \
 		"$(ISO_DIR)/launcher/doomcube.bmp"
 
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
-	if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
-		echo "Adding $$wad"; \
-		cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/data/wad/$$wad"; \
-	fi; \
-done
+		if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
+			echo "Adding $$wad"; \
+			cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/data/wad/$$wad"; \
+		fi; \
+	done
+
+	@if [ -d "$(CURDIR)/data/pwad" ]; then \
+		cp -a "$(CURDIR)/data/pwad/." "$(ISO_DIR)/data/pwad/"; \
+	fi
+
+	@if [ -d "$(CURDIR)/data/deh" ]; then \
+		cp -a "$(CURDIR)/data/deh/." "$(ISO_DIR)/data/deh/"; \
+	fi
 
 	@echo "Adding TiMidity instrument data"
 	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/data/timidity/"
-	
+
 	@echo
-	@echo "ISO contents:"
+	@echo "Native disc contents:"
 	@du -sh "$(ISO_DIR)"
 	@echo
 
-	$(MKISOFS) \
-		-R \
-		-J \
-		-G "$(GBI_HDR)" \
-		-no-emul-boot \
-		-eltorito-platform PPC \
-		-b bootldr.dol \
-		-o "$(ISO_OUT)" \
-		"$(ISO_DIR)"
+	python3 "$(CURDIR)/tools/native-gcm/mkdoomcube.py" \
+		--dol "$(CURDIR)/$(TARGET).dol" \
+		--apploader "$(CURDIR)/tools/native-gcm/apploader.bin" \
+		--root "$(ISO_DIR)" \
+		--output "$(ISO_OUT)" \
+		--title "DOOMCUBE"
 
 	@echo
-	@echo "Built ISO:"
+	@echo "Built native GameCube ISO:"
 	@ls -lh "$(ISO_OUT)"
 	@echo
 
