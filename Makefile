@@ -627,3 +627,22 @@ release-bundle: all
 	@echo
 	@echo "$(DOOMCUBE_RELEASE_ZIP)"
 	@echo
+
+# Test the release-candidate configuration in Dolphin.
+#
+# Reuses the normal test pipeline, but compiles with production logging
+# and the RC version identifier.
+.PHONY: test-rc
+test-rc:
+	@echo
+	@echo "============================================================"
+	@echo " DoomCube RC test $(BASE_VERSION)-rc$(RC)"
+	@echo " Production logging"
+	@echo "============================================================"
+	@echo
+	@$(MAKE) \
+		DEBUG=0 \
+		TRACE=0 \
+		VERSION="$(BASE_VERSION)-rc$(RC)" \
+		test
+
