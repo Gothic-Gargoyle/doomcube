@@ -33,3 +33,7 @@ build-deps
 # DoomCube generated native-disc artifacts
 /build-native-disc/
 /tools/native-gcm/apploader.bin
+
+# Generated release bundles
+/dist/
+tools/release/__pycache__/build_bundle.cpython-314.pyc
