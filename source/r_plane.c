@@ -42,16 +42,133 @@ planefunction_t		ceilingfunc;
 //
 
 // Here comes the obnoxious "visplane".
-#define MAXVISPLANES	128
+#define MAXVISPLANES	1024
+#define VANILLA_MAXVISPLANES 128
+
 visplane_t		visplanes[MAXVISPLANES];
+
+#ifdef GEKKO
+#include "gc_debug.h"
+
+static int doomcube_visplane_highwater;
+
+static void DoomCube_ReportVisplanes(int count)
+{
+    if (count <= doomcube_visplane_highwater)
+        return;
+
+    doomcube_visplane_highwater = count;
+
+    if (count == VANILLA_MAXVISPLANES + 1 ||
+        (count > VANILLA_MAXVISPLANES && (count % 16) == 0))
+    {
+        DC_DEBUG(
+            "DoomCube: visplanes high-water = %d / %d\n",
+            count,
+            MAXVISPLANES);
+    }
+}
+#endif
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
 visplane_t*		ceilingplane;
 
-// ?
-#define MAXOPENINGS	SCREENWIDTH*64
-short			openings[MAXOPENINGS];
-short*			lastopening;
+//
+// Opening storage.
+//
+// Keep the original Doom capacity for now.  Allocation goes through
+// R_AllocOpening() so an overrun is detected before memory is touched.
+//
+#define MAXOPENINGS (SCREENWIDTH * 64)
+
+static short openings[MAXOPENINGS];
+static short *lastopening;
+
+#ifdef GEKKO
+static int doomcube_opening_highwater;
+static int doomcube_opening_next_report = 2048;
+static boolean doomcube_opening_warned;
+
+static void DoomCube_ReportOpenings(int count)
+{
+    if (count <= doomcube_opening_highwater)
+        return;
+
+    doomcube_opening_highwater = count;
+
+    if (count >= doomcube_opening_next_report)
+    {
+        DC_DEBUG(
+            "DoomCube: openings high-water = %d / %d\n",
+            count,
+            MAXOPENINGS);
+
+        while (doomcube_opening_next_report <= count)
+            doomcube_opening_next_report += 2048;
+    }
+
+    if (!doomcube_opening_warned
+        && count >= (MAXOPENINGS * 9) / 10)
+    {
+        DC_WARN(
+            "DoomCube: openings approaching limit: %d / %d\n",
+            count,
+            MAXOPENINGS);
+
+        doomcube_opening_warned = true;
+    }
+}
+#endif
+
+
+//
+// R_AllocOpening
+//
+// Reserve 'count' shorts from the per-frame opening buffer.
+//
+// The original renderer advances lastopening directly and only checks
+// for overflow later under RANGECHECK.  That means a memcpy can already
+// have written beyond openings[] before the error is detected.
+//
+// DoomCube checks the reservation before advancing the pointer.
+//
+short *R_AllocOpening(int count)
+{
+    short *result;
+    int used;
+
+    if (count < 0)
+        I_Error("R_AllocOpening: negative allocation (%i)", count);
+
+    used = (int)(lastopening - openings);
+
+    if (count > MAXOPENINGS - used)
+    {
+#ifdef GEKKO
+        DC_ERROR(
+            "DoomCube: opening limit exhausted: used=%d need=%d limit=%d\n",
+            used,
+            count,
+            MAXOPENINGS);
+#endif
+
+        I_Error(
+            "R_AllocOpening: opening overflow (%i + %i > %i)",
+            used,
+            count,
+            MAXOPENINGS);
+    }
+
+    result = lastopening;
+    lastopening += count;
+
+#ifdef GEKKO
+    DoomCube_ReportOpenings(
+        (int)(lastopening - openings));
+#endif
+
+    return result;
+}
 
 
 //
@@ -236,9 +353,22 @@ R_FindPlane
 	return check;
 		
     if (lastvisplane - visplanes == MAXVISPLANES)
-	I_Error ("R_FindPlane: no more visplanes");
-		
+    {
+#ifdef GEKKO
+        DC_ERROR(
+            "DoomCube: visplane limit exhausted: %d / %d\n",
+            MAXVISPLANES,
+            MAXVISPLANES);
+#endif
+        I_Error ("R_FindPlane: no more visplanes");
+    }
+
     lastvisplane++;
+
+#ifdef GEKKO
+    DoomCube_ReportVisplanes(
+        lastvisplane - visplanes);
+#endif
 
     check->height = height;
     check->picnum = picnum;

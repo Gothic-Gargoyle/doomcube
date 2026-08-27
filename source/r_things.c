@@ -19,6 +19,10 @@
 
 
 
+#ifdef GEKKO
+#include "gc_debug.h"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -319,9 +323,48 @@ vissprite_t	overflowsprite;
 
 vissprite_t* R_NewVisSprite (void)
 {
+#ifdef GEKKO
+    static int doomcube_vissprite_highwater;
+    static boolean doomcube_vissprite_limit_reported;
+    int doomcube_vissprite_next =
+        (int)(vissprite_p - vissprites) + 1;
+
+    if (doomcube_vissprite_next >
+        doomcube_vissprite_highwater)
+    {
+        doomcube_vissprite_highwater =
+            doomcube_vissprite_next;
+
+        if (doomcube_vissprite_next == 65 ||
+            doomcube_vissprite_next == 96 ||
+            doomcube_vissprite_next == 112 ||
+            doomcube_vissprite_next == 120 ||
+            doomcube_vissprite_next == MAXVISSPRITES)
+        {
+            DC_DEBUG(
+                "DoomCube: vissprites high-water = %d / %d\n",
+                doomcube_vissprite_next,
+                MAXVISSPRITES);
+        }
+    }
+#endif
+
     if (vissprite_p == &vissprites[MAXVISSPRITES])
-	return &overflowsprite;
-    
+    {
+#ifdef GEKKO
+        if (!doomcube_vissprite_limit_reported)
+        {
+            DC_ERROR(
+                "DoomCube: vissprite limit exhausted: %d / %d\n",
+                MAXVISSPRITES,
+                MAXVISSPRITES);
+
+            doomcube_vissprite_limit_reported = true;
+        }
+#endif
+        return &overflowsprite;
+    }
+
     vissprite_p++;
     return vissprite_p-1;
 }

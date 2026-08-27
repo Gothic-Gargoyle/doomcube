@@ -821,8 +821,26 @@ void R_PrecacheLevel (void)
 
     for (i=0 ; i<numsectors ; i++)
     {
-	flatpresent[sectors[i].floorpic] = 1;
-	flatpresent[sectors[i].ceilingpic] = 1;
+        if (sectors[i].floorpic < 0
+         || sectors[i].floorpic >= numflats)
+        {
+            I_Error(
+                "R_PrecacheLevel: bad floorpic %d (numflats=%d)",
+                sectors[i].floorpic,
+                numflats);
+        }
+
+        if (sectors[i].ceilingpic < 0
+         || sectors[i].ceilingpic >= numflats)
+        {
+            I_Error(
+                "R_PrecacheLevel: bad ceilingpic %d (numflats=%d)",
+                sectors[i].ceilingpic,
+                numflats);
+        }
+
+        flatpresent[sectors[i].floorpic] = 1;
+        flatpresent[sectors[i].ceilingpic] = 1;
     }
 	
     flatmemory = 0;

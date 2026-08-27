@@ -21,6 +21,10 @@
 
 
 
+#ifdef GEKKO
+#include "gc_debug.h"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -373,15 +377,52 @@ R_StoreWallRange
 ( int	start,
   int	stop )
 {
+#ifdef GEKKO
+    static int doomcube_drawseg_highwater;
+    static boolean doomcube_drawseg_limit_reported;
+    int doomcube_drawseg_next =
+        (int)(ds_p - drawsegs) + 1;
+
+    if (doomcube_drawseg_next >
+        doomcube_drawseg_highwater)
+    {
+        doomcube_drawseg_highwater =
+            doomcube_drawseg_next;
+
+        if (doomcube_drawseg_next == 257 ||
+            (doomcube_drawseg_next > 256 &&
+             (doomcube_drawseg_next % 16) == 0))
+        {
+            DC_DEBUG(
+                "DoomCube: drawsegs high-water = %d / %d\n",
+                doomcube_drawseg_next,
+                MAXDRAWSEGS);
+        }
+    }
+#endif
     fixed_t		hyp;
     fixed_t		sineval;
     angle_t		distangle, offsetangle;
     fixed_t		vtop;
     int			lightnum;
+    short*		opening;
 
     // don't overflow and crash
     if (ds_p == &drawsegs[MAXDRAWSEGS])
-	return;		
+    {
+#ifdef GEKKO
+        if (!doomcube_drawseg_limit_reported)
+        {
+            DC_ERROR(
+                "DoomCube: drawseg limit exhausted: %d / %d\n",
+                MAXDRAWSEGS,
+                MAXDRAWSEGS);
+
+            doomcube_drawseg_limit_reported = true;
+        }
+#endif
+        return;
+    }
 		
 #ifdef RANGECHECK
     if (start >=viewwidth || start > stop)
@@ -605,8 +646,12 @@ R_StoreWallRange
 	{
 	    // masked midtexture
 	    maskedtexture = true;
-	    ds_p->maskedtexturecol = maskedtexturecol = lastopening - rw_x;
-	    lastopening += rw_stopx - rw_x;
+
+	    opening = R_AllocOpening(rw_stopx - rw_x);
+
+	    ds_p->maskedtexturecol =
+		maskedtexturecol =
+		opening - rw_x;
 	}
     }
     
@@ -715,17 +760,27 @@ R_StoreWallRange
     if ( ((ds_p->silhouette & SIL_TOP) || maskedtexture)
 	 && !ds_p->sprtopclip)
     {
-	memcpy (lastopening, ceilingclip+start, 2*(rw_stopx-start));
-	ds_p->sprtopclip = lastopening - start;
-	lastopening += rw_stopx - start;
+	opening = R_AllocOpening(rw_stopx - start);
+
+	memcpy (
+	    opening,
+	    ceilingclip + start,
+	    sizeof(*opening) * (rw_stopx - start));
+
+	ds_p->sprtopclip = opening - start;
     }
     
     if ( ((ds_p->silhouette & SIL_BOTTOM) || maskedtexture)
 	 && !ds_p->sprbottomclip)
     {
-	memcpy (lastopening, floorclip+start, 2*(rw_stopx-start));
-	ds_p->sprbottomclip = lastopening - start;
-	lastopening += rw_stopx - start;	
+	opening = R_AllocOpening(rw_stopx - start);
+
+	memcpy (
+	    opening,
+	    floorclip + start,
+	    sizeof(*opening) * (rw_stopx - start));
+
+	ds_p->sprbottomclip = opening - start;
     }
 
     if (maskedtexture && !(ds_p->silhouette&SIL_TOP))
