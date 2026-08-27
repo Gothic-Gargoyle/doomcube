@@ -3558,6 +3558,1307 @@ cleanup:
 }
 
 
+
+/* ------------------------------------------------------------------------- */
+/* Production v3 compaction                                                  */
+/* ------------------------------------------------------------------------- */
+
+static bool v3CompactionRecordTypeValid(
+    const gc_save_v3_record_header_t *record)
+{
+    if (!record)
+    {
+        return false;
+    }
+
+    if (record->record_type ==
+        GC_SAVE_V3_RECORD_SAVE)
+    {
+        return
+            record->slot <
+            GC_SAVE_V3_SLOT_COUNT;
+    }
+
+    if (record->record_type ==
+        GC_SAVE_V3_RECORD_CONFIG)
+    {
+        return
+            record->slot == 0;
+    }
+
+    return false;
+}
+
+
+static bool v3CompactionSameLogicalKey(
+    const gc_save_v3_record_header_t *a,
+    const gc_save_v3_record_header_t *b)
+{
+    if (!a ||
+        !b ||
+        a->record_type !=
+            b->record_type)
+    {
+        return false;
+    }
+
+    if (a->record_type ==
+        GC_SAVE_V3_RECORD_CONFIG)
+    {
+        /*
+         * Configuration is global rather than tied to an IWAD/PWAD.
+         */
+        return true;
+    }
+
+    if (a->record_type ==
+        GC_SAVE_V3_RECORD_SAVE)
+    {
+        return
+            a->slot ==
+                b->slot &&
+            GC_SaveV3LaunchIdentityEqual(
+                &a->identity,
+                &b->identity
+            );
+    }
+
+    return false;
+}
+
+
+/*
+ * Decide whether candidate_sector is the authoritative record for its
+ * logical key.
+ *
+ * This deliberately scans the complete committed log rather than only
+ * looking forward.  Compaction is rare and current containers are small;
+ * the O(n^2) scan avoids arbitrary identity-count limits while retaining
+ * correct wrap-aware generation semantics.
+ */
+typedef struct
+{
+    uint32_t record_sector;
+
+    gc_save_v3_record_header_t record;
+
+    bool keep;
+
+} v3_compaction_entry_t;
+
+
+/*
+ * Read the committed log exactly once from CARD and cache its headers.
+ *
+ * Newest-record selection is then performed entirely in RAM.
+ */
+static bool buildV3CompactionSnapshot(
+    card_file *file,
+    uint32_t containerSectors,
+    const gc_save_v3_superblock_t *active,
+    v3_compaction_entry_t **entriesOut,
+    size_t *entryCountOut,
+    uint32_t *compactedEndOut,
+    uint32_t *liveRecordCountOut)
+{
+    v3_compaction_entry_t *entries = NULL;
+
+    gc_save_v3_record_header_t record;
+
+    uint32_t cursor;
+    uint32_t maxEntries;
+    uint32_t compactedEnd;
+    uint32_t liveRecords;
+
+    size_t entryCount;
+    size_t i;
+
+    bool candidateKeep;
+
+    if (!file ||
+        !active ||
+        !entriesOut ||
+        !entryCountOut ||
+        !compactedEndOut ||
+        active->log_start_sector !=
+            GC_SAVE_V3_DATA_START_SECTOR ||
+        active->log_end_sector <
+            active->log_start_sector ||
+        active->log_end_sector >
+            containerSectors)
+    {
+        return false;
+    }
+
+    *entriesOut =
+        NULL;
+
+    *entryCountOut =
+        0;
+
+    *compactedEndOut =
+        GC_SAVE_V3_DATA_START_SECTOR;
+
+    if (liveRecordCountOut)
+    {
+        *liveRecordCountOut =
+            0;
+    }
+
+    maxEntries =
+        active->log_end_sector -
+        active->log_start_sector;
+
+    if (maxEntries == 0)
+    {
+        return true;
+    }
+
+    if ((size_t)maxEntries >
+        ((size_t)-1) /
+            sizeof(*entries))
+    {
+        return false;
+    }
+
+    entries =
+        calloc(
+            (size_t)maxEntries,
+            sizeof(*entries)
+        );
+
+    if (!entries)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction snapshot allocation "
+            "failed for %u entries\n",
+            (unsigned int)maxEntries
+        );
+
+        return false;
+    }
+
+    cursor =
+        active->log_start_sector;
+
+    entryCount =
+        0;
+
+    /*
+     * The only CARD-reading pass used to determine the live set.
+     */
+    while (cursor <
+           active->log_end_sector)
+    {
+        memset(
+            &record,
+            0,
+            sizeof(record)
+        );
+
+        if (!GC_SaveV3CardReadRecord(
+                file,
+                configWorkBuffer,
+                (size_t)sectorSize,
+                (uint32_t)sectorSize,
+                containerSectors,
+                active->log_end_sector,
+                cursor,
+                &record,
+                NULL,
+                0,
+                NULL))
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction snapshot read "
+                "failed at sector %u\n",
+                (unsigned int)cursor
+            );
+
+            goto failure;
+        }
+
+        if (!v3CompactionRecordTypeValid(
+                &record) ||
+            record.record_sectors == 0 ||
+            record.record_sectors >
+                active->log_end_sector -
+                cursor)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction snapshot found "
+                "invalid record at sector %u\n",
+                (unsigned int)cursor
+            );
+
+            goto failure;
+        }
+
+        if (entryCount >=
+            (size_t)maxEntries)
+        {
+            goto failure;
+        }
+
+        candidateKeep =
+            true;
+
+        /*
+         * Compare logical keys against cached headers only.
+         * No CARD I/O occurs inside this nested loop.
+         */
+        for (i = 0;
+             i < entryCount;
+             ++i)
+        {
+            bool candidateNewer;
+            bool previousNewer;
+
+            if (!v3CompactionSameLogicalKey(
+                    &record,
+                    &entries[i].record))
+            {
+                continue;
+            }
+
+            if (record.generation ==
+                entries[i].record.generation)
+            {
+                DC_WARN(
+                    "DoomCube: v3 compaction found ambiguous "
+                    "generation %u at sectors %u and %u\n",
+                    (unsigned int)record.generation,
+                    (unsigned int)cursor,
+                    (unsigned int)entries[i].record_sector
+                );
+
+                goto failure;
+            }
+
+            candidateNewer =
+                v3GenerationNewer(
+                    record.generation,
+                    entries[i].record.generation
+                );
+
+            previousNewer =
+                v3GenerationNewer(
+                    entries[i].record.generation,
+                    record.generation
+                );
+
+            /*
+             * Equal was handled above.  If neither direction wins,
+             * generation ordering is ambiguous at the half-wrap point.
+             */
+            if (!candidateNewer &&
+                !previousNewer)
+            {
+                DC_WARN(
+                    "DoomCube: v3 compaction generation ordering "
+                    "ambiguous: %u vs %u\n",
+                    (unsigned int)record.generation,
+                    (unsigned int)entries[i].record.generation
+                );
+
+                goto failure;
+            }
+
+            if (candidateNewer)
+            {
+                entries[i].keep =
+                    false;
+            }
+            else
+            {
+                candidateKeep =
+                    false;
+            }
+        }
+
+        entries[entryCount].record_sector =
+            cursor;
+
+        entries[entryCount].record =
+            record;
+
+        entries[entryCount].keep =
+            candidateKeep;
+
+        ++entryCount;
+
+        cursor +=
+            record.record_sectors;
+    }
+
+    if (cursor !=
+        active->log_end_sector)
+    {
+        goto failure;
+    }
+
+    compactedEnd =
+        GC_SAVE_V3_DATA_START_SECTOR;
+
+    liveRecords =
+        0;
+
+    for (i = 0;
+         i < entryCount;
+         ++i)
+    {
+        if (!entries[i].keep)
+        {
+            continue;
+        }
+
+        if (compactedEnd >
+            UINT32_MAX -
+                entries[i].record.record_sectors)
+        {
+            goto failure;
+        }
+
+        compactedEnd +=
+            entries[i].record.record_sectors;
+
+        ++liveRecords;
+    }
+
+    *entriesOut =
+        entries;
+
+    *entryCountOut =
+        entryCount;
+
+    *compactedEndOut =
+        compactedEnd;
+
+    if (liveRecordCountOut)
+    {
+        *liveRecordCountOut =
+            liveRecords;
+    }
+
+    return true;
+
+
+failure:
+
+    free(
+        entries
+    );
+
+    return false;
+}
+
+
+static bool copyV3RecordSectors(
+    card_file *sourceFile,
+    card_file *targetFile,
+    uint32_t sourceSector,
+    uint32_t targetSector,
+    uint32_t recordSectors)
+{
+    uint32_t i;
+
+    if (!sourceFile ||
+        !targetFile ||
+        recordSectors == 0)
+    {
+        return false;
+    }
+
+    for (i = 0;
+         i < recordSectors;
+         ++i)
+    {
+        uint64_t sourceOffset64;
+        uint64_t targetOffset64;
+
+        s32 result;
+
+        sourceOffset64 =
+            (uint64_t)(
+                sourceSector + i
+            ) *
+            (uint64_t)(uint32_t)sectorSize;
+
+        targetOffset64 =
+            (uint64_t)(
+                targetSector + i
+            ) *
+            (uint64_t)(uint32_t)sectorSize;
+
+        if (sourceOffset64 >
+                0xffffffffULL ||
+            targetOffset64 >
+                0xffffffffULL)
+        {
+            return false;
+        }
+
+        result =
+            CARD_Read(
+                sourceFile,
+                configWorkBuffer,
+                (u32)sectorSize,
+                (u32)sourceOffset64
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction source read "
+                "failed at sector %u: %ld\n",
+                (unsigned int)(
+                    sourceSector + i
+                ),
+                (long)result
+            );
+
+            return false;
+        }
+
+        result =
+            CARD_Write(
+                targetFile,
+                configWorkBuffer,
+                (u32)sectorSize,
+                (u32)targetOffset64
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction target write "
+                "failed at sector %u: %ld\n",
+                (unsigned int)(
+                    targetSector + i
+                ),
+                (long)result
+            );
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+/*
+ * Rewrite the authoritative container into its same-sized alternate file,
+ * retaining exactly one newest record for every:
+ *
+ *     SAVE   -> IWAD/PWAD identity + slot
+ *     CONFIG -> global configuration
+ *
+ * The source remains authoritative until the complete target has been
+ * written, reopened and validated.
+ *
+ * Return value:
+ *
+ *     false -> error; source remains authoritative
+ *     true  -> operation was safely assessed/completed
+ *
+ * compactedOut tells the caller whether a rewrite actually happened.
+ */
+static bool compactProductionV3Container(
+    bool *compactedOut)
+{
+    card_file sourceFile;
+    card_file targetFile;
+
+    gc_save_v3_container_header_t header;
+
+    gc_save_v3_superblock_t active;
+    gc_save_v3_superblock_t compacted;
+    gc_save_v3_superblock_t verified;
+
+    v3_compaction_entry_t *entries = NULL;
+    v3_compaction_entry_t *verifyEntries = NULL;
+
+    size_t entryCount = 0;
+    size_t verifyEntryCount = 0;
+    size_t entryIndex;
+
+    uint32_t sourceIndex = 0;
+    uint32_t targetIndex;
+
+    uint32_t sourceSectors = 0;
+    uint32_t sourceGeneration = 0;
+
+    uint32_t targetCandidateSectors = 0;
+    uint32_t targetCandidateGeneration = 0;
+
+    uint32_t measuredEnd = 0;
+    uint32_t measuredRecords = 0;
+
+    uint32_t verifiedSectors = 0;
+    uint32_t verifiedGeneration = 0;
+
+    uint32_t targetCursor;
+
+    uint32_t verifyEnd = 0;
+    uint32_t verifyRecords = 0;
+
+    uint64_t fileSize64;
+
+    const char *sourceName;
+    const char *targetName;
+
+    s32 result;
+    s32 closeResult;
+
+    bool sourceOpen = false;
+    bool targetOpen = false;
+    bool targetCreated = false;
+    bool targetValidated = false;
+    bool success = false;
+
+    if (compactedOut)
+    {
+        *compactedOut =
+            false;
+    }
+
+    if (!compactedOut ||
+        !cardMounted ||
+        sectorSize <= 0 ||
+        !configWorkBuffer)
+    {
+        return false;
+    }
+
+    if (!selectProductionV3Container(
+            &sourceFile,
+            &sourceIndex,
+            &sourceSectors,
+            &sourceGeneration))
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction could not select source container\n"
+        );
+
+        return false;
+    }
+
+    sourceOpen =
+        true;
+
+    sourceName =
+        v3FilenameForIndex(
+            sourceIndex
+        );
+
+    targetIndex =
+        sourceIndex == 0
+        ? 1
+        : 0;
+
+    targetName =
+        v3FilenameForIndex(
+            targetIndex
+        );
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            &sourceFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            sourceSectors,
+            &active,
+            NULL))
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction could not read source state\n"
+        );
+
+        goto cleanup;
+    }
+
+    if (active.generation !=
+            sourceGeneration ||
+        active.log_start_sector !=
+            GC_SAVE_V3_DATA_START_SECTOR ||
+        active.log_end_sector >
+            sourceSectors)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction source geometry rejected\n"
+        );
+
+        goto cleanup;
+    }
+
+    /*
+     * Check the alternate before performing the comparatively expensive
+     * live-record scan.
+     *
+     * A valid alternate with an older generation is a stale image left
+     * behind by an earlier migration/cleanup and is safe to remove:
+     * the selected source is already the newer authoritative image.
+     *
+     * Equal/newer or invalid alternates are preserved rather than
+     * destroyed automatically.
+     */
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            targetName,
+            &targetFile
+        );
+
+    if (result ==
+        CARD_ERROR_READY)
+    {
+        bool targetValid;
+
+        targetValid =
+            validateOpenV3Container(
+                &targetFile,
+                configWorkBuffer,
+                targetIndex,
+                &targetCandidateSectors,
+                &targetCandidateGeneration
+            );
+
+        closeResult =
+            CARD_Close(
+                &targetFile
+            );
+
+        if (closeResult !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction alternate %s "
+                "CARD_Close failed: %ld\n",
+                targetName,
+                (long)closeResult
+            );
+
+            goto cleanup;
+        }
+
+        if (!targetValid)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction found invalid/unusable "
+                "alternate %s; preserving it\n",
+                targetName
+            );
+
+            goto cleanup;
+        }
+
+        if (!v3GenerationNewer(
+                sourceGeneration,
+                targetCandidateGeneration))
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction alternate %s is not "
+                "strictly older: source_generation=%u "
+                "alternate_generation=%u; preserving it\n",
+                targetName,
+                (unsigned int)sourceGeneration,
+                (unsigned int)targetCandidateGeneration
+            );
+
+            goto cleanup;
+        }
+
+        DC_INFO(
+            "DoomCube: v3 compaction removing stale alternate: "
+            "%s blocks=%u generation=%u "
+            "(authoritative %s generation=%u)\n",
+            targetName,
+            (unsigned int)targetCandidateSectors,
+            (unsigned int)targetCandidateGeneration,
+            sourceName,
+            (unsigned int)sourceGeneration
+        );
+
+        result =
+            CARD_Delete(
+                CARD_SLOT,
+                targetName
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction could not remove "
+                "stale alternate %s: %ld\n",
+                targetName,
+                (long)result
+            );
+
+            goto cleanup;
+        }
+    }
+    else if (result !=
+             CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction alternate preflight "
+            "CARD_Open %s failed: %ld\n",
+            targetName,
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+
+    if (!buildV3CompactionSnapshot(
+            &sourceFile,
+            sourceSectors,
+            &active,
+            &entries,
+            &entryCount,
+            &measuredEnd,
+            &measuredRecords))
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction live-record snapshot failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    DC_INFO(
+        "DoomCube: v3 compaction snapshot: "
+        "records=%u live=%u log_end=%u compacted_end=%u\n",
+        (unsigned int)entryCount,
+        (unsigned int)measuredRecords,
+        (unsigned int)active.log_end_sector,
+        (unsigned int)measuredEnd
+    );
+
+    if (measuredEnd >
+        sourceSectors)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction measurement exceeds container: "
+            "%u > %u\n",
+            (unsigned int)measuredEnd,
+            (unsigned int)sourceSectors
+        );
+
+        goto cleanup;
+    }
+
+    if (measuredEnd >=
+        active.log_end_sector)
+    {
+        DC_INFO(
+            "DoomCube: v3 compaction found nothing reclaimable: "
+            "%s blocks=%u log_end=%u live_records=%u\n",
+            sourceName,
+            (unsigned int)sourceSectors,
+            (unsigned int)active.log_end_sector,
+            (unsigned int)measuredRecords
+        );
+
+        closeResult =
+            CARD_Close(
+                &sourceFile
+            );
+
+        sourceOpen =
+            false;
+
+        if (closeResult !=
+            CARD_ERROR_READY)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /* Alternate filename was resolved by early preflight. */
+
+    fileSize64 =
+        (uint64_t)(uint32_t)sectorSize *
+        (uint64_t)sourceSectors;
+
+    if (fileSize64 >
+        0xffffffffULL)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction size overflow\n"
+        );
+
+        goto cleanup;
+    }
+
+    DC_INFO(
+        "DoomCube: v3 compaction starting: "
+        "%s blocks=%u generation=%u log_end=%u "
+        "-> %s live_records=%u compacted_end=%u\n",
+        sourceName,
+        (unsigned int)sourceSectors,
+        (unsigned int)active.generation,
+        (unsigned int)active.log_end_sector,
+        targetName,
+        (unsigned int)measuredRecords,
+        (unsigned int)measuredEnd
+    );
+
+    result =
+        CARD_Create(
+            CARD_SLOT,
+            targetName,
+            (u32)fileSize64,
+            &targetFile
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction CARD_Create %s failed: %ld\n",
+            targetName,
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    targetOpen =
+        true;
+
+    targetCreated =
+        true;
+
+    /*
+     * Preserve all future GameCube metadata in sector 0; rewrite only
+     * the v3 header's physical file index.
+     */
+    result =
+        CARD_Read(
+            &sourceFile,
+            configWorkBuffer,
+            (u32)sectorSize,
+            0
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        goto cleanup;
+    }
+
+    memset(
+        &header,
+        0,
+        sizeof(header)
+    );
+
+    if (!GC_SaveV3DecodeContainerHeader(
+            &header,
+            configWorkBuffer,
+            (size_t)sectorSize))
+    {
+        goto cleanup;
+    }
+
+    header.container_sectors =
+        sourceSectors;
+
+    header.file_index =
+        targetIndex;
+
+    if (!GC_SaveV3EncodeContainerHeader(
+            configWorkBuffer,
+            (size_t)sectorSize,
+            &header))
+    {
+        goto cleanup;
+    }
+
+    result =
+        CARD_Write(
+            &targetFile,
+            configWorkBuffer,
+            (u32)sectorSize,
+            0
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        goto cleanup;
+    }
+
+    /*
+     * Pack only authoritative logical records from sector 3 upward.
+     *
+     * Keep/discard decisions came from the source snapshot above.
+     * The only CARD reads here are the sectors actually retained.
+     */
+    targetCursor =
+        GC_SAVE_V3_DATA_START_SECTOR;
+
+    for (entryIndex = 0;
+         entryIndex < entryCount;
+         ++entryIndex)
+    {
+        if (!entries[entryIndex].keep)
+        {
+            continue;
+        }
+
+        if (targetCursor >
+                sourceSectors ||
+            entries[entryIndex].record.record_sectors >
+                sourceSectors -
+                targetCursor)
+        {
+            goto cleanup;
+        }
+
+        if (!copyV3RecordSectors(
+                &sourceFile,
+                &targetFile,
+                entries[entryIndex].record_sector,
+                targetCursor,
+                entries[entryIndex].record.record_sectors))
+        {
+            goto cleanup;
+        }
+
+        targetCursor +=
+            entries[entryIndex].record.record_sectors;
+    }
+
+    if (targetCursor !=
+        measuredEnd)
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction packed geometry mismatch\n"
+        );
+
+        goto cleanup;
+    }
+
+
+    /*
+     * Compaction itself is a committed container transition.  Records
+     * retain their original generations; the container generation moves
+     * forward so this alternate wins selection after an interrupted old
+     * file cleanup.
+     */
+    compacted =
+        active;
+
+    compacted.generation =
+        active.generation +
+        1u;
+
+    compacted.container_sectors =
+        sourceSectors;
+
+    compacted.log_start_sector =
+        GC_SAVE_V3_DATA_START_SECTOR;
+
+    compacted.log_end_sector =
+        targetCursor;
+
+    if (!GC_SaveV3CardWriteSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            GC_SAVE_V3_SUPERBLOCK_A_SECTOR,
+            &compacted) ||
+        !GC_SaveV3CardWriteSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            GC_SAVE_V3_SUPERBLOCK_B_SECTOR,
+            &compacted))
+    {
+        DC_WARN(
+            "DoomCube: v3 compaction superblock write failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    closeResult =
+        CARD_Close(
+            &targetFile
+        );
+
+    targetOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        goto cleanup;
+    }
+
+    /*
+     * Reopen exactly as a future boot will and validate every retained
+     * record before making the compacted image authoritative.
+     */
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            targetName,
+            &targetFile
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        goto cleanup;
+    }
+
+    targetOpen =
+        true;
+
+    if (!validateOpenV3Container(
+            &targetFile,
+            configWorkBuffer,
+            targetIndex,
+            &verifiedSectors,
+            &verifiedGeneration))
+    {
+        goto cleanup;
+    }
+
+    if (verifiedSectors !=
+            sourceSectors ||
+        verifiedGeneration !=
+            compacted.generation)
+    {
+        goto cleanup;
+    }
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            sourceSectors,
+            &verified,
+            NULL))
+    {
+        goto cleanup;
+    }
+
+    if (verified.log_end_sector !=
+            measuredEnd ||
+        verified.generation !=
+            compacted.generation)
+    {
+        goto cleanup;
+    }
+
+    /*
+     * One sequential target snapshot validates every retained record's
+     * header, geometry and compressed CRC, while also proving that no
+     * stale logical duplicates survived compaction.
+     */
+    if (!buildV3CompactionSnapshot(
+            &targetFile,
+            sourceSectors,
+            &verified,
+            &verifyEntries,
+            &verifyEntryCount,
+            &verifyEnd,
+            &verifyRecords) ||
+        verifyEnd !=
+            verified.log_end_sector ||
+        verifyRecords !=
+            measuredRecords ||
+        verifyEntryCount !=
+            (size_t)measuredRecords)
+    {
+        DC_WARN(
+            "DoomCube: compacted target verification failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    for (entryIndex = 0;
+         entryIndex < verifyEntryCount;
+         ++entryIndex)
+    {
+        if (!verifyEntries[entryIndex].keep)
+        {
+            DC_WARN(
+                "DoomCube: compacted target contains "
+                "stale logical records\n"
+            );
+
+            goto cleanup;
+        }
+    }
+
+    closeResult =
+        CARD_Close(
+            &targetFile
+        );
+
+    targetOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        goto cleanup;
+    }
+
+    targetValidated =
+        true;
+
+    closeResult =
+        CARD_Close(
+            &sourceFile
+        );
+
+    sourceOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        /*
+         * Both images are now valid.  The compacted image has the newer
+         * container generation, so selection remains deterministic.
+         */
+        success =
+            true;
+
+        *compactedOut =
+            true;
+
+        goto cleanup;
+    }
+
+    result =
+        CARD_Delete(
+            CARD_SLOT,
+            sourceName
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: old v3 container %s could not be deleted "
+            "after compaction: %ld; newer %s remains authoritative\n",
+            sourceName,
+            (long)result,
+            targetName
+        );
+    }
+    else
+    {
+        DC_INFO(
+            "DoomCube: old v3 container removed after "
+            "validated compaction: %s\n",
+            sourceName
+        );
+    }
+
+    success =
+        true;
+
+    *compactedOut =
+        true;
+
+    DC_INFO(
+        "DoomCube: v3 compaction committed: "
+        "%s -> %s blocks=%u generation=%u "
+        "log_end=%u->%u reclaimed=%u sectors live_records=%u\n",
+        sourceName,
+        targetName,
+        (unsigned int)sourceSectors,
+        (unsigned int)compacted.generation,
+        (unsigned int)active.log_end_sector,
+        (unsigned int)compacted.log_end_sector,
+        (unsigned int)(
+            active.log_end_sector -
+            compacted.log_end_sector
+        ),
+        (unsigned int)measuredRecords
+    );
+
+
+cleanup:
+
+    free(
+        verifyEntries
+    );
+
+    verifyEntries =
+        NULL;
+
+    free(
+        entries
+    );
+
+    entries =
+        NULL;
+
+    if (targetOpen)
+    {
+        CARD_Close(
+            &targetFile
+        );
+
+        targetOpen =
+            false;
+    }
+
+    if (sourceOpen)
+    {
+        CARD_Close(
+            &sourceFile
+        );
+
+        sourceOpen =
+            false;
+    }
+
+    if (!success &&
+        targetCreated &&
+        !targetValidated)
+    {
+        result =
+            CARD_Delete(
+                CARD_SLOT,
+                targetName
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: failed to clean incomplete compacted %s: %ld\n",
+                targetName,
+                (long)result
+            );
+        }
+    }
+
+    return success;
+}
+
+
 /* ------------------------------------------------------------------------- */
 /* Memory card initialization                                                */
 /* ------------------------------------------------------------------------- */
@@ -3915,6 +5216,7 @@ bool GC_MemoryCardWriteSave(
     uint32_t targetSectors;
 
     bool success = false;
+    bool compacted = false;
 
     if (!cardMounted ||
         !currentLaunchIdentityValid ||
@@ -4087,8 +5389,115 @@ bool GC_MemoryCardWriteSave(
         );
 
         /*
-         * 16 -> 32 is the normal first growth target.
-         * Beyond that, double until this exact record will fit.
+         * Preserve the already-proven first transition:
+         *
+         *     16 -> 32 blocks
+         *
+         * Once the normal 32-block target is reached, stale append-only
+         * history must not force 32 -> 64.  Compact first and grow only
+         * when the actual live logical state still cannot fit.
+         */
+        if (containerSectors >=
+            GC_SAVE_V3_NORMAL_TARGET_SECTORS)
+        {
+            if (!compactProductionV3Container(
+                    &compacted))
+            {
+                DC_WARN(
+                    "DoomCube: v3 compaction failed before "
+                    "saving slot %d\n",
+                    slot
+                );
+
+                goto cleanup;
+            }
+
+            if (compacted)
+            {
+                if (!openProductionV3Container(
+                        &file,
+                        &containerSectors))
+                {
+                    DC_WARN(
+                        "DoomCube: compacted v3 container "
+                        "could not be reopened for slot %d\n",
+                        slot
+                    );
+
+                    goto cleanup;
+                }
+
+                if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+                        &file,
+                        configWorkBuffer,
+                        (size_t)sectorSize,
+                        (uint32_t)sectorSize,
+                        containerSectors,
+                        &activeSuperblock,
+                        &activeSuperblockSector))
+                {
+                    CARD_Close(
+                        &file
+                    );
+
+                    DC_WARN(
+                        "DoomCube: compacted v3 state could "
+                        "not be read for slot %d\n",
+                        slot
+                    );
+
+                    goto cleanup;
+                }
+
+                if (activeSuperblock.log_end_sector >
+                        UINT32_MAX -
+                        recordSectorsNeeded)
+                {
+                    CARD_Close(
+                        &file
+                    );
+
+                    goto cleanup;
+                }
+
+                requiredEnd =
+                    activeSuperblock.log_end_sector +
+                    recordSectorsNeeded;
+
+                if (requiredEnd <=
+                    containerSectors)
+                {
+                    DC_INFO(
+                        "DoomCube: v3 compaction reclaimed enough space: "
+                        "slot=%d log_end=%u record_sectors=%u "
+                        "container=%u blocks\n",
+                        slot,
+                        (unsigned int)activeSuperblock.log_end_sector,
+                        (unsigned int)recordSectorsNeeded,
+                        (unsigned int)containerSectors
+                    );
+
+                    goto capacity_ready;
+                }
+
+                CARD_Close(
+                    &file
+                );
+
+                DC_INFO(
+                    "DoomCube: v3 compacted live state still requires "
+                    "growth: slot=%d required_end=%u container=%u\n",
+                    slot,
+                    (unsigned int)requiredEnd,
+                    (unsigned int)containerSectors
+                );
+            }
+        }
+
+        /*
+         * Either this is the normal 16 -> 32 transition, compaction found
+         * nothing reclaimable, or the genuinely live state still exceeds
+         * the current container.
          */
         targetSectors =
             containerSectors;
@@ -4172,6 +5581,9 @@ bool GC_MemoryCardWriteSave(
             goto cleanup;
         }
     }
+
+
+capacity_ready:
 
     success =
         GC_SaveV3CardAppendRecord(
