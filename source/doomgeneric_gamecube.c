@@ -764,6 +764,15 @@ static bool GC_PlatformInit(void)
     DC_WARN(
         "DoomCube: Memory Card unavailable; continuing without saves\n");
 }
+    /*
+     * Run storage policy UI before entering the launcher.
+     *
+     * Existing supported cards continue immediately.  Card 59 shows the
+     * undersized-card warning, while a blank supported card asks the player
+     * before DoomCube allocates its save file.
+     */
+    GC_LauncherRunStoragePreflight(renderer);
+
 platformInitialized = true;
 
 

@@ -11,6 +11,10 @@ typedef struct
     const char *pwadPath;
 } gc_launch_selection_t;
 
+void GC_LauncherRunStoragePreflight(
+    SDL_Renderer *renderer
+);
+
 bool GC_LauncherSelectGame(
     SDL_Renderer *renderer,
     gc_launch_selection_t *selection);

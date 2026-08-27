@@ -24,6 +24,22 @@ typedef enum
     GC_SAVEGAME_PLUTONIA
 } gc_savegame_id_t;
 
+
+/*
+ * Memory-card initialization result.
+ *
+ * The platform initializes the card before Doom's menu/message system
+ * exists, so UI code queries this later and presents a player-facing
+ * explanation when saving had to be disabled.
+ */
+typedef enum
+{
+    GC_MEMCARD_STATUS_UNAVAILABLE = 0,
+    GC_MEMCARD_STATUS_READY,
+    GC_MEMCARD_STATUS_TOO_SMALL,
+    GC_MEMCARD_STATUS_NEEDS_CREATE
+} gc_memcard_status_t;
+
 void GC_MemoryCardSetGame(gc_savegame_id_t game);
 bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath);
 
@@ -43,6 +59,13 @@ void GC_MemoryCardSetLaunchIdentity(
 
 bool GC_MemoryCardInit(void);
 void GC_MemoryCardShutdown(void);
+
+gc_memcard_status_t GC_MemoryCardGetStatus(void);
+
+bool GC_MemoryCardCreateSaveFile(void);
+
+uint32_t GC_MemoryCardSaveFileInitialBlocks(void);
+uint32_t GC_MemoryCardSaveFileMaxBlocks(void);
 
 bool GC_MemoryCardSaveExists(int slot);
 

@@ -1060,6 +1060,684 @@ static const gc_game_entry_t *GC_LauncherGetGame(int index)
     return &gcGames[index];
 }
 
+
+static void GC_LauncherShowSaveFileCreated(
+    SDL_Renderer *renderer)
+{
+    static const char *line1 =
+        "SAVE FILE CREATED";
+
+    static const char *line2 =
+        "DOOMCUBE SAVING IS ENABLED";
+
+    static const char *line4 =
+        "PRESS A OR START TO CONTINUE";
+
+    char sizeLine[64];
+
+    SDL_Rect panel;
+
+    int width = 640;
+    int height = 480;
+
+    int textWidth;
+
+    int i;
+
+    if (!renderer)
+    {
+        return;
+    }
+
+    snprintf(
+        sizeLine,
+        sizeof(sizeLine),
+        "INITIAL SIZE %u BLOCKS",
+        (unsigned int)
+            GC_MemoryCardSaveFileInitialBlocks()
+    );
+
+    if (SDL_GetRendererOutputSize(
+            renderer,
+            &width,
+            &height) != 0)
+    {
+        width = 640;
+        height = 480;
+    }
+
+    /*
+     * Make successful creation visually impossible to confuse
+     * with the purple question/warning screens.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255
+    );
+
+    SDL_RenderClear(
+        renderer
+    );
+
+    panel.x = 35;
+    panel.y = 55;
+    panel.w = width - 70;
+    panel.h = height - 110;
+
+    /*
+     * Strong orange confirmation panel.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        235,
+        120,
+        20,
+        255
+    );
+
+    SDL_RenderFillRect(
+        renderer,
+        &panel
+    );
+
+    /*
+     * Black text gives strong contrast against orange.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255
+    );
+
+    textWidth =
+        GC_TextWidth(
+            line1,
+            3
+        );
+
+    GC_DrawText(
+        renderer,
+        (width - textWidth) / 2,
+        115,
+        line1,
+        3
+    );
+
+    textWidth =
+        GC_TextWidth(
+            line2,
+            2
+        );
+
+    GC_DrawText(
+        renderer,
+        (width - textWidth) / 2,
+        200,
+        line2,
+        2
+    );
+
+    textWidth =
+        GC_TextWidth(
+            sizeLine,
+            2
+        );
+
+    GC_DrawText(
+        renderer,
+        (width - textWidth) / 2,
+        250,
+        sizeLine,
+        2
+    );
+
+    textWidth =
+        GC_TextWidth(
+            line4,
+            2
+        );
+
+    GC_DrawText(
+        renderer,
+        (width - textWidth) / 2,
+        345,
+        line4,
+        2
+    );
+
+    SDL_RenderPresent(
+        renderer
+    );
+
+    SYS_Report(
+        "DoomCube: orange save-file-created screen shown: "
+        "initial=%u blocks\n",
+        (unsigned int)
+            GC_MemoryCardSaveFileInitialBlocks()
+    );
+
+    /*
+     * Consume transition state from the CREATE press.
+     *
+     * The orange screen should require a deliberate second
+     * A/START press rather than disappearing instantly.
+     */
+    for (i = 0;
+         i < 3;
+         ++i)
+    {
+        PAD_ScanPads();
+
+        (void)PAD_ButtonsDown(
+            PAD_CHAN0
+        );
+
+        SDL_Delay(
+            16
+        );
+    }
+
+    while (SYS_MainLoop())
+    {
+        u16 down;
+
+        PAD_ScanPads();
+
+        down =
+            PAD_ButtonsDown(
+                PAD_CHAN0
+            );
+
+        if (down &
+            (
+                PAD_BUTTON_A |
+                PAD_BUTTON_START
+            ))
+        {
+            break;
+        }
+
+        SDL_Delay(
+            16
+        );
+    }
+
+    SYS_Report(
+        "DoomCube: orange save-file-created screen dismissed\n"
+    );
+}
+
+
+void GC_LauncherRunStoragePreflight(
+    SDL_Renderer *renderer)
+{
+    gc_memcard_status_t status;
+
+    SDL_Rect panel;
+
+    int width = 640;
+    int height = 480;
+
+    int textWidth;
+
+    int i;
+
+    if (!renderer)
+    {
+        return;
+    }
+
+    status =
+        GC_MemoryCardGetStatus();
+
+    if (status !=
+            GC_MEMCARD_STATUS_TOO_SMALL &&
+        status !=
+            GC_MEMCARD_STATUS_NEEDS_CREATE)
+    {
+        return;
+    }
+
+    if (SDL_GetRendererOutputSize(
+            renderer,
+            &width,
+            &height) != 0)
+    {
+        width = 640;
+        height = 480;
+    }
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255
+    );
+
+    SDL_RenderClear(
+        renderer
+    );
+
+    panel.x = 35;
+    panel.y = 55;
+    panel.w = width - 70;
+    panel.h = height - 110;
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        70,
+        45,
+        120,
+        255
+    );
+
+    SDL_RenderFillRect(
+        renderer,
+        &panel
+    );
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255
+    );
+
+
+    if (status ==
+        GC_MEMCARD_STATUS_TOO_SMALL)
+    {
+        /*
+         * Card59 warning uses dedicated red panel.
+         *
+         * Purple is reserved for player choices and orange for
+         * successful state changes.
+         */
+        SDL_SetRenderDrawColor(
+            renderer,
+            150,
+            25,
+            25,
+            255
+        );
+
+        SDL_RenderFillRect(
+            renderer,
+            &panel
+        );
+
+        SDL_SetRenderDrawColor(
+            renderer,
+            255,
+            255,
+            255,
+            255
+        );
+
+        static const char *line1 =
+            "MEMORY CARD 59 IS TOO SMALL";
+
+        static const char *line2 =
+            "DOOMCUBE REQUIRES MEMORY CARD 251";
+
+        static const char *line3 =
+            "OR LARGER";
+
+        static const char *line4 =
+            "SAVING IS DISABLED";
+
+        static const char *line5 =
+            "PRESS A OR START TO CONTINUE";
+
+        textWidth =
+            GC_TextWidth(
+                line1,
+                3
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            100,
+            line1,
+            3
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line2,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            180,
+            line2,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line3,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            215,
+            line3,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line4,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            275,
+            line4,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line5,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            350,
+            line5,
+            2
+        );
+
+        SDL_RenderPresent(
+            renderer
+        );
+
+        SYS_Report(
+            "DoomCube: pre-launch Memory Card 59 warning shown\n"
+        );
+
+        for (i = 0;
+             i < 3;
+             ++i)
+        {
+            PAD_ScanPads();
+
+            (void)PAD_ButtonsDown(
+                PAD_CHAN0
+            );
+
+            SDL_Delay(
+                16
+            );
+        }
+
+        while (SYS_MainLoop())
+        {
+            u16 down;
+
+            PAD_ScanPads();
+
+            down =
+                PAD_ButtonsDown(
+                    PAD_CHAN0
+                );
+
+            if (down &
+                (
+                    PAD_BUTTON_A |
+                    PAD_BUTTON_START
+                ))
+            {
+                break;
+            }
+
+            SDL_Delay(
+                16
+            );
+        }
+
+        SYS_Report(
+            "DoomCube: pre-launch Memory Card 59 warning dismissed\n"
+        );
+
+        return;
+    }
+
+
+    if (status ==
+        GC_MEMCARD_STATUS_NEEDS_CREATE)
+    {
+        static const char *line1 =
+            "NO DOOMCUBE SAVE FILE FOUND";
+
+        static const char *line2 =
+            "CREATE A SAVE FILE FOR DOOMCUBE";
+
+        static const char *line5 =
+            "A  CREATE";
+
+        static const char *line6 =
+            "B  CONTINUE WITHOUT SAVING";
+
+        char initialLine[64];
+        char maximumLine[64];
+
+        snprintf(
+            initialLine,
+            sizeof(initialLine),
+            "STARTS AT %u BLOCKS",
+            (unsigned int)
+                GC_MemoryCardSaveFileInitialBlocks()
+        );
+
+        snprintf(
+            maximumLine,
+            sizeof(maximumLine),
+            "CAN GROW UP TO %u BLOCKS",
+            (unsigned int)
+                GC_MemoryCardSaveFileMaxBlocks()
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line1,
+                3
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            85,
+            line1,
+            3
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line2,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            160,
+            line2,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                initialLine,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            215,
+            initialLine,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                maximumLine,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            250,
+            maximumLine,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line5,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            315,
+            line5,
+            2
+        );
+
+        textWidth =
+            GC_TextWidth(
+                line6,
+                2
+            );
+
+        GC_DrawText(
+            renderer,
+            (width - textWidth) / 2,
+            350,
+            line6,
+            2
+        );
+
+        SDL_RenderPresent(
+            renderer
+        );
+
+        SYS_Report(
+            "DoomCube: pre-launch save-file creation prompt shown: "
+            "initial=%u maximum=%u blocks\n",
+            (unsigned int)
+                GC_MemoryCardSaveFileInitialBlocks(),
+            (unsigned int)
+                GC_MemoryCardSaveFileMaxBlocks()
+        );
+
+        for (i = 0;
+             i < 3;
+             ++i)
+        {
+            PAD_ScanPads();
+
+            (void)PAD_ButtonsDown(
+                PAD_CHAN0
+            );
+
+            SDL_Delay(
+                16
+            );
+        }
+
+        while (SYS_MainLoop())
+        {
+            u16 down;
+
+            PAD_ScanPads();
+
+            down =
+                PAD_ButtonsDown(
+                    PAD_CHAN0
+                );
+
+            if (down &
+                PAD_BUTTON_A)
+            {
+                SYS_Report(
+                    "DoomCube: player selected CREATE save file\n"
+                );
+
+                if (GC_MemoryCardCreateSaveFile())
+                {
+                    SYS_Report(
+                        "DoomCube: pre-launch DoomCube save-file "
+                        "creation succeeded\n"
+                    );
+
+                    GC_LauncherShowSaveFileCreated(
+                        renderer
+                    );
+
+                    return;
+                }
+
+                /*
+                 * Creation failed. Continue without saving rather than
+                 * trapping the player before the launcher.
+                 */
+                SYS_Report(
+                    "DoomCube: pre-launch DoomCube save-file "
+                    "creation failed; saving disabled\n"
+                );
+
+                GC_MemoryCardShutdown();
+
+                return;
+            }
+
+            if (down &
+                PAD_BUTTON_B)
+            {
+                SYS_Report(
+                    "DoomCube: player declined DoomCube save-file "
+                    "creation; saving disabled for this session\n"
+                );
+
+                GC_MemoryCardShutdown();
+
+                return;
+            }
+
+            SDL_Delay(
+                16
+            );
+        }
+    }
+}
+
+
+
+
+
 bool GC_LauncherSelectGame(
     SDL_Renderer *renderer,
     gc_launch_selection_t *selection)

@@ -59,6 +59,39 @@ static unsigned char *configWorkBuffer;
 static bool cardMounted;
 static s32 sectorSize;
 
+static gc_memcard_status_t memoryCardStatus =
+    GC_MEMCARD_STATUS_UNAVAILABLE;
+
+/*
+ * CARD_GetBlockCount() returns the card's physical block count.
+ * GameCube memory cards reserve physical blocks 0..4 for system
+ * metadata, leaving blocks 5 onward available for save files.
+ */
+#define GC_MEMCARD_SYSTEM_BLOCKS 5u
+
+/*
+ * DoomCube's transactional v3 save format requires enough card space for
+ * copy-on-write growth and compaction.  Memory Card 59 is therefore not
+ * supported.  The minimum supported standard card is Memory Card 251
+ * (16 Mbit / 256 physical blocks / 251 usable blocks).
+ */
+#define GC_MEMCARD_MIN_SIZE_MBIT 16u
+
+/*
+ * Hard upper bound for one DoomCube v3 container.
+ *
+ * Card 251 is the minimum supported card and provides 251 usable blocks.
+ * Copy-on-write compaction temporarily requires both the current and
+ * replacement containers to coexist.
+ *
+ * 64 + 64 = 128 blocks fits.
+ * 128 + 128 = 256 blocks does not.
+ *
+ * Therefore 64 blocks is the largest power-of-two container size for which
+ * DoomCube can retain its transactional A/B lifecycle on the minimum card.
+ */
+#define GC_SAVE_V3_MAX_SECTORS 64u
+
 static gc_savegame_id_t currentGame =
     GC_SAVEGAME_DOOM1;
 
@@ -156,40 +189,6 @@ static size_t saveRegionSize(void)
 }
 
 
-static size_t saveCapacity(void)
-{
-    return
-        saveRegionSize() -
-        sizeof(doomcube_save_header_t);
-}
-
-
-static size_t cardFileSize(void)
-{
-    return
-        configRegionSize() +
-        saveRegionSize() *
-        GC_MEMCARD_GAME_COUNT;
-}
-
-
-static u32 configOffset(void)
-{
-    return 0;
-}
-
-
-static u32 saveOffset(gc_savegame_id_t game)
-{
-    return
-        (u32)(
-            configRegionSize() +
-            saveRegionSize() *
-            (size_t)game
-        );
-}
-
-
 static const char *gameName(gc_savegame_id_t game)
 {
     switch (game)
@@ -253,6 +252,9 @@ static void cardRemoved(s32 channel, s32 result)
     if (channel == CARD_SLOT)
     {
         cardMounted = false;
+
+        memoryCardStatus =
+            GC_MEMCARD_STATUS_UNAVAILABLE;
 
         DC_INFO(
             "DoomCube: Memory Card A removed\n"
@@ -1835,6 +1837,8 @@ bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
 
     return false;
 }
+*/
+
 /* ------------------------------------------------------------------------- */
 
 bool GC_MemoryCardSetGameFromIWAD(const char *iwadPath)
@@ -2369,6 +2373,297 @@ static bool selectProductionV3Container(
     return true;
 }
 
+static bool queryCardSpaceBlocks(
+    uint32_t *physicalBlocksOut,
+    uint32_t *usableBlocksOut,
+    uint32_t *usedBlocksOut,
+    uint32_t *freeBlocksOut)
+{
+    card_dir dir;
+
+    u16 physicalBlocks16 = 0;
+
+    uint32_t physicalBlocks;
+    uint32_t usableBlocks;
+    uint32_t usedBlocks = 0;
+    uint32_t freeBlocks;
+
+    s32 result;
+
+    if (!cardMounted ||
+        sectorSize <= 0)
+    {
+        return false;
+    }
+
+    result =
+        CARD_GetBlockCount(
+            CARD_SLOT,
+            &physicalBlocks16
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_GetBlockCount failed: %ld\n",
+            (long)result
+        );
+
+        return false;
+    }
+
+    physicalBlocks =
+        (uint32_t)physicalBlocks16;
+
+    if (physicalBlocks <=
+        GC_MEMCARD_SYSTEM_BLOCKS)
+    {
+        DC_WARN(
+            "DoomCube: invalid memory-card block count: %u\n",
+            (unsigned int)physicalBlocks
+        );
+
+        return false;
+    }
+
+    usableBlocks =
+        physicalBlocks -
+        GC_MEMCARD_SYSTEM_BLOCKS;
+
+    memset(
+        &dir,
+        0,
+        sizeof(dir)
+    );
+
+    result =
+        CARD_FindFirst(
+            CARD_SLOT,
+            &dir,
+            true
+        );
+
+    while (result ==
+           CARD_ERROR_READY)
+    {
+        uint64_t fileBlocks64;
+
+        fileBlocks64 =
+            (
+                (uint64_t)dir.filelen +
+                (uint64_t)(uint32_t)sectorSize -
+                1u
+            ) /
+            (uint64_t)(uint32_t)sectorSize;
+
+        if (fileBlocks64 >
+                0xffffffffULL ||
+            usedBlocks >
+                0xffffffffu -
+                (uint32_t)fileBlocks64)
+        {
+            DC_WARN(
+                "DoomCube: memory-card directory size overflow\n"
+            );
+
+            return false;
+        }
+
+        usedBlocks +=
+            (uint32_t)fileBlocks64;
+
+        result =
+            CARD_FindNext(
+                &dir
+            );
+    }
+
+    if (result !=
+        CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: memory-card directory scan failed: %ld\n",
+            (long)result
+        );
+
+        return false;
+    }
+
+    freeBlocks =
+        usedBlocks >= usableBlocks
+        ? 0u
+        : usableBlocks - usedBlocks;
+
+    if (physicalBlocksOut)
+    {
+        *physicalBlocksOut =
+            physicalBlocks;
+    }
+
+    if (usableBlocksOut)
+    {
+        *usableBlocksOut =
+            usableBlocks;
+    }
+
+    if (usedBlocksOut)
+    {
+        *usedBlocksOut =
+            usedBlocks;
+    }
+
+    if (freeBlocksOut)
+    {
+        *freeBlocksOut =
+            freeBlocks;
+    }
+
+    return true;
+}
+
+
+static bool productionV3CardHasFreeBlocks(
+    uint32_t requiredBlocks,
+    const char *operation)
+{
+    uint32_t physicalBlocks = 0;
+    uint32_t usableBlocks = 0;
+    uint32_t usedBlocks = 0;
+    uint32_t freeBlocks = 0;
+
+    const char *operationName =
+        operation
+        ? operation
+        : "v3 allocation";
+
+    if (!queryCardSpaceBlocks(
+            &physicalBlocks,
+            &usableBlocks,
+            &usedBlocks,
+            &freeBlocks))
+    {
+        DC_WARN(
+            "DoomCube: could not determine Memory Card A free space "
+            "for %s\n",
+            operationName
+        );
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: Memory Card A space: "
+        "physical=%u usable=%u used=%u free=%u blocks; "
+        "%s requires=%u\n",
+        (unsigned int)physicalBlocks,
+        (unsigned int)usableBlocks,
+        (unsigned int)usedBlocks,
+        (unsigned int)freeBlocks,
+        operationName,
+        (unsigned int)requiredBlocks
+    );
+
+    if (freeBlocks <
+        requiredBlocks)
+    {
+        DC_WARN(
+            "DoomCube: Memory Card A does not have enough free space "
+            "for %s: free=%u required=%u blocks; "
+            "existing save data preserved\n",
+            operationName,
+            (unsigned int)freeBlocks,
+            (unsigned int)requiredBlocks
+        );
+
+        return false;
+    }
+
+    return true;
+}
+
+
+
+static bool productionV3ContainerFilesExist(
+    bool *existsOut)
+{
+    card_file file;
+
+    s32 result;
+
+    bool exists = false;
+
+    if (!existsOut ||
+        !cardMounted)
+    {
+        return false;
+    }
+
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            CARD_V3_FILENAME_A,
+            &file
+        );
+
+    if (result ==
+        CARD_ERROR_READY)
+    {
+        CARD_Close(
+            &file
+        );
+
+        exists =
+            true;
+    }
+    else if (result !=
+             CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: could not inspect %s: %ld\n",
+            CARD_V3_FILENAME_A,
+            (long)result
+        );
+
+        return false;
+    }
+
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            CARD_V3_FILENAME_B,
+            &file
+        );
+
+    if (result ==
+        CARD_ERROR_READY)
+    {
+        CARD_Close(
+            &file
+        );
+
+        exists =
+            true;
+    }
+    else if (result !=
+             CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: could not inspect %s: %ld\n",
+            CARD_V3_FILENAME_B,
+            (long)result
+        );
+
+        return false;
+    }
+
+    *existsOut =
+        exists;
+
+    return true;
+}
+
+
 static bool ensureProductionV3Container(void)
 {
     card_file file;
@@ -2565,7 +2860,15 @@ static bool ensureProductionV3Container(void)
 
     /*
      * No v3 data yet: create only the 16-block initial container.
+     * Check the allocation that is actually about to be attempted.
      */
+    if (!productionV3CardHasFreeBlocks(
+            GC_SAVE_V3_INITIAL_SECTORS,
+            "initial v3 save creation"))
+    {
+        return false;
+    }
+
     fileSize64 =
         (uint64_t)(uint32_t)sectorSize *
         (uint64_t)GC_SAVE_V3_INITIAL_SECTORS;
@@ -3052,6 +3355,26 @@ static bool growProductionV3Container(
             (long)result
         );
 
+        goto cleanup;
+    }
+
+    if (targetSectors >
+        GC_SAVE_V3_MAX_SECTORS)
+    {
+        DC_WARN(
+            "DoomCube: v3 container growth exceeds configured maximum: "
+            "requested=%u maximum=%u blocks\n",
+            (unsigned int)targetSectors,
+            (unsigned int)GC_SAVE_V3_MAX_SECTORS
+        );
+
+        goto cleanup;
+    }
+
+    if (!productionV3CardHasFreeBlocks(
+            targetSectors,
+            "v3 container growth"))
+    {
         goto cleanup;
     }
 
@@ -4384,6 +4707,13 @@ static bool compactProductionV3Container(
 
     /* Alternate filename was resolved by early preflight. */
 
+    if (!productionV3CardHasFreeBlocks(
+            sourceSectors,
+            "v3 container compaction"))
+    {
+        goto cleanup;
+    }
+
     fileSize64 =
         (uint64_t)(uint32_t)sectorSize *
         (uint64_t)sourceSectors;
@@ -4863,8 +5193,68 @@ cleanup:
 /* Memory card initialization                                                */
 /* ------------------------------------------------------------------------- */
 
+
+gc_memcard_status_t GC_MemoryCardGetStatus(void)
+{
+    return memoryCardStatus;
+}
+
+
+uint32_t GC_MemoryCardSaveFileInitialBlocks(void)
+{
+    return GC_SAVE_V3_INITIAL_SECTORS;
+}
+
+
+uint32_t GC_MemoryCardSaveFileMaxBlocks(void)
+{
+    return GC_SAVE_V3_MAX_SECTORS;
+}
+
+
+bool GC_MemoryCardCreateSaveFile(void)
+{
+    if (!cardMounted ||
+        memoryCardStatus !=
+            GC_MEMCARD_STATUS_NEEDS_CREATE)
+    {
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: player approved creation of DoomCube save file\n"
+    );
+
+    if (!ensureProductionV3Container())
+    {
+        DC_WARN(
+            "DoomCube: player-requested DoomCube save-file creation failed\n"
+        );
+
+        return false;
+    }
+
+    memoryCardStatus =
+        GC_MEMCARD_STATUS_READY;
+
+    DC_INFO(
+        "DoomCube: player-requested DoomCube save file ready\n"
+    );
+
+    return true;
+}
+
+
 bool GC_MemoryCardInit(void)
 {
+    /*
+     * Assume unavailable until the complete initialization path succeeds.
+     * Specific failure reasons may replace this below.
+     */
+    memoryCardStatus =
+        GC_MEMCARD_STATUS_UNAVAILABLE;
+
+
 #ifdef DOOMCUBE_REGRESSION
     if (!GC_SaveV3CodecSelfTest())
     {
@@ -4938,6 +5328,29 @@ bool GC_MemoryCardInit(void)
         (long)memorySize,
         (long)sectorSize
     );
+
+    /*
+     * Reject undersized cards before mounting or writing anything.
+     *
+     * CARD_ProbeEx reports Memory Card 59 as 4 Mbit and Memory Card 251
+     * as 16 Mbit.  v3 deliberately does not try to contort its safe
+     * copy-on-write lifecycle to fit a Card 59.
+     */
+    if ((uint32_t)memorySize <
+        GC_MEMCARD_MIN_SIZE_MBIT)
+    {
+        memoryCardStatus =
+            GC_MEMCARD_STATUS_TOO_SMALL;
+
+        DC_WARN(
+            "DoomCube: Memory Card A is too small: %ld Mbit; "
+            "Memory Card 251 or larger (16 Mbit minimum) required; "
+            "saving disabled\n",
+            (long)memorySize
+        );
+
+        return false;
+    }
 
     /*
      * Keep the old buffers during the transition because the legacy
@@ -5014,14 +5427,39 @@ bool GC_MemoryCardInit(void)
     }
 #endif
 
-    if (!ensureProductionV3Container())
     {
-        DC_WARN(
-            "DoomCube: v3 save container unavailable; "
-            "continuing without saves\n"
-        );
+        bool productionContainerExists = false;
 
-        return false;
+        if (!productionV3ContainerFilesExist(
+                &productionContainerExists))
+        {
+            DC_WARN(
+                "DoomCube: could not determine whether a v3 "
+                "save file exists\n"
+            );
+
+            return false;
+        }
+
+        if (!productionContainerExists)
+        {
+            memoryCardStatus =
+                GC_MEMCARD_STATUS_NEEDS_CREATE;
+
+            DC_INFO(
+                "DoomCube: no DoomCube v3 save file found; "
+                "awaiting player choice\n"
+            );
+        }
+        else if (!ensureProductionV3Container())
+        {
+            DC_WARN(
+                "DoomCube: v3 save container unavailable; "
+                "continuing without saves\n"
+            );
+
+            return false;
+        }
     }
 
     /*
@@ -5072,6 +5510,13 @@ bool GC_MemoryCardInit(void)
             CARD_FILENAME,
             (long)result
         );
+    }
+
+    if (memoryCardStatus !=
+        GC_MEMCARD_STATUS_NEEDS_CREATE)
+    {
+        memoryCardStatus =
+            GC_MEMCARD_STATUS_READY;
     }
 
     return true;
@@ -5936,25 +6381,436 @@ uint32_t GC_MemoryCardSaveTimestamp(int slot)
 /* Global configuration                                                      */
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Open the production v3 container with enough committed-log capacity for
+ * one additional record.
+ *
+ * This mirrors the savegame lifecycle:
+ *
+ *     append directly when space exists
+ *     16 -> 32 block growth for the initial transition
+ *     compact stale append history once at normal size
+ *     grow only when the live compacted state genuinely needs it
+ *
+ * On success, *file remains open.
+ */
+static bool prepareProductionV3Append(
+    uint32_t recordSectorsNeeded,
+    card_file *file,
+    uint32_t *containerSectorsOut)
+{
+    gc_save_v3_superblock_t active;
+
+    uint32_t containerSectors;
+    uint32_t requiredEnd;
+    uint32_t targetSectors;
+
+    bool compacted = false;
+
+    if (!file ||
+        !containerSectorsOut ||
+        recordSectorsNeeded == 0)
+    {
+        return false;
+    }
+
+    if (!openProductionV3Container(
+            file,
+            &containerSectors))
+    {
+        return false;
+    }
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            file,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            containerSectors,
+            &active,
+            NULL))
+    {
+        CARD_Close(
+            file
+        );
+
+        return false;
+    }
+
+    if (active.log_end_sector >
+        UINT32_MAX -
+            recordSectorsNeeded)
+    {
+        CARD_Close(
+            file
+        );
+
+        return false;
+    }
+
+    requiredEnd =
+        active.log_end_sector +
+        recordSectorsNeeded;
+
+    if (requiredEnd <=
+        containerSectors)
+    {
+        *containerSectorsOut =
+            containerSectors;
+
+        return true;
+    }
+
+    CARD_Close(
+        file
+    );
+
+
+    /*
+     * At the normal 32-block size, compact stale records before considering
+     * further growth.
+     */
+    if (containerSectors >=
+        GC_SAVE_V3_NORMAL_TARGET_SECTORS)
+    {
+        if (!compactProductionV3Container(
+                &compacted))
+        {
+            DC_WARN(
+                "DoomCube: v3 compaction failed before config write\n"
+            );
+
+            return false;
+        }
+
+        if (compacted)
+        {
+            if (!openProductionV3Container(
+                    file,
+                    &containerSectors))
+            {
+                return false;
+            }
+
+            if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+                    file,
+                    configWorkBuffer,
+                    (size_t)sectorSize,
+                    (uint32_t)sectorSize,
+                    containerSectors,
+                    &active,
+                    NULL))
+            {
+                CARD_Close(
+                    file
+                );
+
+                return false;
+            }
+
+            if (active.log_end_sector >
+                UINT32_MAX -
+                    recordSectorsNeeded)
+            {
+                CARD_Close(
+                    file
+                );
+
+                return false;
+            }
+
+            requiredEnd =
+                active.log_end_sector +
+                recordSectorsNeeded;
+
+            if (requiredEnd <=
+                containerSectors)
+            {
+                DC_INFO(
+                    "DoomCube: v3 compaction reclaimed enough "
+                    "space for global config: "
+                    "log_end=%u record_sectors=%u container=%u\n",
+                    (unsigned int)active.log_end_sector,
+                    (unsigned int)recordSectorsNeeded,
+                    (unsigned int)containerSectors
+                );
+
+                *containerSectorsOut =
+                    containerSectors;
+
+                return true;
+            }
+
+            CARD_Close(
+                file
+            );
+        }
+    }
+
+
+    targetSectors =
+        containerSectors;
+
+    if (targetSectors <
+        GC_SAVE_V3_NORMAL_TARGET_SECTORS)
+    {
+        targetSectors =
+            GC_SAVE_V3_NORMAL_TARGET_SECTORS;
+    }
+
+    while (targetSectors <
+           requiredEnd)
+    {
+        if (targetSectors >
+            UINT32_MAX / 2u)
+        {
+            DC_WARN(
+                "DoomCube: v3 config growth overflow\n"
+            );
+
+            return false;
+        }
+
+        targetSectors *=
+            2u;
+    }
+
+    if (targetSectors <=
+        containerSectors)
+    {
+        if (containerSectors >
+            UINT32_MAX / 2u)
+        {
+            return false;
+        }
+
+        targetSectors =
+            containerSectors *
+            2u;
+    }
+
+    DC_INFO(
+        "DoomCube: v3 growth required for global config: "
+        "log_end=%u record_sectors=%u container=%u -> %u blocks\n",
+        (unsigned int)active.log_end_sector,
+        (unsigned int)recordSectorsNeeded,
+        (unsigned int)containerSectors,
+        (unsigned int)targetSectors
+    );
+
+    if (!growProductionV3Container(
+            targetSectors))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth failed for global config\n"
+        );
+
+        return false;
+    }
+
+    if (!openProductionV3Container(
+            file,
+            &containerSectors))
+    {
+        return false;
+    }
+
+    *containerSectorsOut =
+        containerSectors;
+
+    return true;
+}
+
+
+/*
+ * Locate the newest committed global CONFIG record.
+ *
+ * CONFIG has no IWAD/PWAD identity.  There is exactly one logical config
+ * key across the entire DoomCube installation.
+ */
+static bool findProductionV3ConfigRecord(
+    card_file *file,
+    uint32_t containerSectors,
+    gc_save_v3_superblock_t *activeOut,
+    gc_save_v3_record_header_t *recordOut,
+    uint32_t *recordSectorOut)
+{
+    gc_save_v3_superblock_t active;
+
+    gc_save_v3_record_header_t candidate;
+    gc_save_v3_record_header_t newest;
+
+    uint32_t cursor;
+    uint32_t newestSector = 0;
+
+    bool found = false;
+
+    if (!file ||
+        !recordOut ||
+        !recordSectorOut)
+    {
+        return false;
+    }
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            file,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            containerSectors,
+            &active,
+            NULL))
+    {
+        return false;
+    }
+
+    if (active.log_start_sector !=
+            GC_SAVE_V3_DATA_START_SECTOR ||
+        active.log_end_sector <
+            active.log_start_sector ||
+        active.log_end_sector >
+            containerSectors)
+    {
+        return false;
+    }
+
+    memset(
+        &newest,
+        0,
+        sizeof(newest)
+    );
+
+    cursor =
+        active.log_start_sector;
+
+    while (cursor <
+           active.log_end_sector)
+    {
+        memset(
+            &candidate,
+            0,
+            sizeof(candidate)
+        );
+
+        if (!GC_SaveV3CardReadRecord(
+                file,
+                configWorkBuffer,
+                (size_t)sectorSize,
+                (uint32_t)sectorSize,
+                containerSectors,
+                active.log_end_sector,
+                cursor,
+                &candidate,
+                NULL,
+                0,
+                NULL))
+        {
+            DC_WARN(
+                "DoomCube: v3 config scan failed at sector %u\n",
+                (unsigned int)cursor
+            );
+
+            return false;
+        }
+
+        if (candidate.record_sectors == 0 ||
+            candidate.record_sectors >
+                active.log_end_sector -
+                    cursor)
+        {
+            return false;
+        }
+
+        if (candidate.record_type ==
+            GC_SAVE_V3_RECORD_CONFIG)
+        {
+            if (!found ||
+                v3GenerationNewer(
+                    candidate.generation,
+                    newest.generation))
+            {
+                newest =
+                    candidate;
+
+                newestSector =
+                    cursor;
+
+                found =
+                    true;
+            }
+        }
+
+        cursor +=
+            candidate.record_sectors;
+    }
+
+    if (cursor !=
+        active.log_end_sector)
+    {
+        return false;
+    }
+
+    if (!found)
+    {
+        return false;
+    }
+
+    if (activeOut)
+    {
+        *activeOut =
+            active;
+    }
+
+    *recordOut =
+        newest;
+
+    *recordSectorOut =
+        newestSector;
+
+    return true;
+}
+
+
 bool GC_MemoryCardWriteConfig(
     const void *data,
     size_t size)
 {
     card_file file;
 
-    unsigned char *buffer;
-    doomcube_config_header_t *header;
+    gc_save_v3_record_header_t record;
+    gc_save_v3_record_header_t committedRecord;
 
-    s32 result;
+    gc_save_v3_superblock_t committedSuperblock;
+
+    unsigned char *compressedData = NULL;
+
+    uLongf compressedCapacity;
+    uLongf compressedSize;
+
+    uLong rawCrc;
+
+    uint32_t containerSectors;
+    uint32_t recordSectorsNeeded;
+
+    uint32_t committedSuperblockSector;
+    uint32_t recordSector;
+
+    bool success = false;
 
     if (!cardMounted ||
         !data ||
-        size == 0)
+        size == 0 ||
+        size > 0xffffffffu)
     {
         return false;
     }
 
-    if (size > configCapacity())
+    /*
+     * Keep the historical Doom config size ceiling.  The persistence
+     * backend changes here, not the public configuration-size contract.
+     */
+    if (size >
+        configCapacity())
     {
         DC_WARN(
             "DoomCube: global config too large: %u > %u\n",
@@ -5965,76 +6821,165 @@ bool GC_MemoryCardWriteConfig(
         return false;
     }
 
-    buffer =
-        configWorkBuffer;
+    compressedCapacity =
+        compressBound(
+            (uLong)size
+        );
 
-    if (!buffer)
+    if (compressedCapacity == 0)
+    {
         return false;
+    }
 
-    memset(
-        buffer,
-        0,
-        configRegionSize()
-    );
+    compressedData =
+        malloc(
+            (size_t)compressedCapacity
+        );
 
-    header =
-        (doomcube_config_header_t *)buffer;
-
-    header->magic =
-        DOOMCUBE_CONFIG_MAGIC;
-
-    header->version =
-        DOOMCUBE_VERSION;
-
-    header->valid =
-        1;
-
-    header->size =
-        (uint32_t)size;
-
-    memcpy(
-        buffer +
-            sizeof(doomcube_config_header_t),
-        data,
-        size
-    );
-
-    result = CARD_Open(
-        CARD_SLOT,
-        CARD_FILENAME,
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
-        return false;
-
-    result = CARD_Write(
-        &file,
-        buffer,
-        configRegionSize(),
-        configOffset()
-    );
-
-    CARD_Close(
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
+    if (!compressedData)
     {
         DC_WARN(
-            "DoomCube: global config CARD_Write failed: %ld\n",
-            (long)result
+            "DoomCube: v3 config compression allocation failed: %u bytes\n",
+            (unsigned int)compressedCapacity
         );
 
         return false;
     }
 
-    DC_DEBUG(
-        "DoomCube: global config saved: %u bytes\n",
-        (unsigned int)size
+    compressedSize =
+        compressedCapacity;
+
+    if (compress2(
+            compressedData,
+            &compressedSize,
+            data,
+            (uLong)size,
+            Z_BEST_COMPRESSION) !=
+        Z_OK)
+    {
+        DC_WARN(
+            "DoomCube: v3 config compression failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    rawCrc =
+        crc32(
+            0L,
+            Z_NULL,
+            0
+        );
+
+    rawCrc =
+        crc32(
+            rawCrc,
+            data,
+            (uInt)size
+        );
+
+    memset(
+        &record,
+        0,
+        sizeof(record)
     );
 
-    return true;
+    record.record_type =
+        GC_SAVE_V3_RECORD_CONFIG;
+
+    /*
+     * CONFIG uses slot zero by format definition but is not a save slot
+     * and is not tied to currentV3Identity.
+     */
+    record.slot =
+        0;
+
+    record.timestamp =
+        (uint32_t)time(NULL);
+
+    record.raw_size =
+        (uint32_t)size;
+
+    record.raw_crc32 =
+        (uint32_t)rawCrc;
+
+    recordSectorsNeeded =
+        GC_SaveV3RecordSectorCount(
+            GC_SAVE_V3_RECORD_HEADER_ENCODED_SIZE,
+            (size_t)compressedSize,
+            (uint32_t)sectorSize
+        );
+
+    if (recordSectorsNeeded == 0)
+    {
+        goto cleanup;
+    }
+
+    if (!prepareProductionV3Append(
+            recordSectorsNeeded,
+            &file,
+            &containerSectors))
+    {
+        DC_WARN(
+            "DoomCube: could not prepare v3 container "
+            "for global config\n"
+        );
+
+        goto cleanup;
+    }
+
+    success =
+        GC_SaveV3CardAppendRecord(
+            &file,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            containerSectors,
+            &record,
+            compressedData,
+            (size_t)compressedSize,
+            &committedRecord,
+            &committedSuperblock,
+            &committedSuperblockSector,
+            &recordSector
+        );
+
+    CARD_Close(
+        &file
+    );
+
+    if (!success)
+    {
+        DC_WARN(
+            "DoomCube: v3 global config append failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    DC_INFO(
+        "DoomCube: v3 config committed: "
+        "raw=%u compressed=%u sectors=%u "
+        "record_sector=%u generation=%u superblock=%c\n",
+        (unsigned int)size,
+        (unsigned int)compressedSize,
+        (unsigned int)committedRecord.record_sectors,
+        (unsigned int)recordSector,
+        (unsigned int)committedRecord.generation,
+        committedSuperblockSector ==
+            GC_SAVE_V3_SUPERBLOCK_A_SECTOR
+            ? 'A'
+            : 'B'
+    );
+
+
+cleanup:
+
+    free(
+        compressedData
+    );
+
+    return success;
 }
 
 
@@ -6045,82 +6990,197 @@ bool GC_MemoryCardReadConfig(
 {
     card_file file;
 
-    unsigned char *buffer;
-    doomcube_config_header_t *header;
+    gc_save_v3_superblock_t active;
+    gc_save_v3_record_header_t record;
 
-    s32 result;
+    unsigned char *compressedData = NULL;
+
+    size_t compressedSize = 0;
+
+    uLongf decodedSize;
+    uLong rawCrc;
+
+    uint32_t containerSectors;
+    uint32_t recordSector;
+
+    bool success = false;
 
     if (actualSize)
-        *actualSize = 0;
+    {
+        *actualSize =
+            0;
+    }
 
     if (!cardMounted)
-        return false;
-
-    buffer =
-        configWorkBuffer;
-
-    if (!buffer)
-        return false;
-
-    result = CARD_Open(
-        CARD_SLOT,
-        CARD_FILENAME,
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
-        return false;
-
-    result = CARD_Read(
-        &file,
-        buffer,
-        configRegionSize(),
-        configOffset()
-    );
-
-    CARD_Close(
-        &file
-    );
-
-    if (result != CARD_ERROR_READY)
-        return false;
-
-    header =
-        (doomcube_config_header_t *)buffer;
-
-    if (header->magic != DOOMCUBE_CONFIG_MAGIC ||
-        header->version != DOOMCUBE_VERSION ||
-        !header->valid ||
-        header->size > configCapacity())
     {
         return false;
+    }
+
+    if (!openProductionV3Container(
+            &file,
+            &containerSectors))
+    {
+        return false;
+    }
+
+    if (!findProductionV3ConfigRecord(
+            &file,
+            containerSectors,
+            &active,
+            &record,
+            &recordSector))
+    {
+        goto close_file;
     }
 
     if (actualSize)
     {
         *actualSize =
-            header->size;
+            record.raw_size;
     }
 
+    /*
+     * Permit the same useful size-query convention as the save backend.
+     */
     if (!output)
-        return true;
+    {
+        success =
+            true;
 
-    if (outputSize < header->size)
-        return false;
+        goto close_file;
+    }
 
-    memcpy(
-        output,
-        buffer +
-            sizeof(doomcube_config_header_t),
-        header->size
+    if (outputSize <
+        record.raw_size)
+    {
+        DC_WARN(
+            "DoomCube: destination buffer too small for global config: "
+            "%u < %u\n",
+            (unsigned int)outputSize,
+            (unsigned int)record.raw_size
+        );
+
+        goto close_file;
+    }
+
+    compressedData =
+        malloc(
+            record.compressed_size
+        );
+
+    if (!compressedData)
+    {
+        DC_WARN(
+            "DoomCube: compressed config allocation failed: %u bytes\n",
+            (unsigned int)record.compressed_size
+        );
+
+        goto close_file;
+    }
+
+    if (!GC_SaveV3CardReadRecord(
+            &file,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            containerSectors,
+            active.log_end_sector,
+            recordSector,
+            &record,
+            compressedData,
+            record.compressed_size,
+            &compressedSize))
+    {
+        DC_WARN(
+            "DoomCube: v3 config record read failed\n"
+        );
+
+        goto close_file;
+    }
+
+    if (record.record_type !=
+            GC_SAVE_V3_RECORD_CONFIG ||
+        compressedSize !=
+            record.compressed_size)
+    {
+        goto close_file;
+    }
+
+    decodedSize =
+        (uLongf)record.raw_size;
+
+    if (uncompress(
+            output,
+            &decodedSize,
+            compressedData,
+            (uLong)compressedSize) !=
+        Z_OK)
+    {
+        DC_WARN(
+            "DoomCube: v3 config decompression failed\n"
+        );
+
+        goto close_file;
+    }
+
+    if (decodedSize !=
+        (uLongf)record.raw_size)
+    {
+        DC_WARN(
+            "DoomCube: v3 config raw size mismatch\n"
+        );
+
+        goto close_file;
+    }
+
+    rawCrc =
+        crc32(
+            0L,
+            Z_NULL,
+            0
+        );
+
+    rawCrc =
+        crc32(
+            rawCrc,
+            output,
+            (uInt)decodedSize
+        );
+
+    if ((uint32_t)rawCrc !=
+        record.raw_crc32)
+    {
+        DC_WARN(
+            "DoomCube: v3 config raw CRC mismatch\n"
+        );
+
+        goto close_file;
+    }
+
+    success =
+        true;
+
+    DC_INFO(
+        "DoomCube: v3 config loaded: "
+        "raw=%u compressed=%u generation=%u record_sector=%u\n",
+        (unsigned int)record.raw_size,
+        (unsigned int)record.compressed_size,
+        (unsigned int)record.generation,
+        (unsigned int)recordSector
     );
 
-    DC_DEBUG(
-        "DoomCube: global config loaded: %u bytes\n",
-        header->size
+
+close_file:
+
+    CARD_Close(
+        &file
     );
 
-    return true;
+    free(
+        compressedData
+    );
+
+    return success;
 }
 
 

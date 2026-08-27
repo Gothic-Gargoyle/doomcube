@@ -119,7 +119,24 @@ endif
 #
 # TEST_PWAD is optional, but requires TEST_IWAD.
 # Build the single-artifact automated regression image.
+#
+# Normal / release build:
+#
+#     make iso
+#
+# Explicit regression build:
+#
+#     make DOOMCUBE_REGRESSION=1 iso
+#
+# REGRESSION=1 remains supported for the existing regression scripts.
+#
+DOOMCUBE_REGRESSION ?= 0
+
 ifneq ($(strip $(REGRESSION)),)
+DOOMCUBE_REGRESSION := 1
+endif
+
+ifeq ($(DOOMCUBE_REGRESSION),1)
 CFLAGS += -DDOOMCUBE_REGRESSION=1
 endif
 
