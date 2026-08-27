@@ -928,7 +928,10 @@ void DG_RumbleDamage(int damage)
 
 int main(int argc, char **argv)
 {
-    const char *selectedIwad;
+    gc_launch_selection_t selection;
+    char *doomArgv[9] = { NULL };
+    int doomArgc;
+
 
     (void)argc;
     (void)argv;
@@ -938,29 +941,52 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    selectedIwad =
-        GC_LauncherSelectGame(renderer);
 
-    if (!selectedIwad)
+    if (!GC_LauncherSelectGame(
+            renderer,
+            &selection))
     {
         return 1;
     }
- 
-    char *doomArgv[] =
+
+    doomArgv[0] =
+        "doomcube";
+
+    doomArgv[1] =
+        "-iwad";
+
+    doomArgv[2] =
+        (char *)selection.iwadPath;
+
+    doomArgc = 3;
+
+    if (selection.pwadPath != NULL)
     {
-        "doomcube",
-        "-iwad",
-        (char *)selectedIwad
-    };
+        doomArgv[3] =
+            "-merge";
 
-    DC_INFO(
-        "DoomCube: starting Doom engine with %s\n",
-        selectedIwad);
+        doomArgv[4] =
+            (char *)selection.pwadPath;
 
-        
+        doomArgc = 5;
+
+        DC_INFO(
+            "DoomCube: starting Doom engine with %s + %s\n",
+            selection.iwadPath,
+            selection.pwadPath);
+    }
+    else
+    {
+        DC_INFO(
+            "DoomCube: starting Doom engine with %s\n",
+            selection.iwadPath);
+    }
+
+
+    doomArgv[doomArgc] = NULL;
 
     doomgeneric_Create(
-        3,
+        doomArgc,
         doomArgv);
 
     key_prevweapon = GC_KEY_PREVWEAPON;
@@ -988,6 +1014,7 @@ int main(int argc, char **argv)
     {
         doomgeneric_Tick();
     }
+
 
     /*
      * Explicitly stop the controller motor when leaving the main loop.
