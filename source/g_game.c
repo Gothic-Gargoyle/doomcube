@@ -977,6 +977,7 @@ void G_Ticker (void)
         const gc_regression_case_t *test;
         static boolean saveProbeTriggered;
         static boolean loadProbeTriggered;
+        static boolean sixSlotProbeTriggered;
 
         test =
             GC_RegressionGetCase();
@@ -1011,6 +1012,161 @@ void G_Ticker (void)
                     G_SaveGame(
                         0,
                         "SAVE PROBE"
+                    );
+                }
+            }
+            else if (test->action ==
+                GC_REGRESSION_ACTION_SIX_SLOT_PROBE)
+            {
+                if (!sixSlotProbeTriggered)
+                {
+                    int pass;
+                    int slot;
+
+                    sixSlotProbeTriggered = true;
+
+                    /*
+                     * Use the complete Doom serializer, but invoke the
+                     * synchronous save worker directly so six slots can
+                     * be exercised deterministically in one regression
+                     * action without the BTS_SAVEGAME tic pipeline.
+                     */
+                    vanilla_savegame_limit = 0;
+
+                    DC_INFO(
+                        "DoomCube: SIX SLOT PROBE TRIGGERED: %s\n",
+                        test->name
+                    );
+
+                    for (pass = 1; pass <= 2; ++pass)
+                    {
+                        for (slot = 0; slot < 6; ++slot)
+                        {
+                            char description[32];
+
+                            M_snprintf(
+                                description,
+                                sizeof(description),
+                                "V3 SLOT %d PASS %d",
+                                slot,
+                                pass
+                            );
+
+                            savegameslot = slot;
+
+                            M_StringCopy(
+                                savedescription,
+                                description,
+                                sizeof(savedescription)
+                            );
+
+                            DC_INFO(
+                                "DoomCube: SIX SLOT WRITE: "
+                                "pass=%d slot=%d description=%s\n",
+                                pass,
+                                slot,
+                                description
+                            );
+
+                            G_DoSaveGame();
+                        }
+                    }
+
+                    /*
+                     * Reopen all six logical slots through fopen().
+                     *
+                     * On GameCube this reaches gc_save_stdio.c, which
+                     * performs the live v3 size query/read/decompress/
+                     * CRC path.  The first 24 bytes are Doom's save
+                     * description field.
+                     *
+                     * Every slot must contain PASS 2, proving the
+                     * authoritative index selected the newer overwrite
+                     * rather than the first-pass record.
+                     */
+                    for (slot = 0; slot < 6; ++slot)
+                    {
+                        FILE *probe;
+                        char actual[25];
+                        char expected[32];
+                        char *filename;
+                        size_t got;
+
+                        filename =
+                            P_SaveGameFile(slot);
+
+                        probe =
+                            fopen(filename, "rb");
+
+                        if (probe == NULL)
+                        {
+                            I_Error(
+                                "SIX SLOT PROBE: "
+                                "failed to reopen slot %d",
+                                slot
+                            );
+                        }
+
+                        memset(
+                            actual,
+                            0,
+                            sizeof(actual)
+                        );
+
+                        got =
+                            fread(
+                                actual,
+                                1,
+                                24,
+                                probe
+                            );
+
+                        fclose(probe);
+
+                        if (got != 24)
+                        {
+                            I_Error(
+                                "SIX SLOT PROBE: "
+                                "slot %d header short read: %u",
+                                slot,
+                                (unsigned int)got
+                            );
+                        }
+
+                        M_snprintf(
+                            expected,
+                            sizeof(expected),
+                            "V3 SLOT %d PASS 2",
+                            slot
+                        );
+
+                        if (strncmp(
+                                actual,
+                                expected,
+                                strlen(expected)) != 0)
+                        {
+                            I_Error(
+                                "SIX SLOT PROBE: "
+                                "slot %d stale/wrong record: "
+                                "expected '%s', got '%s'",
+                                slot,
+                                expected,
+                                actual
+                            );
+                        }
+
+                        DC_INFO(
+                            "DoomCube: SIX SLOT VERIFY PASS: "
+                            "slot=%d description=%s\n",
+                            slot,
+                            actual
+                        );
+                    }
+
+                    DC_INFO(
+                        "DoomCube: SIX SLOT PROBE PASS: "
+                        "6 slots written + 6 overwrites + "
+                        "6 newest-record reads\n"
                     );
                 }
             }

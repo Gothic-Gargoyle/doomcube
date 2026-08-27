@@ -268,6 +268,14 @@ static const gc_regression_case_t gcRegressionCases[] =
         1,
         1,
         GC_REGRESSION_ACTION_LOAD_PROBE
+    },
+    {
+        "six-slot-overwrite-doom-e1m1",
+        "dvd:/data/wad/doom.wad",
+        NULL,
+        1,
+        1,
+        GC_REGRESSION_ACTION_SIX_SLOT_PROBE
     }
 
 };

@@ -2064,6 +2064,311 @@ static bool writeInitialV3Superblock(
 }
 
 
+
+static const char *v3FilenameForIndex(
+    uint32_t fileIndex)
+{
+    return
+        fileIndex == 0
+        ? CARD_V3_FILENAME_A
+        : CARD_V3_FILENAME_B;
+}
+
+
+static bool v3GenerationNewer(
+    uint32_t a,
+    uint32_t b)
+{
+    uint32_t delta;
+
+    if (a == b)
+    {
+        return false;
+    }
+
+    delta =
+        a - b;
+
+    return
+        delta < 0x80000000u;
+}
+
+
+static bool inspectProductionV3Candidate(
+    uint32_t fileIndex,
+    bool *validOut,
+    uint32_t *containerSectorsOut,
+    uint32_t *generationOut)
+{
+    card_file file;
+
+    const char *filename;
+
+    uint32_t containerSectors = 0;
+    uint32_t generation = 0;
+
+    s32 result;
+    s32 closeResult;
+
+    bool valid = false;
+
+    if (!validOut ||
+        fileIndex > 1 ||
+        !configWorkBuffer ||
+        sectorSize <= 0)
+    {
+        return false;
+    }
+
+    *validOut =
+        false;
+
+    if (containerSectorsOut)
+    {
+        *containerSectorsOut =
+            0;
+    }
+
+    if (generationOut)
+    {
+        *generationOut =
+            0;
+    }
+
+    filename =
+        v3FilenameForIndex(
+            fileIndex
+        );
+
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            filename,
+            &file
+        );
+
+    if (result ==
+        CARD_ERROR_NOFILE)
+    {
+        return true;
+    }
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Open while inspecting %s failed: %ld\n",
+            filename,
+            (long)result
+        );
+
+        return false;
+    }
+
+    valid =
+        validateOpenV3Container(
+            &file,
+            configWorkBuffer,
+            fileIndex,
+            &containerSectors,
+            &generation
+        );
+
+    closeResult =
+        CARD_Close(
+            &file
+        );
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Close while inspecting %s failed: %ld\n",
+            filename,
+            (long)closeResult
+        );
+
+        return false;
+    }
+
+    *validOut =
+        valid;
+
+    if (valid)
+    {
+        if (containerSectorsOut)
+        {
+            *containerSectorsOut =
+                containerSectors;
+        }
+
+        if (generationOut)
+        {
+            *generationOut =
+                generation;
+        }
+    }
+
+    return true;
+}
+
+
+static bool selectProductionV3Container(
+    card_file *file,
+    uint32_t *fileIndexOut,
+    uint32_t *containerSectorsOut,
+    uint32_t *generationOut)
+{
+    bool valid[2] = {
+        false,
+        false
+    };
+
+    uint32_t sectors[2] = {
+        0,
+        0
+    };
+
+    uint32_t generation[2] = {
+        0,
+        0
+    };
+
+    uint32_t selected;
+
+    const char *filename;
+
+    s32 result;
+
+    if (!file ||
+        !cardMounted ||
+        !configWorkBuffer ||
+        sectorSize <= 0)
+    {
+        return false;
+    }
+
+    if (!inspectProductionV3Candidate(
+            0,
+            &valid[0],
+            &sectors[0],
+            &generation[0]) ||
+        !inspectProductionV3Candidate(
+            1,
+            &valid[1],
+            &sectors[1],
+            &generation[1]))
+    {
+        return false;
+    }
+
+    if (!valid[0] &&
+        !valid[1])
+    {
+        return false;
+    }
+
+    if (valid[0] &&
+        !valid[1])
+    {
+        selected =
+            0;
+    }
+    else if (!valid[0] &&
+             valid[1])
+    {
+        selected =
+            1;
+    }
+    else if (generation[0] ==
+             generation[1])
+    {
+        /*
+         * An interrupted migration may leave two valid snapshots
+         * carrying the same generation.  Prefer the larger physical
+         * image, otherwise keep DOOMCUBE0 deterministic.
+         */
+        selected =
+            sectors[1] >
+                sectors[0]
+            ? 1
+            : 0;
+    }
+    else
+    {
+        selected =
+            v3GenerationNewer(
+                generation[1],
+                generation[0]
+            )
+            ? 1
+            : 0;
+    }
+
+    filename =
+        v3FilenameForIndex(
+            selected
+        );
+
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            filename,
+            file
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: selected v3 container %s could not be opened: %ld\n",
+            filename,
+            (long)result
+        );
+
+        return false;
+    }
+
+    if (!validateOpenV3Container(
+            file,
+            configWorkBuffer,
+            selected,
+            &sectors[selected],
+            &generation[selected]))
+    {
+        CARD_Close(
+            file
+        );
+
+        DC_WARN(
+            "DoomCube: selected v3 container %s failed revalidation\n",
+            filename
+        );
+
+        return false;
+    }
+
+    if (fileIndexOut)
+    {
+        *fileIndexOut =
+            selected;
+    }
+
+    if (containerSectorsOut)
+    {
+        *containerSectorsOut =
+            sectors[selected];
+    }
+
+    if (generationOut)
+    {
+        *generationOut =
+            generation[selected];
+    }
+
+    return true;
+}
+
 static bool ensureProductionV3Container(void)
 {
     card_file file;
@@ -2091,6 +2396,53 @@ static bool ensureProductionV3Container(void)
         !scratch)
     {
         return false;
+    }
+
+    /*
+     * A grown installation may legitimately contain only DOOMCUBE1.
+     * If both images survived an interrupted cleanup, the selector
+     * chooses the newest valid generation.
+     */
+    {
+        card_file selectedFile;
+
+        uint32_t selectedIndex = 0;
+        uint32_t selectedSectors = 0;
+        uint32_t selectedGeneration = 0;
+
+        if (selectProductionV3Container(
+                &selectedFile,
+                &selectedIndex,
+                &selectedSectors,
+                &selectedGeneration))
+        {
+            closeResult =
+                CARD_Close(
+                    &selectedFile
+                );
+
+            if (closeResult !=
+                CARD_ERROR_READY)
+            {
+                DC_WARN(
+                    "DoomCube: CARD_Close for selected %s failed: %ld\n",
+                    v3FilenameForIndex(selectedIndex),
+                    (long)closeResult
+                );
+
+                return false;
+            }
+
+            DC_INFO(
+                "DoomCube: existing v3 container validated: "
+                "%s blocks=%u generation=%u\n",
+                v3FilenameForIndex(selectedIndex),
+                (unsigned int)selectedSectors,
+                (unsigned int)selectedGeneration
+            );
+
+            return true;
+        }
     }
 
     /*
@@ -2165,6 +2517,46 @@ static bool ensureProductionV3Container(void)
         DC_WARN(
             "DoomCube: CARD_Open for %s failed: %ld\n",
             CARD_V3_FILENAME_A,
+            (long)result
+        );
+
+        return false;
+    }
+
+    /*
+     * The selector found no valid image and DOOMCUBE0 is absent.
+     * Before creating a new A image, make sure an existing unusable
+     * DOOMCUBE1 is not silently ignored or overwritten indirectly.
+     */
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            CARD_V3_FILENAME_B,
+            &file
+        );
+
+    if (result ==
+        CARD_ERROR_READY)
+    {
+        CARD_Close(
+            &file
+        );
+
+        DC_WARN(
+            "DoomCube: existing %s is invalid/unselectable; "
+            "preserving it and disabling saves\n",
+            CARD_V3_FILENAME_B
+        );
+
+        return false;
+    }
+
+    if (result !=
+        CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Open for %s failed: %ld\n",
+            CARD_V3_FILENAME_B,
             (long)result
         );
 
@@ -2426,6 +2818,746 @@ cleanup:
 }
 
 
+
+/* ------------------------------------------------------------------------- */
+/* Production v3 container growth                                            */
+/* ------------------------------------------------------------------------- */
+
+static bool validateCommittedV3Log(
+    card_file *file,
+    uint32_t containerSectors,
+    const gc_save_v3_superblock_t *superblock)
+{
+    gc_save_v3_record_header_t record;
+
+    uint32_t sector;
+
+    if (!file ||
+        !superblock ||
+        superblock->log_start_sector !=
+            GC_SAVE_V3_DATA_START_SECTOR ||
+        superblock->log_end_sector <
+            superblock->log_start_sector ||
+        superblock->log_end_sector >
+            containerSectors)
+    {
+        return false;
+    }
+
+    sector =
+        superblock->log_start_sector;
+
+    while (sector <
+           superblock->log_end_sector)
+    {
+        memset(
+            &record,
+            0,
+            sizeof(record)
+        );
+
+        if (!GC_SaveV3CardReadRecord(
+                file,
+                configWorkBuffer,
+                (size_t)sectorSize,
+                (uint32_t)sectorSize,
+                containerSectors,
+                superblock->log_end_sector,
+                sector,
+                &record,
+                NULL,
+                0,
+                NULL))
+        {
+            DC_WARN(
+                "DoomCube: v3 growth validation failed "
+                "at record sector %u\n",
+                (unsigned int)sector
+            );
+
+            return false;
+        }
+
+        if (record.record_sectors == 0 ||
+            record.record_sectors >
+                superblock->log_end_sector -
+                sector)
+        {
+            DC_WARN(
+                "DoomCube: v3 growth encountered invalid "
+                "record geometry at sector %u\n",
+                (unsigned int)sector
+            );
+
+            return false;
+        }
+
+        sector +=
+            record.record_sectors;
+    }
+
+    return
+        sector ==
+        superblock->log_end_sector;
+}
+
+
+static bool growProductionV3Container(
+    uint32_t targetSectors)
+{
+    card_file sourceFile;
+    card_file targetFile;
+
+    gc_save_v3_container_header_t header;
+
+    gc_save_v3_superblock_t active;
+    gc_save_v3_superblock_t migrated;
+    gc_save_v3_superblock_t verified;
+
+    uint32_t sourceIndex = 0;
+    uint32_t targetIndex;
+
+    uint32_t sourceSectors = 0;
+    uint32_t sourceGeneration = 0;
+
+    uint32_t verifiedSectors = 0;
+    uint32_t verifiedGeneration = 0;
+    uint32_t verifiedSuperblockSector = 0;
+
+    uint32_t sector;
+
+    uint64_t fileSize64;
+    u32 fileSize;
+
+    const char *sourceName;
+    const char *targetName;
+
+    s32 result;
+    s32 closeResult;
+
+    bool sourceOpen = false;
+    bool targetOpen = false;
+    bool targetCreated = false;
+    bool targetValidated = false;
+    bool success = false;
+
+    if (!cardMounted ||
+        sectorSize <= 0 ||
+        !configWorkBuffer)
+    {
+        return false;
+    }
+
+    if (!selectProductionV3Container(
+            &sourceFile,
+            &sourceIndex,
+            &sourceSectors,
+            &sourceGeneration))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth could not select source container\n"
+        );
+
+        return false;
+    }
+
+    sourceOpen =
+        true;
+
+    sourceName =
+        v3FilenameForIndex(
+            sourceIndex
+        );
+
+    targetIndex =
+        sourceIndex == 0
+        ? 1
+        : 0;
+
+    targetName =
+        v3FilenameForIndex(
+            targetIndex
+        );
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            &sourceFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            sourceSectors,
+            &active,
+            NULL))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth could not read source superblock\n"
+        );
+
+        goto cleanup;
+    }
+
+    if (active.generation !=
+            sourceGeneration ||
+        active.log_end_sector >
+            sourceSectors ||
+        targetSectors <=
+            sourceSectors ||
+        targetSectors <
+            active.log_end_sector)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth geometry rejected: "
+            "source=%u target=%u log_end=%u generation=%u/%u\n",
+            (unsigned int)sourceSectors,
+            (unsigned int)targetSectors,
+            (unsigned int)active.log_end_sector,
+            (unsigned int)active.generation,
+            (unsigned int)sourceGeneration
+        );
+
+        goto cleanup;
+    }
+
+    /*
+     * Never overwrite a pre-existing alternate file.  A stale file
+     * from an interrupted migration remains recoverable evidence.
+     */
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            targetName,
+            &targetFile
+        );
+
+    if (result ==
+        CARD_ERROR_READY)
+    {
+        CARD_Close(
+            &targetFile
+        );
+
+        DC_WARN(
+            "DoomCube: v3 growth refused to overwrite existing %s\n",
+            targetName
+        );
+
+        goto cleanup;
+    }
+
+    if (result !=
+        CARD_ERROR_NOFILE)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth CARD_Open %s failed: %ld\n",
+            targetName,
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    fileSize64 =
+        (uint64_t)(uint32_t)sectorSize *
+        (uint64_t)targetSectors;
+
+    if (fileSize64 >
+        0xffffffffULL)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth target size overflow\n"
+        );
+
+        goto cleanup;
+    }
+
+    fileSize =
+        (u32)fileSize64;
+
+    DC_INFO(
+        "DoomCube: v3 growth starting: "
+        "%s %u blocks -> %s %u blocks "
+        "generation=%u log_end=%u\n",
+        sourceName,
+        (unsigned int)sourceSectors,
+        targetName,
+        (unsigned int)targetSectors,
+        (unsigned int)active.generation,
+        (unsigned int)active.log_end_sector
+    );
+
+    result =
+        CARD_Create(
+            CARD_SLOT,
+            targetName,
+            fileSize,
+            &targetFile
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth CARD_Create %s failed: %ld\n",
+            targetName,
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    targetOpen =
+        true;
+
+    targetCreated =
+        true;
+
+    /*
+     * Copy sector 0 first, then rewrite only the encoded container
+     * header.  Bytes outside the header are preserved for future
+     * banner/icon/comment payloads.
+     */
+    result =
+        CARD_Read(
+            &sourceFile,
+            configWorkBuffer,
+            (u32)sectorSize,
+            0
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth metadata read failed: %ld\n",
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    memset(
+        &header,
+        0,
+        sizeof(header)
+    );
+
+    if (!GC_SaveV3DecodeContainerHeader(
+            &header,
+            configWorkBuffer,
+            (size_t)sectorSize))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth source metadata decode failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    header.container_sectors =
+        targetSectors;
+
+    header.file_index =
+        targetIndex;
+
+    if (!GC_SaveV3EncodeContainerHeader(
+            configWorkBuffer,
+            (size_t)sectorSize,
+            &header))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth target metadata encode failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    result =
+        CARD_Write(
+            &targetFile,
+            configWorkBuffer,
+            (u32)sectorSize,
+            0
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth metadata write failed: %ld\n",
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    /*
+     * Copy every committed record sector exactly as stored.
+     * Uncommitted garbage beyond log_end is deliberately discarded.
+     */
+    for (sector =
+            active.log_start_sector;
+         sector <
+            active.log_end_sector;
+         ++sector)
+    {
+        u32 offset =
+            (u32)(
+                sector *
+                (uint32_t)sectorSize
+            );
+
+        result =
+            CARD_Read(
+                &sourceFile,
+                configWorkBuffer,
+                (u32)sectorSize,
+                offset
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 growth source read failed "
+                "at sector %u: %ld\n",
+                (unsigned int)sector,
+                (long)result
+            );
+
+            goto cleanup;
+        }
+
+        result =
+            CARD_Write(
+                &targetFile,
+                configWorkBuffer,
+                (u32)sectorSize,
+                offset
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: v3 growth target write failed "
+                "at sector %u: %ld\n",
+                (unsigned int)sector,
+                (long)result
+            );
+
+            goto cleanup;
+        }
+    }
+
+    /*
+     * Migration itself is a committed state transition, so advance the
+     * container generation even though no logical Doom record changed.
+     * This makes the new image unambiguously newer if deletion of the
+     * old image is interrupted.
+     */
+    migrated =
+        active;
+
+    migrated.generation =
+        active.generation +
+        1u;
+
+    migrated.container_sectors =
+        targetSectors;
+
+    /*
+     * Both superblocks describe the same complete migrated snapshot.
+     * The normal append path will alternate them again on the next save.
+     */
+    if (!GC_SaveV3CardWriteSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            GC_SAVE_V3_SUPERBLOCK_A_SECTOR,
+            &migrated) ||
+        !GC_SaveV3CardWriteSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            GC_SAVE_V3_SUPERBLOCK_B_SECTOR,
+            &migrated))
+    {
+        DC_WARN(
+            "DoomCube: v3 growth superblock write failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    closeResult =
+        CARD_Close(
+            &targetFile
+        );
+
+    targetOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: v3 growth target CARD_Close failed: %ld\n",
+            (long)closeResult
+        );
+
+        goto cleanup;
+    }
+
+    /*
+     * Reopen and validate exactly as a later boot will.
+     */
+    result =
+        CARD_Open(
+            CARD_SLOT,
+            targetName,
+            &targetFile
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: grown container %s could not be reopened: %ld\n",
+            targetName,
+            (long)result
+        );
+
+        goto cleanup;
+    }
+
+    targetOpen =
+        true;
+
+    if (!validateOpenV3Container(
+            &targetFile,
+            configWorkBuffer,
+            targetIndex,
+            &verifiedSectors,
+            &verifiedGeneration))
+    {
+        DC_WARN(
+            "DoomCube: grown container %s failed header/superblock validation\n",
+            targetName
+        );
+
+        goto cleanup;
+    }
+
+    if (verifiedSectors !=
+            targetSectors ||
+        verifiedGeneration !=
+            migrated.generation)
+    {
+        DC_WARN(
+            "DoomCube: grown container validation mismatch: "
+            "blocks=%u/%u generation=%u/%u\n",
+            (unsigned int)verifiedSectors,
+            (unsigned int)targetSectors,
+            (unsigned int)verifiedGeneration,
+            (unsigned int)migrated.generation
+        );
+
+        goto cleanup;
+    }
+
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            &targetFile,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            targetSectors,
+            &verified,
+            &verifiedSuperblockSector))
+    {
+        DC_WARN(
+            "DoomCube: grown container authoritative superblock read failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    if (verified.generation !=
+            migrated.generation ||
+        verified.log_end_sector !=
+            active.log_end_sector ||
+        verified.container_sectors !=
+            targetSectors)
+    {
+        DC_WARN(
+            "DoomCube: grown container authoritative state mismatch\n"
+        );
+
+        goto cleanup;
+    }
+
+    if (!validateCommittedV3Log(
+            &targetFile,
+            targetSectors,
+            &verified))
+    {
+        DC_WARN(
+            "DoomCube: grown container committed-log validation failed\n"
+        );
+
+        goto cleanup;
+    }
+
+    closeResult =
+        CARD_Close(
+            &targetFile
+        );
+
+    targetOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: grown container final CARD_Close failed: %ld\n",
+            (long)closeResult
+        );
+
+        goto cleanup;
+    }
+
+    /*
+     * From here onward the alternate image is independently bootable.
+     * Never remove it during cleanup.
+     */
+    targetValidated =
+        true;
+
+    closeResult =
+        CARD_Close(
+            &sourceFile
+        );
+
+    sourceOpen =
+        false;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        /*
+         * Keep both images.  The new generation is higher, so normal
+         * selection will use it on the next open.
+         */
+        DC_WARN(
+            "DoomCube: old v3 container close failed after growth: %ld; "
+            "keeping both valid images\n",
+            (long)closeResult
+        );
+
+        success =
+            true;
+
+        goto cleanup;
+    }
+
+    result =
+        CARD_Delete(
+            CARD_SLOT,
+            sourceName
+        );
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        /*
+         * This is safe: both images are valid and the migrated image has
+         * the newer generation.  Do not destroy the new copy merely
+         * because cleanup of the old one failed.
+         */
+        DC_WARN(
+            "DoomCube: old v3 container %s could not be deleted: %ld; "
+            "newer %s remains authoritative\n",
+            sourceName,
+            (long)result,
+            targetName
+        );
+    }
+    else
+    {
+        DC_INFO(
+            "DoomCube: old v3 container removed after validated growth: %s\n",
+            sourceName
+        );
+    }
+
+    success =
+        true;
+
+    DC_INFO(
+        "DoomCube: v3 growth committed: "
+        "%s blocks=%u -> %s blocks=%u "
+        "generation=%u log_end=%u\n",
+        sourceName,
+        (unsigned int)sourceSectors,
+        targetName,
+        (unsigned int)targetSectors,
+        (unsigned int)migrated.generation,
+        (unsigned int)migrated.log_end_sector
+    );
+
+
+cleanup:
+
+    if (targetOpen)
+    {
+        CARD_Close(
+            &targetFile
+        );
+
+        targetOpen =
+            false;
+    }
+
+    if (sourceOpen)
+    {
+        CARD_Close(
+            &sourceFile
+        );
+
+        sourceOpen =
+            false;
+    }
+
+    if (!success &&
+        targetCreated &&
+        !targetValidated)
+    {
+        /*
+         * Only remove the alternate image created by this failed
+         * invocation.  The previously authoritative source is untouched.
+         */
+        result =
+            CARD_Delete(
+                CARD_SLOT,
+                targetName
+            );
+
+        if (result !=
+            CARD_ERROR_READY)
+        {
+            DC_WARN(
+                "DoomCube: failed to clean incomplete grown %s: %ld\n",
+                targetName,
+                (long)result
+            );
+        }
+    }
+
+    return success;
+}
+
+
 /* ------------------------------------------------------------------------- */
 /* Memory card initialization                                                */
 /* ------------------------------------------------------------------------- */
@@ -2653,9 +3785,8 @@ static bool openProductionV3Container(
     card_file *file,
     uint32_t *containerSectors)
 {
+    uint32_t fileIndex = 0;
     uint32_t sectors = 0;
-
-    s32 result;
 
     if (!file ||
         !cardMounted ||
@@ -2665,38 +3796,14 @@ static bool openProductionV3Container(
         return false;
     }
 
-    result =
-        CARD_Open(
-            CARD_SLOT,
-            CARD_V3_FILENAME_A,
-            file
-        );
-
-    if (result !=
-        CARD_ERROR_READY)
-    {
-        DC_WARN(
-            "DoomCube: CARD_Open %s failed: %ld\n",
-            CARD_V3_FILENAME_A,
-            (long)result
-        );
-
-        return false;
-    }
-
-    if (!validateOpenV3Container(
+    if (!selectProductionV3Container(
             file,
-            configWorkBuffer,
-            0,
+            &fileIndex,
             &sectors,
             NULL))
     {
-        CARD_Close(
-            file
-        );
-
         DC_WARN(
-            "DoomCube: live v3 container validation failed\n"
+            "DoomCube: no valid live v3 production container\n"
         );
 
         return false;
@@ -2788,6 +3895,7 @@ bool GC_MemoryCardWriteSave(
     gc_save_v3_record_header_t record;
     gc_save_v3_record_header_t committedRecord;
 
+    gc_save_v3_superblock_t activeSuperblock;
     gc_save_v3_superblock_t committedSuperblock;
 
     unsigned char *compressedData = NULL;
@@ -2799,7 +3907,12 @@ bool GC_MemoryCardWriteSave(
 
     uint32_t containerSectors;
     uint32_t committedSuperblockSector;
+    uint32_t activeSuperblockSector;
     uint32_t recordSector;
+
+    uint32_t recordSectorsNeeded;
+    uint32_t requiredEnd;
+    uint32_t targetSectors;
 
     bool success = false;
 
@@ -2917,6 +4030,149 @@ bool GC_MemoryCardWriteSave(
         goto cleanup;
     }
 
+    if (!GC_SaveV3CardReadAuthoritativeSuperblock(
+            &file,
+            configWorkBuffer,
+            (size_t)sectorSize,
+            (uint32_t)sectorSize,
+            containerSectors,
+            &activeSuperblock,
+            &activeSuperblockSector))
+    {
+        CARD_Close(
+            &file
+        );
+
+        DC_WARN(
+            "DoomCube: could not read v3 state before saving slot %d\n",
+            slot
+        );
+
+        goto cleanup;
+    }
+
+    recordSectorsNeeded =
+        GC_SaveV3RecordSectorCount(
+            GC_SAVE_V3_RECORD_HEADER_ENCODED_SIZE,
+            (size_t)compressedSize,
+            (uint32_t)sectorSize
+        );
+
+    if (recordSectorsNeeded == 0 ||
+        activeSuperblock.log_end_sector >
+            UINT32_MAX -
+            recordSectorsNeeded)
+    {
+        CARD_Close(
+            &file
+        );
+
+        DC_WARN(
+            "DoomCube: invalid v3 save geometry for slot %d\n",
+            slot
+        );
+
+        goto cleanup;
+    }
+
+    requiredEnd =
+        activeSuperblock.log_end_sector +
+        recordSectorsNeeded;
+
+    if (requiredEnd >
+        containerSectors)
+    {
+        CARD_Close(
+            &file
+        );
+
+        /*
+         * 16 -> 32 is the normal first growth target.
+         * Beyond that, double until this exact record will fit.
+         */
+        targetSectors =
+            containerSectors;
+
+        if (targetSectors <
+            GC_SAVE_V3_NORMAL_TARGET_SECTORS)
+        {
+            targetSectors =
+                GC_SAVE_V3_NORMAL_TARGET_SECTORS;
+        }
+
+        while (targetSectors <
+               requiredEnd)
+        {
+            if (targetSectors >
+                UINT32_MAX / 2u)
+            {
+                DC_WARN(
+                    "DoomCube: v3 growth overflow for slot %d\n",
+                    slot
+                );
+
+                goto cleanup;
+            }
+
+            targetSectors *=
+                2u;
+        }
+
+        if (targetSectors <=
+            containerSectors)
+        {
+            if (containerSectors >
+                UINT32_MAX / 2u)
+            {
+                DC_WARN(
+                    "DoomCube: v3 growth overflow for slot %d\n",
+                    slot
+                );
+
+                goto cleanup;
+            }
+
+            targetSectors =
+                containerSectors *
+                2u;
+        }
+
+        DC_INFO(
+            "DoomCube: v3 growth required: "
+            "slot=%d log_end=%u record_sectors=%u "
+            "container=%u -> %u blocks\n",
+            slot,
+            (unsigned int)activeSuperblock.log_end_sector,
+            (unsigned int)recordSectorsNeeded,
+            (unsigned int)containerSectors,
+            (unsigned int)targetSectors
+        );
+
+        if (!growProductionV3Container(
+                targetSectors))
+        {
+            DC_WARN(
+                "DoomCube: v3 growth failed for slot %d\n",
+                slot
+            );
+
+            goto cleanup;
+        }
+
+        if (!openProductionV3Container(
+                &file,
+                &containerSectors))
+        {
+            DC_WARN(
+                "DoomCube: grown v3 container could not be reopened "
+                "for slot %d\n",
+                slot
+            );
+
+            goto cleanup;
+        }
+    }
+
     success =
         GC_SaveV3CardAppendRecord(
             &file,
@@ -2941,7 +4197,7 @@ bool GC_MemoryCardWriteSave(
     {
         DC_WARN(
             "DoomCube: v3 save append failed for slot %d "
-            "(container=%u blocks; growth not yet available)\n",
+            "(container=%u blocks after preflight/growth)\n",
             slot,
             (unsigned int)containerSectors
         );
