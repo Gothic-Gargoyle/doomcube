@@ -213,6 +213,7 @@ CFILES := \
 	w_checksum.c \
 	w_file.c \
 	w_main.c \
+	w_merge.c \
 	w_wad.c \
 	w_file_gamecube.c \
 	z_zone.c \
