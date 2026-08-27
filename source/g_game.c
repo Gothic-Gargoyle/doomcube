@@ -72,6 +72,8 @@
 
 #include "g_game.h"
 #include "gc_controls.h"
+#include "gc_debug.h"
+#include "gc_regression.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -963,6 +965,67 @@ void G_Ticker (void)
 	    break; 
 	} 
     }
+
+#ifdef DOOMCUBE_REGRESSION
+    /*
+     * Automated regression progression test.
+     *
+     * Runtime case selection means every test executes from the exact
+     * same DOL and ISO; only Dolphin's emulated RTC differs.
+     */
+    {
+        const gc_regression_case_t *test;
+
+        test =
+            GC_RegressionGetCase();
+
+        if (test != NULL
+         && test->action != GC_REGRESSION_ACTION_NONE
+         && gamestate == GS_LEVEL
+         && gameepisode == test->episode
+         && gamemap == test->map
+         && leveltime >= 2 * TICRATE)
+        {
+            if (test->action ==
+                GC_REGRESSION_ACTION_SECRET_EXIT)
+            {
+                G_SecretExitLevel();
+            }
+            else
+            {
+                G_ExitLevel();
+            }
+        }
+    }
+#elif defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+      defined(DOOMCUBE_TEST_WARP_MAP)
+    /*
+     * Developer-only progression test.
+     *
+     * When make test is given a warp, automatically take the normal
+     * level exit after roughly two seconds.  This exercises the real
+     * completion/intermission/world-done path without requiring the
+     * test map to be beaten manually.
+     *
+     * The episode/map check means the destination level will not
+     * auto-exit as well.
+     */
+    if (gamestate == GS_LEVEL
+     && gameepisode == DOOMCUBE_TEST_WARP_EPISODE
+     && gamemap == DOOMCUBE_TEST_WARP_MAP
+     && leveltime >= 2 * TICRATE)
+    {
+        if ((gameepisode == 5 && gamemap == 6)
+         || (gameepisode == 6 && gamemap == 3))
+        {
+            G_SecretExitLevel();
+        }
+        else
+        {
+            G_ExitLevel();
+        }
+    }
+#endif
     
     // get commands, check consistancy,
     // and build new consistancy check
@@ -1507,12 +1570,30 @@ void G_DoCompleted (void)
 	      case 4:
 		wminfo.next = 2;
 		break;
+              case 5:
+		wminfo.next = 6;   // SIGIL: E5M9 -> E5M7
+		break;
+              case 6:
+		wminfo.next = 3;   // SIGIL II: E6M9 -> E6M4
+		break;
 	    }                
 	} 
 	else 
 	    wminfo.next = gamemap;          // go to next level 
     }
 		 
+
+#if defined(DOOMCUBE_REGRESSION) || \
+    (defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+     defined(DOOMCUBE_TEST_WARP_MAP))
+    DC_INFO(
+        "DoomCube: TEST PROGRESSION: E%dM%d -> E%dM%d%s\n",
+        gameepisode,
+        gamemap,
+        gameepisode,
+        wminfo.next + 1,
+        secretexit ? " (secret exit)" : "");
+#endif
     wminfo.maxkills = totalkills; 
     wminfo.maxitems = totalitems; 
     wminfo.maxsecret = totalsecret; 

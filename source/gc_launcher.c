@@ -6,10 +6,12 @@
 
 #include "gc_launcher.h"
 #include "gc_memcard.h"
+#include "gc_regression.h"
 
 #include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -25,6 +27,14 @@
 #define GC_LAUNCHER_LOGO_Y       5
 
 #define GC_MAX_GAMES 5
+
+#define GC_PWAD_MANIFEST_PATH "dvd:/data/pwad/doomcube.lst"
+#define GC_PWAD_DIRECTORY     "dvd:/data/pwad"
+
+#define GC_MAX_PWADS          64
+#define GC_PWAD_NAME_MAX      128
+#define GC_PWAD_PATH_MAX      256
+#define GC_PWAD_VISIBLE_ROWS  7
 
 typedef struct
 {
@@ -43,12 +53,144 @@ static gc_game_entry_t gcGames[GC_MAX_GAMES] =
     { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
 };
 
+typedef struct
+{
+    char name[GC_PWAD_NAME_MAX];
+    char path[GC_PWAD_PATH_MAX];
+} gc_pwad_entry_t;
+
+static gc_pwad_entry_t gcPwads[GC_MAX_PWADS];
+
 static int gcAvailableGameCount;
+static int gcAvailablePwadCount;
 
 static bool GC_FileExists(const char *path)
 {
     struct stat info;
     return stat(path, &info) == 0;
+}
+
+static int GC_LauncherScanPwads(void)
+{
+    FILE *manifest;
+    char line[GC_PWAD_NAME_MAX + 4];
+
+    gcAvailablePwadCount = 0;
+
+    DC_DEBUG("DoomCube: ---- AVAILABLE PWADS ----\n");
+
+    manifest =
+        fopen(
+            GC_PWAD_MANIFEST_PATH,
+            "rb");
+
+    if (manifest == NULL)
+    {
+        DC_DEBUG(
+            "DoomCube: no PWAD manifest found\n");
+
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), manifest) != NULL)
+    {
+        size_t length;
+        int written;
+
+        /*
+         * The generated manifest contains one filename per line.
+         * Strip either Unix or Windows-style line endings.
+         */
+        length = strcspn(line, "\r\n");
+
+        /*
+         * If the buffer filled without reaching a line ending, the
+         * manifest entry is too long for DoomCube's launcher.
+         */
+        if (line[length] == '\0' &&
+            !feof(manifest) &&
+            length == sizeof(line) - 1)
+        {
+            int c;
+
+            while ((c = fgetc(manifest)) != '\n' &&
+                   c != EOF)
+            {
+                /* Drain the rest of the oversized line. */
+            }
+
+            DC_WARN(
+                "DoomCube: PWAD manifest entry too long; skipping\n");
+
+            continue;
+        }
+
+        line[length] = '\0';
+
+        if (line[0] == '\0')
+        {
+            continue;
+        }
+
+        if (gcAvailablePwadCount >= GC_MAX_PWADS)
+        {
+            DC_WARN(
+                "DoomCube: PWAD limit reached (%d)\n",
+                GC_MAX_PWADS);
+
+            break;
+        }
+
+        written =
+            snprintf(
+                gcPwads[gcAvailablePwadCount].path,
+                sizeof(gcPwads[gcAvailablePwadCount].path),
+                "%s/%s",
+                GC_PWAD_DIRECTORY,
+                line);
+
+        if (written < 0 ||
+            (size_t)written >=
+                sizeof(gcPwads[gcAvailablePwadCount].path))
+        {
+            DC_WARN(
+                "DoomCube: PWAD path too long: %s\n",
+                line);
+
+            continue;
+        }
+
+        if (!GC_FileExists(
+                gcPwads[gcAvailablePwadCount].path))
+        {
+            DC_WARN(
+                "DoomCube: PWAD listed but missing: %s\n",
+                line);
+
+            continue;
+        }
+
+        snprintf(
+            gcPwads[gcAvailablePwadCount].name,
+            sizeof(gcPwads[gcAvailablePwadCount].name),
+            "%s",
+            line);
+
+        DC_DEBUG(
+            "DoomCube: found PWAD %s (%s)\n",
+            gcPwads[gcAvailablePwadCount].name,
+            gcPwads[gcAvailablePwadCount].path);
+
+        ++gcAvailablePwadCount;
+    }
+
+    fclose(manifest);
+
+    DC_DEBUG(
+        "DoomCube: %d PWAD(s) available\n",
+        gcAvailablePwadCount);
+
+    return gcAvailablePwadCount;
 }
 
 static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
@@ -484,6 +626,298 @@ static void GC_DrawLauncher(
 }
 
 
+
+static const char *GC_PwadSelectionName(int selected)
+{
+    if (selected == 0)
+    {
+        return "VANILLA";
+    }
+
+    if (selected < 1 ||
+        selected > gcAvailablePwadCount)
+    {
+        return "";
+    }
+
+    return gcPwads[selected - 1].name;
+}
+
+static void GC_DrawPwadLauncher(
+    SDL_Renderer *renderer,
+    int selected)
+{
+    int total;
+    int first;
+    int last;
+    int i;
+
+    const char *title = "SELECT ADD-ON";
+    const char *controls = "A - START    B - BACK";
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(renderer);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(title, 4)) / 2,
+        65,
+        title,
+        4);
+
+    total =
+        gcAvailablePwadCount + 1;
+
+    first = 0;
+
+    if (selected >= GC_PWAD_VISIBLE_ROWS)
+    {
+        first =
+            selected -
+            GC_PWAD_VISIBLE_ROWS +
+            1;
+    }
+
+    if (total > GC_PWAD_VISIBLE_ROWS)
+    {
+        int maxFirst =
+            total -
+            GC_PWAD_VISIBLE_ROWS;
+
+        if (first > maxFirst)
+        {
+            first = maxFirst;
+        }
+    }
+
+    last =
+        first +
+        GC_PWAD_VISIBLE_ROWS;
+
+    if (last > total)
+    {
+        last = total;
+    }
+
+    for (i = first; i < last; ++i)
+    {
+        const char *name;
+        int row;
+        int y;
+        int textWidth;
+
+        name =
+            GC_PwadSelectionName(i);
+
+        row =
+            i - first;
+
+        y =
+            145 +
+            row * GC_LAUNCHER_LINE_HEIGHT;
+
+        if (i == selected)
+        {
+            SDL_Rect marker =
+            {
+                55,
+                y - 5,
+                530,
+                28
+            };
+
+            SDL_SetRenderDrawColor(
+                renderer,
+                70,
+                45,
+                120,
+                255);
+
+            SDL_RenderFillRect(
+                renderer,
+                &marker);
+
+            SDL_SetRenderDrawColor(
+                renderer,
+                255,
+                255,
+                255,
+                255);
+        }
+
+        textWidth =
+            GC_TextWidth(
+                name,
+                2);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                textWidth) / 2,
+            y,
+            name,
+            2);
+    }
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(controls, 2)) / 2,
+        395,
+        controls,
+        2);
+
+    /*
+     * Build identification, matching the main launcher.
+     */
+    {
+        char versionText[96];
+        int versionWidth;
+
+        snprintf(
+            versionText,
+            sizeof(versionText),
+            "DOOMCUBE V%s (%s)",
+            DOOMCUBE_APP_VERSION,
+            DOOMCUBE_GIT_ID);
+
+        versionWidth =
+            GC_TextWidth(
+                versionText,
+                1);
+
+        GC_DrawText(
+            renderer,
+            640 - versionWidth - 8,
+            480 - 7 - 8,
+            versionText,
+            1);
+    }
+
+    SDL_RenderPresent(renderer);
+}
+
+static int GC_LauncherRunPwad(
+    SDL_Renderer *renderer)
+{
+    int selected = 0;
+    int stickHeld = 0;
+    int total =
+        gcAvailablePwadCount + 1;
+
+    GC_DrawPwadLauncher(
+        renderer,
+        selected);
+
+    /*
+     * Consume any transition left by the game-selection screen.
+     */
+    for (int i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
+
+    DC_DEBUG(
+        "DoomCube: entering PWAD selection loop\n");
+
+    while (SYS_MainLoop())
+    {
+        u16 down;
+        s8 stickY;
+        int stickDirection = 0;
+
+        PAD_ScanPads();
+
+        down =
+            PAD_ButtonsDown(0);
+
+        stickY =
+            PAD_StickY(0);
+
+        if (stickY >
+            GC_LAUNCHER_DEADZONE)
+        {
+            stickDirection = 1;
+        }
+        else if (stickY <
+                 -GC_LAUNCHER_DEADZONE)
+        {
+            stickDirection = -1;
+        }
+
+        if ((down & PAD_BUTTON_UP) ||
+            (stickDirection > 0 &&
+             !stickHeld))
+        {
+            --selected;
+
+            if (selected < 0)
+            {
+                selected =
+                    total - 1;
+            }
+
+            GC_DrawPwadLauncher(
+                renderer,
+                selected);
+        }
+
+        if ((down & PAD_BUTTON_DOWN) ||
+            (stickDirection < 0 &&
+             !stickHeld))
+        {
+            ++selected;
+
+            if (selected >= total)
+            {
+                selected = 0;
+            }
+
+            GC_DrawPwadLauncher(
+                renderer,
+                selected);
+        }
+
+        stickHeld =
+            stickDirection != 0;
+
+        if (down & PAD_BUTTON_B)
+        {
+            DC_DEBUG(
+                "DoomCube: PWAD selection cancelled\n");
+
+            return -2;
+        }
+
+        if (down &
+            (PAD_BUTTON_A |
+             PAD_BUTTON_START))
+        {
+            return selected;
+        }
+
+        SDL_Delay(16);
+    }
+
+    return -1;
+}
+
 static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
 {
     const char *text = "LOADING";
@@ -604,22 +1038,13 @@ static int GC_LauncherRun(
         stickHeld = stickDirection != 0;
 
         if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
-{
-    /*
-     * Present a loading indication before returning from the launcher.
-     * IWAD/game initialization happens after this function returns and
-     * can take long enough to otherwise look like a freeze.
-     */
-    GC_DrawLoadingOverlay(renderer);
+        {
+            DC_DEBUG(
+                "DoomCube: launcher selected %s\n",
+                gcGames[selected].name);
 
-    GC_MemoryCardSetGame(gcGames[selected].saveGameId);
-
-    DC_DEBUG(
-        "DoomCube: launcher selected %s\n",
-        gcGames[selected].name);
-
-    return selected;
-}
+            return selected;
+        }
 
         SDL_Delay(16);
     }
@@ -635,54 +1060,312 @@ static const gc_game_entry_t *GC_LauncherGetGame(int index)
     return &gcGames[index];
 }
 
-const char *GC_LauncherSelectGame(SDL_Renderer *renderer)
+bool GC_LauncherSelectGame(
+    SDL_Renderer *renderer,
+    gc_launch_selection_t *selection)
 {
     int availableGames;
     int selectedGame;
+    int selectedPwad;
     const gc_game_entry_t *game;
     SDL_Texture *logo;
 
+    if (selection == NULL)
+    {
+        DC_ERROR(
+            "DoomCube: NULL launcher selection output\n");
+
+        return false;
+    }
+
+    selection->iwadPath = NULL;
+    selection->pwadPath = NULL;
+
     availableGames =
         GC_LauncherScanGames();
+
+    GC_LauncherScanPwads();
+
+#ifdef DOOMCUBE_REGRESSION
+    /*
+     * Automated regression builds select their IWAD/PWAD at runtime.
+     *
+     * The test case itself comes from gc_regression.c, but the paths are
+     * still resolved against the launcher's normal scan results so the
+     * regression suite exercises the real availability checks.
+     */
+    {
+        const gc_regression_case_t *test;
+        int i;
+
+        test =
+            GC_RegressionGetCase();
+
+        if (test == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: REGRESSION has no selected case\n");
+
+            return false;
+        }
+
+        game = NULL;
+
+        for (i = 0; i < GC_MAX_GAMES; ++i)
+        {
+            if (gcGames[i].available
+             && strcmp(
+                    gcGames[i].iwadPath,
+                    test->iwadPath) == 0)
+            {
+                game = &gcGames[i];
+                break;
+            }
+        }
+
+        if (game == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: REGRESSION IWAD not found: %s\n",
+                test->iwadPath);
+
+            return false;
+        }
+
+        selection->iwadPath =
+            game->iwadPath;
+
+        selection->pwadPath = NULL;
+
+        if (test->pwadPath != NULL)
+        {
+            for (i = 0; i < gcAvailablePwadCount; ++i)
+            {
+                if (strcmp(
+                        gcPwads[i].path,
+                        test->pwadPath) == 0)
+                {
+                    selection->pwadPath =
+                        gcPwads[i].path;
+
+                    break;
+                }
+            }
+
+            if (selection->pwadPath == NULL)
+            {
+                DC_ERROR(
+                    "DoomCube: REGRESSION PWAD not found: %s\n",
+                    test->pwadPath);
+
+                return false;
+            }
+        }
+
+        GC_MemoryCardSetGame(
+            game->saveGameId);
+
+        DC_INFO(
+            "DoomCube: REGRESSION AUTOSELECT IWAD: %s\n",
+            selection->iwadPath);
+
+        if (selection->pwadPath != NULL)
+        {
+            DC_INFO(
+                "DoomCube: REGRESSION AUTOSELECT PWAD: %s\n",
+                selection->pwadPath);
+        }
+
+        return true;
+    }
+#endif
+
+#if defined(DOOMCUBE_TEST_IWAD_PATH)
+    /*
+     * Developer-only launcher bypass for automated regression tests.
+     *
+     * Resolve the requested paths against the launcher's normal scan
+     * results so tests exercise the same availability checks and game
+     * metadata as an interactive launch.
+     */
+    {
+        int i;
+
+        game = NULL;
+
+        for (i = 0; i < GC_MAX_GAMES; ++i)
+        {
+            if (gcGames[i].available
+             && strcmp(
+                    gcGames[i].iwadPath,
+                    DOOMCUBE_TEST_IWAD_PATH) == 0)
+            {
+                game = &gcGames[i];
+                break;
+            }
+        }
+
+        if (game == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: TEST AUTOSELECT IWAD not found: %s\n",
+                DOOMCUBE_TEST_IWAD_PATH);
+
+            return false;
+        }
+
+        selection->iwadPath = game->iwadPath;
+        selection->pwadPath = NULL;
+
+#if defined(DOOMCUBE_TEST_PWAD_PATH)
+        for (i = 0; i < gcAvailablePwadCount; ++i)
+        {
+            if (strcmp(
+                    gcPwads[i].path,
+                    DOOMCUBE_TEST_PWAD_PATH) == 0)
+            {
+                selection->pwadPath = gcPwads[i].path;
+                break;
+            }
+        }
+
+        if (selection->pwadPath == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: TEST AUTOSELECT PWAD not found: %s\n",
+                DOOMCUBE_TEST_PWAD_PATH);
+
+            return false;
+        }
+#endif
+
+        GC_MemoryCardSetGame(
+            game->saveGameId);
+
+        DC_INFO(
+            "DoomCube: TEST AUTOSELECT IWAD: %s\n",
+            selection->iwadPath);
+
+        if (selection->pwadPath != NULL)
+        {
+            DC_INFO(
+                "DoomCube: TEST AUTOSELECT PWAD: %s\n",
+                selection->pwadPath);
+        }
+
+        return true;
+    }
+#endif
 
     if (availableGames == 0)
     {
         DC_WARN(
             "DoomCube: no supported IWADs found on disc\n");
 
-        return NULL;
+        return false;
     }
 
-    logo = GC_LoadLauncherLogo(renderer);
+    logo =
+        GC_LoadLauncherLogo(renderer);
 
-    selectedGame =
-        GC_LauncherRun(renderer, logo);
+    for (;;)
+    {
+        selectedGame =
+            GC_LauncherRun(
+                renderer,
+                logo);
+
+        if (selectedGame < 0)
+        {
+            break;
+        }
+
+        game =
+            GC_LauncherGetGame(
+                selectedGame);
+
+        if (!game)
+        {
+            DC_WARN(
+                "DoomCube: invalid launcher selection\n");
+
+            break;
+        }
+
+        selectedPwad = 0;
+
+        /*
+         * DOOM Shareware explicitly rejects -file.
+         *
+         * With no PWADs present there is no reason to show an
+         * add-on screen either.
+         */
+        if (game->saveGameId !=
+                GC_SAVEGAME_DOOM1 &&
+            gcAvailablePwadCount > 0)
+        {
+            selectedPwad =
+                GC_LauncherRunPwad(
+                    renderer);
+
+            /*
+             * B returns to IWAD selection.
+             */
+            if (selectedPwad == -2)
+            {
+                continue;
+            }
+
+            if (selectedPwad < 0)
+            {
+                break;
+            }
+        }
+
+        selection->iwadPath =
+            game->iwadPath;
+
+        if (selectedPwad > 0)
+        {
+            selection->pwadPath =
+                gcPwads[
+                    selectedPwad - 1
+                ].path;
+        }
+        else
+        {
+            selection->pwadPath = NULL;
+        }
+
+        GC_DrawLoadingOverlay(renderer);
+
+        GC_MemoryCardSetGame(
+            game->saveGameId);
+
+        DC_INFO(
+            "DoomCube: launcher selected %s (%s)\n",
+            game->name,
+            game->iwadPath);
+
+        if (selection->pwadPath != NULL)
+        {
+            DC_INFO(
+                "DoomCube: launcher add-on %s\n",
+                selection->pwadPath);
+        }
+
+        if (logo != NULL)
+        {
+            SDL_DestroyTexture(logo);
+        }
+
+        return true;
+    }
 
     if (logo != NULL)
     {
         SDL_DestroyTexture(logo);
     }
 
-    if (selectedGame < 0)
-    {
-        return NULL;
-    }
-
-    game =
-        GC_LauncherGetGame(selectedGame);
-
-    if (!game)
-    {
-        DC_WARN(
-            "DoomCube: invalid launcher selection\n");
-
-        return NULL;
-    }
-
-    DC_INFO(
-        "DoomCube: launcher selected %s (%s)\n",
-        game->name,
-        game->iwadPath);
-
-    return game->iwadPath;
+    return false;
 }

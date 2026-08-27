@@ -286,6 +286,8 @@ enum
     ep2,
     ep3,
     ep4,
+    ep5,
+    ep6,
     ep_end
 } episodes_e;
 
@@ -294,7 +296,14 @@ menuitem_t EpisodeMenu[]=
     {1,"M_EPI1", M_Episode,'k'},
     {1,"M_EPI2", M_Episode,'t'},
     {1,"M_EPI3", M_Episode,'i'},
-    {1,"M_EPI4", M_Episode,'t'}
+    {1,"M_EPI4", M_Episode,'t'},
+    {1,"",       M_Episode,'5'},
+    {1,"",       M_Episode,'6'}
+};
+
+static int episodeForMenuItem[ep_end] =
+{
+    1, 2, 3, 4, 5, 6
 };
 
 menu_t  EpiDef =
@@ -1073,18 +1082,51 @@ void M_DrawNewGame(void)
 
 void M_NewGame(int choice)
 {
+    int episodeCount;
+
     if (netgame && !demoplayback)
     {
 	M_StartMessage(DEH_String(NEWGAME),NULL,false);
 	return;
     }
-	
+
     // Chex Quest disabled the episode select screen, as did Doom II.
 
     if (gamemode == commercial || gameversion == exe_chex)
+    {
 	M_SetupNextMenu(&NewDef);
+    }
     else
+    {
+        // Doom versions before Ultimate Doom only exposed E1-E3.
+        // Ultimate Doom exposes E1-E4.
+
+        episodeCount = gameversion < exe_ultimate ? 3 : 4;
+
+        episodeForMenuItem[0] = 1;
+        episodeForMenuItem[1] = 2;
+        episodeForMenuItem[2] = 3;
+        episodeForMenuItem[3] = 4;
+
+        // SIGIL and SIGIL II use Episodes 5 and 6 respectively.
+        // Append only episodes that actually exist in the loaded WADs.
+
+        if (gamemode == retail)
+        {
+            if (W_CheckNumForName("E5M1") >= 0)
+            {
+                episodeForMenuItem[episodeCount++] = 5;
+            }
+
+            if (W_CheckNumForName("E6M1") >= 0)
+            {
+                episodeForMenuItem[episodeCount++] = 6;
+            }
+        }
+
+        EpiDef.numitems = episodeCount;
 	M_SetupNextMenu(&EpiDef);
+    }
 }
 
 
@@ -1095,7 +1137,27 @@ int     epi;
 
 void M_DrawEpisode(void)
 {
+    int i;
+
     V_DrawPatchDirect(54, 38, W_CacheLumpName(DEH_String("M_EPISOD"), PU_CACHE));
+
+    for (i = 4; i < EpiDef.numitems; ++i)
+    {
+        if (episodeForMenuItem[i] == 5)
+        {
+            M_WriteText(
+                EpiDef.x,
+                EpiDef.y + LINEHEIGHT * i,
+                "EPISODE 5");
+        }
+        else if (episodeForMenuItem[i] == 6)
+        {
+            M_WriteText(
+                EpiDef.x,
+                EpiDef.y + LINEHEIGHT * i,
+                "EPISODE 6");
+        }
+    }
 }
 
 void M_VerifyNightmare(int key)
@@ -1138,7 +1200,7 @@ void M_Episode(int choice)
       choice = 0;
     }
 	 
-    epi = choice;
+    epi = episodeForMenuItem[choice] - 1;
     M_SetupNextMenu(&NewDef);
 }
 

@@ -26,7 +26,10 @@
 
 
 // Visplane related.
-extern  short*		lastopening;
+//
+// Opening storage is owned by r_plane.c.  Callers must allocate through
+// R_AllocOpening() so capacity is checked before the buffer is written.
+short *R_AllocOpening(int count);
 
 
 typedef void (*planefunction_t) (int top, int bottom);

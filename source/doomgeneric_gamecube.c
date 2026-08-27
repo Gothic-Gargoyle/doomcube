@@ -9,6 +9,7 @@
 #include "m_controls.h"
 
 #include "gc_launcher.h"
+#include "gc_regression.h"
 #include "gc_memcard.h"
 #include "m_menu.h"
 #include "gc_controls.h"
@@ -926,9 +927,20 @@ void DG_RumbleDamage(int damage)
 /* Main                                                                      */
 /* ------------------------------------------------------------------------- */
 
+#define DOOMCUBE_STRINGIFY_INNER(x) #x
+#define DOOMCUBE_STRINGIFY(x) DOOMCUBE_STRINGIFY_INNER(x)
+
 int main(int argc, char **argv)
 {
-    const char *selectedIwad;
+    gc_launch_selection_t selection;
+    char *doomArgv[9] = { NULL };
+    int doomArgc;
+
+#ifdef DOOMCUBE_REGRESSION
+    const gc_regression_case_t *regressionCase;
+    char regressionEpisode[12];
+    char regressionMap[12];
+#endif
 
     (void)argc;
     (void)argv;
@@ -938,29 +950,112 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    selectedIwad =
-        GC_LauncherSelectGame(renderer);
-
-    if (!selectedIwad)
+#ifdef DOOMCUBE_REGRESSION
+    if (!GC_RegressionInit())
     {
         return 1;
     }
- 
-    char *doomArgv[] =
+
+    regressionCase =
+        GC_RegressionGetCase();
+
+    if (regressionCase == NULL)
     {
-        "doomcube",
-        "-iwad",
-        (char *)selectedIwad
-    };
+        return 1;
+    }
+#endif
+
+    if (!GC_LauncherSelectGame(
+            renderer,
+            &selection))
+    {
+        return 1;
+    }
+
+    doomArgv[0] =
+        "doomcube";
+
+    doomArgv[1] =
+        "-iwad";
+
+    doomArgv[2] =
+        (char *)selection.iwadPath;
+
+    doomArgc = 3;
+
+    if (selection.pwadPath != NULL)
+    {
+        doomArgv[3] =
+            "-merge";
+
+        doomArgv[4] =
+            (char *)selection.pwadPath;
+
+        doomArgc = 5;
+
+        DC_INFO(
+            "DoomCube: starting Doom engine with %s + %s\n",
+            selection.iwadPath,
+            selection.pwadPath);
+    }
+    else
+    {
+        DC_INFO(
+            "DoomCube: starting Doom engine with %s\n",
+            selection.iwadPath);
+    }
+
+#ifdef DOOMCUBE_REGRESSION
+    if (regressionCase->episode > 0 &&
+        regressionCase->map > 0)
+    {
+        snprintf(
+            regressionEpisode,
+            sizeof(regressionEpisode),
+            "%d",
+            regressionCase->episode);
+
+        snprintf(
+            regressionMap,
+            sizeof(regressionMap),
+            "%d",
+            regressionCase->map);
+
+        doomArgv[doomArgc++] =
+            "-warp";
+
+        doomArgv[doomArgc++] =
+            regressionEpisode;
+
+        doomArgv[doomArgc++] =
+            regressionMap;
+
+        DC_INFO(
+            "DoomCube: REGRESSION WARP: E%sM%s\n",
+            regressionEpisode,
+            regressionMap);
+    }
+#elif defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+      defined(DOOMCUBE_TEST_WARP_MAP)
+    doomArgv[doomArgc++] =
+        "-warp";
+
+    doomArgv[doomArgc++] =
+        DOOMCUBE_STRINGIFY(DOOMCUBE_TEST_WARP_EPISODE);
+
+    doomArgv[doomArgc++] =
+        DOOMCUBE_STRINGIFY(DOOMCUBE_TEST_WARP_MAP);
 
     DC_INFO(
-        "DoomCube: starting Doom engine with %s\n",
-        selectedIwad);
+        "DoomCube: TEST WARP enabled: E%sM%s\n",
+        doomArgv[doomArgc - 2],
+        doomArgv[doomArgc - 1]);
+#endif
 
-        
+    doomArgv[doomArgc] = NULL;
 
     doomgeneric_Create(
-        3,
+        doomArgc,
         doomArgv);
 
     key_prevweapon = GC_KEY_PREVWEAPON;
@@ -988,6 +1083,9 @@ int main(int argc, char **argv)
     {
         doomgeneric_Tick();
     }
+
+    DC_ERROR(
+        "DoomCube: >>> SYS_MainLoop RETURNED FALSE <<<\n");
 
     /*
      * Explicitly stop the controller motor when leaving the main loop.

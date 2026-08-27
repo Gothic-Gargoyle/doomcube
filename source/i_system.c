@@ -21,6 +21,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef GEKKO
+#include "gc_debug.h"
+#endif
+
 #include <stdarg.h>
 
 #ifdef _WIN32
@@ -391,6 +395,10 @@ void I_Error (char *error, ...)
     memset(msgbuf, 0, sizeof(msgbuf));
     M_vsnprintf(msgbuf, sizeof(msgbuf), error, argptr);
     va_end(argptr);
+
+#ifdef GEKKO
+    DC_ERROR("DoomCube: I_ERROR: %s\n", msgbuf);
+#endif
 
     // Shutdown. Here might be other errors.
 

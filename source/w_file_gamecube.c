@@ -95,6 +95,9 @@ static size_t W_GameCube_DirectRead(
     void *buffer,
     size_t buffer_len)
 {
+    unsigned char *output;
+    size_t total_read;
+
     if (!W_GameCube_Seek(
             gamecube_wad,
             offset))
@@ -102,11 +105,55 @@ static size_t W_GameCube_DirectRead(
         return 0;
     }
 
-    return fread(
-        buffer,
-        1,
-        buffer_len,
-        gamecube_wad->fstream);
+    output =
+        (unsigned char *)buffer;
+
+    total_read =
+        0;
+
+    /*
+     * Keep individual stdio reads bounded.
+     *
+     * The dvd: devoptab backend can service large files, but newlib stdio
+     * may split/refill reads internally.  A single very large fread() has
+     * been observed returning only a partial result on DVD-backed WADs.
+     *
+     * Read sequentially in the same 64 KiB units used by the WAD cache and
+     * tolerate short positive reads by continuing until the request is
+     * complete or the stream genuinely stops making progress.
+     */
+    while (total_read < buffer_len)
+    {
+        size_t wanted;
+        size_t bytes_read;
+
+        wanted =
+            buffer_len - total_read;
+
+        if (wanted >
+            GAMECUBE_WAD_CACHE_BLOCK_SIZE)
+        {
+            wanted =
+                GAMECUBE_WAD_CACHE_BLOCK_SIZE;
+        }
+
+        bytes_read =
+            fread(
+                output + total_read,
+                1,
+                wanted,
+                gamecube_wad->fstream);
+
+        if (bytes_read == 0)
+        {
+            break;
+        }
+
+        total_read +=
+            bytes_read;
+    }
+
+    return total_read;
 }
 
 

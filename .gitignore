@@ -19,6 +19,7 @@ scratch
 
 # User-supplied Doom and Timidity data
 data/wad/*
+data/pwad/*
 data/timidity/*
 
 # Keep the directory structure for the following directories, but ignore their contents
@@ -37,3 +38,4 @@ build-deps
 # Generated release bundles
 /dist/
 tools/release/__pycache__/build_bundle.cpython-314.pyc
+tools/native-gcm/__pycache__/mkdoomcube.cpython-314.pyc
