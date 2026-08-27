@@ -54,6 +54,37 @@
 
 void M_MakeDirectory(char *path)
 {
+#ifdef GEKKO
+    /*
+     * libogc2/newlib routes mkdir() through devoptab.  Paths without an
+     * explicit device prefix use defaultDevice; DoomCube has no default
+     * devoptab device, so defaultDevice is -1 and mkdir() would index
+     * devoptab_list[-1].
+     *
+     * Doom's config/save directory setup uses relative paths such as "."
+     * and "./.savegame/".  Persistence on GameCube is handled separately,
+     * so these directories do not need to be created through devoptab.
+     */
+    if (path == NULL || path[0] == '\0')
+    {
+        return;
+    }
+
+    {
+        const char *p = path;
+
+        while (*p != '\0' && *p != ':')
+        {
+            ++p;
+        }
+
+        if (*p != ':')
+        {
+            return;
+        }
+    }
+#endif
+
 #ifdef _WIN32
     mkdir(path);
 #else
