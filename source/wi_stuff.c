@@ -1687,13 +1687,20 @@ static void WI_loadUnloadData(load_callback_t callback)
     {
         M_StringCopy(name, DEH_String("INTERPIC"), sizeof(name));
     }
-    else if (gamemode == retail && wbs->epsd == 3)
-    {
-        M_StringCopy(name, DEH_String("INTERPIC"), sizeof(name));
-    }
     else
     {
-	DEH_snprintf(name, sizeof(name), "WIMAP%d", wbs->epsd);
+        DEH_snprintf(name, sizeof(name), "WIMAP%d", wbs->epsd);
+
+        /*
+         * Ultimate Doom has no WIMAP3, and extra episodes such as
+         * SIGIL/SIGIL II normally do not provide WIMAP4/WIMAP5 either.
+         * Use a PWAD-supplied WIMAP if present; otherwise fall back to
+         * INTERPIC.
+         */
+        if (W_CheckNumForName(name) < 0)
+        {
+            M_StringCopy(name, DEH_String("INTERPIC"), sizeof(name));
+        }
     }
 
     // Draw backdrop and save to a temporary buffer

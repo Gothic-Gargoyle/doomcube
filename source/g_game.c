@@ -963,6 +963,7 @@ void G_Ticker (void)
 	    break; 
 	} 
     }
+
     
     // get commands, check consistancy,
     // and build new consistancy check
@@ -1507,12 +1508,19 @@ void G_DoCompleted (void)
 	      case 4:
 		wminfo.next = 2;
 		break;
+              case 5:
+		wminfo.next = 6;   // SIGIL: E5M9 -> E5M7
+		break;
+              case 6:
+		wminfo.next = 3;   // SIGIL II: E6M9 -> E6M4
+		break;
 	    }                
 	} 
 	else 
 	    wminfo.next = gamemap;          // go to next level 
     }
 		 
+
     wminfo.maxkills = totalkills; 
     wminfo.maxitems = totalitems; 
     wminfo.maxsecret = totalsecret; 

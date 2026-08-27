@@ -231,9 +231,22 @@ void S_Start(void)
         {
             mnum = mus_e1m1 + (gameepisode-1)*9 + gamemap-1;
         }
-        else
+        else if (gameepisode == 4)
         {
             mnum = spmus[gamemap-1];
+        }
+        else if (gameepisode == 5)
+        {
+            mnum = mus_e5m1 + gamemap - 1;
+        }
+        else if (gameepisode == 6)
+        {
+            mnum = mus_e6m1 + gamemap - 1;
+        }
+        else
+        {
+            I_Error("S_Start: invalid episode %d", gameepisode);
+            return;
         }
     }        
 

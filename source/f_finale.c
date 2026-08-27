@@ -29,6 +29,7 @@
 #include "w_wad.h"
 #include "s_sound.h"
 
+
 // Data.
 #include "d_main.h"
 #include "dstrings.h"
@@ -123,6 +124,25 @@ void F_StartFinale (void)
         S_ChangeMusic(mus_read_m, true);
     }
 
+    /*
+     * SIGIL and SIGIL II use episodes 5 and 6 respectively.
+     *
+     * Neither PWAD supplies replacement finale text through DEHACKED;
+     * instead both provide a full-screen SIGILEND patch.  Vanilla Doom's
+     * textscreens[] only covers episodes 1-4, so allowing E5/E6 to fall
+     * through would leave finaletext and finaleflat NULL.
+     *
+     * There is no text stage to display for these episodes: enter the
+     * supplied ending art directly.
+     */
+    if (logical_gamemission == doom
+     && (gameepisode == 5 || gameepisode == 6))
+    {
+        finalestage = F_STAGE_ARTSCREEN;
+        finalecount = 0;
+        return;
+    }
+
     // Find the right screen and set the text and background
 
     for (i=0; i<arrlen(textscreens); ++i)
@@ -193,6 +213,7 @@ void F_Ticker (void)
     
     // advance animation
     finalecount++;
+
 	
     if (finalestage == F_STAGE_CAST)
     {
@@ -685,6 +706,10 @@ static void F_ArtScreenDrawer(void)
                 break;
             case 4:
                 lumpname = "ENDPIC";
+                break;
+            case 5:
+            case 6:
+                lumpname = "SIGILEND";
                 break;
             default:
                 return;
