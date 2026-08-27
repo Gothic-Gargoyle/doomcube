@@ -57,20 +57,22 @@ PWADs/  - optional PWADs
 DEH/    - optional DeHackEd patches
 ```
 
-Then build the GameCube image:
+Then build the GameCube image.
 
-### Linux
+On Linux:
 
 ```bash
 ./build.sh
 ```
-### Windows
+
+On Windows:
+
 ```bat
 build.bat
 ```
 
-If no supported IWAD is present, `build.py`/`build.bat` can optionally download and verify
-DOOM Shareware v1.9.
+If no supported IWAD is present, the builder can optionally download and
+verify DOOM Shareware v1.9.
 
 A successful build produces:
 
