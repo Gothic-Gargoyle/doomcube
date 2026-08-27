@@ -972,6 +972,17 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /*
+     * Bind Memory Card saves to the complete selected launch.
+     *
+     * The card itself is mounted during platform initialization, but
+     * the IWAD/PWAD identity is not known until the launcher returns.
+     */
+    GC_MemoryCardSetLaunchIdentity(
+        selection.iwadPath,
+        selection.pwadPath
+    );
+
     doomArgv[0] =
         "doomcube";
 

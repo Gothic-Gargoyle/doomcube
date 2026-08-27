@@ -975,6 +975,8 @@ void G_Ticker (void)
      */
     {
         const gc_regression_case_t *test;
+        static boolean saveProbeTriggered;
+        static boolean loadProbeTriggered;
 
         test =
             GC_RegressionGetCase();
@@ -987,6 +989,52 @@ void G_Ticker (void)
          && leveltime >= 2 * TICRATE)
         {
             if (test->action ==
+                GC_REGRESSION_ACTION_SAVE_PROBE)
+            {
+                if (!saveProbeTriggered)
+                {
+                    saveProbeTriggered = true;
+
+                    DC_INFO(
+                        "DoomCube: SAVE PROBE TRIGGERED: %s\n",
+                        test->name
+                    );
+
+                    /*
+                     * Measurement only: allow the serializer to run
+                     * beyond Vanilla Doom's historical 180224-byte
+                     * save limit so the probe can discover the real
+                     * high-water mark.
+                     */
+                    vanilla_savegame_limit = 0;
+
+                    G_SaveGame(
+                        0,
+                        "SAVE PROBE"
+                    );
+                }
+            }
+            else if (test->action ==
+                GC_REGRESSION_ACTION_LOAD_PROBE)
+            {
+                if (!loadProbeTriggered)
+                {
+                    char *loadFile;
+
+                    loadProbeTriggered = true;
+                    loadFile = P_SaveGameFile(0);
+
+                    DC_INFO(
+                        "DoomCube: LOAD PROBE TRIGGERED: "
+                        "%s file=%s\n",
+                        test->name,
+                        loadFile
+                    );
+
+                    G_LoadGame(loadFile);
+                }
+            }
+            else if (test->action ==
                 GC_REGRESSION_ACTION_SECRET_EXIT)
             {
                 G_SecretExitLevel();
@@ -1732,7 +1780,29 @@ void G_DoLoadGame (void)
     	R_ExecuteSetViewSize ();
     
     // draw the pattern into the back screen
-    R_FillBackScreen (); 
+    R_FillBackScreen ();
+
+#ifdef DOOMCUBE_REGRESSION
+    {
+        const gc_regression_case_t *test;
+
+        test = GC_RegressionGetCase();
+
+        if (test != NULL
+         && test->action ==
+            GC_REGRESSION_ACTION_LOAD_PROBE)
+        {
+            DC_INFO(
+                "DoomCube: LOAD PROBE PASS: "
+                "%s episode=%d map=%d leveltime=%d\n",
+                test->name,
+                gameepisode,
+                gamemap,
+                leveltime
+            );
+        }
+    }
+#endif
 } 
  
 

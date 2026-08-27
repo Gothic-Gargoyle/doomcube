@@ -10,7 +10,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef DOOMCUBE_REGRESSION
+#include <zlib.h>
+#endif
+
+#ifdef DOOMCUBE_REGRESSION
+#define GC_SAVE_BUFFER_SIZE 0x100000u
+#else
 #define GC_SAVE_BUFFER_SIZE 0x2c000u
+#endif
 
 typedef struct
 {
@@ -39,6 +47,69 @@ static unsigned char tempSaveData[GC_SAVE_BUFFER_SIZE]
 
 static size_t tempSaveSize;
 static bool tempSaveValid;
+
+
+#ifdef DOOMCUBE_REGRESSION
+
+static void GC_SaveLogCompressionProbe(
+    const unsigned char *data,
+    size_t size)
+{
+    unsigned char *compressed;
+    uLong sourceSize;
+    uLongf compressedSize;
+    int result;
+
+    if (!data || size == 0)
+        return;
+
+    sourceSize =
+        (uLong)size;
+
+    compressedSize =
+        compressBound(sourceSize);
+
+    compressed =
+        malloc((size_t)compressedSize);
+
+    if (!compressed)
+    {
+        DC_WARN(
+            "DoomCube: SAVE PROBE DEFLATE allocation failed\n"
+        );
+
+        return;
+    }
+
+    result =
+        compress2(
+            compressed,
+            &compressedSize,
+            data,
+            sourceSize,
+            Z_BEST_COMPRESSION
+        );
+
+    if (result == Z_OK)
+    {
+        DC_INFO(
+            "DoomCube: SAVE PROBE DEFLATE: raw=%u compressed=%u\n",
+            (unsigned int)size,
+            (unsigned int)compressedSize
+        );
+    }
+    else
+    {
+        DC_WARN(
+            "DoomCube: SAVE PROBE DEFLATE failed: %d\n",
+            result
+        );
+    }
+
+    free(compressed);
+}
+
+#endif
 
 
 /* ------------------------------------------------------------------------- */
@@ -444,6 +515,13 @@ else
                 "DoomCube: temporary Doom save complete (%u bytes)\n",
                 (unsigned int)tempSaveSize
             );
+
+#ifdef DOOMCUBE_REGRESSION
+            GC_SaveLogCompressionProbe(
+                tempSaveData,
+                tempSaveSize
+            );
+#endif
         }
     }
 

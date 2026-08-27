@@ -88,6 +88,7 @@ run_case()
     flatpak run \
         --filesystem="$ROOT:ro" \
         "$DOLPHIN_APP_ID" \
+        --audio_emulation=LLE \
         --batch \
         --config=Dolphin.Core.EnableCustomRTC=True \
         --config=Dolphin.Core.CustomRTCValue="$rtc" \

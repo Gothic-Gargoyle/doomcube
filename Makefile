@@ -275,6 +275,8 @@ CFILES := \
 	gc_regression.c \
 	gc_memcard.c \
 	gc_save_stdio.c \
+	gc_save_v3.c \
+	gc_save_v3_card.c \
 	doomgeneric.c \
 	doomgeneric_gamecube.c
 
@@ -490,6 +492,10 @@ test:
 .PHONY: regression
 regression:
 	@./tools/regression.sh
+
+.PHONY: save-probe
+save-probe:
+	@./tools/save-size-probe.sh
 
 #---------------------------------------------------------------------------------
 # Inner build
