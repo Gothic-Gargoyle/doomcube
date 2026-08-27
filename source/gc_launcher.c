@@ -1086,6 +1086,82 @@ bool GC_LauncherSelectGame(
     GC_LauncherScanPwads();
 
 
+#if defined(DOOMCUBE_TEST_IWAD_PATH)
+    /*
+     * Developer-only launcher bypass for automated regression tests.
+     *
+     * Resolve the requested paths against the launcher's normal scan
+     * results so tests exercise the same availability checks and game
+     * metadata as an interactive launch.
+     */
+    {
+        int i;
+
+        game = NULL;
+
+        for (i = 0; i < GC_MAX_GAMES; ++i)
+        {
+            if (gcGames[i].available
+             && strcmp(
+                    gcGames[i].iwadPath,
+                    DOOMCUBE_TEST_IWAD_PATH) == 0)
+            {
+                game = &gcGames[i];
+                break;
+            }
+        }
+
+        if (game == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: TEST AUTOSELECT IWAD not found: %s\n",
+                DOOMCUBE_TEST_IWAD_PATH);
+
+            return false;
+        }
+
+        selection->iwadPath = game->iwadPath;
+        selection->pwadPath = NULL;
+
+#if defined(DOOMCUBE_TEST_PWAD_PATH)
+        for (i = 0; i < gcAvailablePwadCount; ++i)
+        {
+            if (strcmp(
+                    gcPwads[i].path,
+                    DOOMCUBE_TEST_PWAD_PATH) == 0)
+            {
+                selection->pwadPath = gcPwads[i].path;
+                break;
+            }
+        }
+
+        if (selection->pwadPath == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: TEST AUTOSELECT PWAD not found: %s\n",
+                DOOMCUBE_TEST_PWAD_PATH);
+
+            return false;
+        }
+#endif
+
+        GC_MemoryCardSetGame(
+            game->saveGameId);
+
+        DC_INFO(
+            "DoomCube: TEST AUTOSELECT IWAD: %s\n",
+            selection->iwadPath);
+
+        if (selection->pwadPath != NULL)
+        {
+            DC_INFO(
+                "DoomCube: TEST AUTOSELECT PWAD: %s\n",
+                selection->pwadPath);
+        }
+
+        return true;
+    }
+#endif
 
     if (availableGames == 0)
     {

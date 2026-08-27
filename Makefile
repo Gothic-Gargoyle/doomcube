@@ -88,6 +88,50 @@ ifeq ($(TRACE),1)
 CFLAGS += -DDOOMCUBE_TRACE
 endif
 
+# Optional developer test warp.
+#
+# Example:
+#   make test WARP_EPISODE=3 WARP_MAP=7
+#
+# Both values must be supplied together. Normal developer/release builds
+# are completely unaffected when they are omitted.
+ifneq ($(strip $(WARP_EPISODE)$(WARP_MAP)),)
+ifeq ($(strip $(WARP_EPISODE)),)
+$(error WARP_EPISODE and WARP_MAP must be specified together)
+endif
+ifeq ($(strip $(WARP_MAP)),)
+$(error WARP_EPISODE and WARP_MAP must be specified together)
+endif
+
+CFLAGS += \
+    -DDOOMCUBE_TEST_WARP_EPISODE=$(WARP_EPISODE) \
+    -DDOOMCUBE_TEST_WARP_MAP=$(WARP_MAP)
+endif
+
+# Optional developer test launcher autoselection.
+#
+# Example:
+#   make test \
+#       TEST_IWAD=doom.wad \
+#       TEST_PWAD=SIGIL_V1_23.wad \
+#       WARP_EPISODE=5 \
+#       WARP_MAP=6
+#
+# TEST_PWAD is optional, but requires TEST_IWAD.
+ifneq ($(strip $(TEST_IWAD)),)
+CFLAGS += \
+    -DDOOMCUBE_TEST_IWAD_PATH=\"dvd:/data/wad/$(TEST_IWAD)\"
+
+ifneq ($(strip $(TEST_PWAD)),)
+CFLAGS += \
+    -DDOOMCUBE_TEST_PWAD_PATH=\"dvd:/data/pwad/$(TEST_PWAD)\"
+endif
+else
+ifneq ($(strip $(TEST_PWAD)),)
+$(error TEST_PWAD requires TEST_IWAD)
+endif
+endif
+
 CXXFLAGS := $(CFLAGS)
 
 LDFLAGS := \

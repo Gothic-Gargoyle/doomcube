@@ -72,6 +72,7 @@
 
 #include "g_game.h"
 #include "gc_controls.h"
+#include "gc_debug.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -964,6 +965,35 @@ void G_Ticker (void)
 	} 
     }
 
+#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+    defined(DOOMCUBE_TEST_WARP_MAP)
+    /*
+     * Developer-only progression test.
+     *
+     * When make test is given a warp, automatically take the normal
+     * level exit after roughly two seconds.  This exercises the real
+     * completion/intermission/world-done path without requiring the
+     * test map to be beaten manually.
+     *
+     * The episode/map check means the destination level will not
+     * auto-exit as well.
+     */
+    if (gamestate == GS_LEVEL
+     && gameepisode == DOOMCUBE_TEST_WARP_EPISODE
+     && gamemap == DOOMCUBE_TEST_WARP_MAP
+     && leveltime >= 2 * TICRATE)
+    {
+        if ((gameepisode == 5 && gamemap == 6)
+         || (gameepisode == 6 && gamemap == 3))
+        {
+            G_SecretExitLevel();
+        }
+        else
+        {
+            G_ExitLevel();
+        }
+    }
+#endif
     
     // get commands, check consistancy,
     // and build new consistancy check
@@ -1521,6 +1551,16 @@ void G_DoCompleted (void)
     }
 		 
 
+#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+    defined(DOOMCUBE_TEST_WARP_MAP)
+    DC_INFO(
+        "DoomCube: TEST PROGRESSION: E%dM%d -> E%dM%d%s\n",
+        gameepisode,
+        gamemap,
+        gameepisode,
+        wminfo.next + 1,
+        secretexit ? " (secret exit)" : "");
+#endif
     wminfo.maxkills = totalkills; 
     wminfo.maxitems = totalitems; 
     wminfo.maxsecret = totalsecret; 

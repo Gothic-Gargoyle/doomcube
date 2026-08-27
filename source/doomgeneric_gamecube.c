@@ -926,6 +926,9 @@ void DG_RumbleDamage(int damage)
 /* Main                                                                      */
 /* ------------------------------------------------------------------------- */
 
+#define DOOMCUBE_STRINGIFY_INNER(x) #x
+#define DOOMCUBE_STRINGIFY(x) DOOMCUBE_STRINGIFY_INNER(x)
+
 int main(int argc, char **argv)
 {
     gc_launch_selection_t selection;
@@ -982,6 +985,22 @@ int main(int argc, char **argv)
             selection.iwadPath);
     }
 
+#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+    defined(DOOMCUBE_TEST_WARP_MAP)
+    doomArgv[doomArgc++] =
+        "-warp";
+
+    doomArgv[doomArgc++] =
+        DOOMCUBE_STRINGIFY(DOOMCUBE_TEST_WARP_EPISODE);
+
+    doomArgv[doomArgc++] =
+        DOOMCUBE_STRINGIFY(DOOMCUBE_TEST_WARP_MAP);
+
+    DC_INFO(
+        "DoomCube: TEST WARP enabled: E%sM%s\n",
+        doomArgv[doomArgc - 2],
+        doomArgv[doomArgc - 1]);
+#endif
 
     doomArgv[doomArgc] = NULL;
 
@@ -1015,6 +1034,8 @@ int main(int argc, char **argv)
         doomgeneric_Tick();
     }
 
+    DC_ERROR(
+        "DoomCube: >>> SYS_MainLoop RETURNED FALSE <<<\n");
 
     /*
      * Explicitly stop the controller motor when leaving the main loop.
