@@ -73,6 +73,7 @@
 #include "g_game.h"
 #include "gc_controls.h"
 #include "gc_debug.h"
+#include "gc_regression.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -965,8 +966,39 @@ void G_Ticker (void)
 	} 
     }
 
-#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
-    defined(DOOMCUBE_TEST_WARP_MAP)
+#ifdef DOOMCUBE_REGRESSION
+    /*
+     * Automated regression progression test.
+     *
+     * Runtime case selection means every test executes from the exact
+     * same DOL and ISO; only Dolphin's emulated RTC differs.
+     */
+    {
+        const gc_regression_case_t *test;
+
+        test =
+            GC_RegressionGetCase();
+
+        if (test != NULL
+         && test->action != GC_REGRESSION_ACTION_NONE
+         && gamestate == GS_LEVEL
+         && gameepisode == test->episode
+         && gamemap == test->map
+         && leveltime >= 2 * TICRATE)
+        {
+            if (test->action ==
+                GC_REGRESSION_ACTION_SECRET_EXIT)
+            {
+                G_SecretExitLevel();
+            }
+            else
+            {
+                G_ExitLevel();
+            }
+        }
+    }
+#elif defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+      defined(DOOMCUBE_TEST_WARP_MAP)
     /*
      * Developer-only progression test.
      *
@@ -1551,8 +1583,9 @@ void G_DoCompleted (void)
     }
 		 
 
-#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
-    defined(DOOMCUBE_TEST_WARP_MAP)
+#if defined(DOOMCUBE_REGRESSION) || \
+    (defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+     defined(DOOMCUBE_TEST_WARP_MAP))
     DC_INFO(
         "DoomCube: TEST PROGRESSION: E%dM%d -> E%dM%d%s\n",
         gameepisode,

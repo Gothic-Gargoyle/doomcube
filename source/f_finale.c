@@ -29,6 +29,9 @@
 #include "w_wad.h"
 #include "s_sound.h"
 
+#ifdef DOOMCUBE_REGRESSION
+#include "gc_debug.h"
+#endif
 
 // Data.
 #include "d_main.h"
@@ -214,6 +217,23 @@ void F_Ticker (void)
     // advance animation
     finalecount++;
 
+#ifdef DOOMCUBE_REGRESSION
+    /*
+     * Do not call the finale test successful merely because
+     * F_StartFinale() returned.  By this point the normal game loop has
+     * been ticking and drawing GS_FINALE repeatedly.
+     */
+    if ((gameepisode == 5 || gameepisode == 6)
+     && gamemap == 8
+     && finalestage == F_STAGE_ARTSCREEN
+     && finalecount == 2 * TICRATE)
+    {
+        DC_INFO(
+            "DoomCube: TEST FINALE SURVIVED: E%dM%d\n",
+            gameepisode,
+            gamemap);
+    }
+#endif
 	
     if (finalestage == F_STAGE_CAST)
     {

@@ -6,6 +6,7 @@
 
 #include "gc_launcher.h"
 #include "gc_memcard.h"
+#include "gc_regression.h"
 
 #include <ctype.h>
 #include <stddef.h>
@@ -1085,6 +1086,99 @@ bool GC_LauncherSelectGame(
 
     GC_LauncherScanPwads();
 
+#ifdef DOOMCUBE_REGRESSION
+    /*
+     * Automated regression builds select their IWAD/PWAD at runtime.
+     *
+     * The test case itself comes from gc_regression.c, but the paths are
+     * still resolved against the launcher's normal scan results so the
+     * regression suite exercises the real availability checks.
+     */
+    {
+        const gc_regression_case_t *test;
+        int i;
+
+        test =
+            GC_RegressionGetCase();
+
+        if (test == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: REGRESSION has no selected case\n");
+
+            return false;
+        }
+
+        game = NULL;
+
+        for (i = 0; i < GC_MAX_GAMES; ++i)
+        {
+            if (gcGames[i].available
+             && strcmp(
+                    gcGames[i].iwadPath,
+                    test->iwadPath) == 0)
+            {
+                game = &gcGames[i];
+                break;
+            }
+        }
+
+        if (game == NULL)
+        {
+            DC_ERROR(
+                "DoomCube: REGRESSION IWAD not found: %s\n",
+                test->iwadPath);
+
+            return false;
+        }
+
+        selection->iwadPath =
+            game->iwadPath;
+
+        selection->pwadPath = NULL;
+
+        if (test->pwadPath != NULL)
+        {
+            for (i = 0; i < gcAvailablePwadCount; ++i)
+            {
+                if (strcmp(
+                        gcPwads[i].path,
+                        test->pwadPath) == 0)
+                {
+                    selection->pwadPath =
+                        gcPwads[i].path;
+
+                    break;
+                }
+            }
+
+            if (selection->pwadPath == NULL)
+            {
+                DC_ERROR(
+                    "DoomCube: REGRESSION PWAD not found: %s\n",
+                    test->pwadPath);
+
+                return false;
+            }
+        }
+
+        GC_MemoryCardSetGame(
+            game->saveGameId);
+
+        DC_INFO(
+            "DoomCube: REGRESSION AUTOSELECT IWAD: %s\n",
+            selection->iwadPath);
+
+        if (selection->pwadPath != NULL)
+        {
+            DC_INFO(
+                "DoomCube: REGRESSION AUTOSELECT PWAD: %s\n",
+                selection->pwadPath);
+        }
+
+        return true;
+    }
+#endif
 
 #if defined(DOOMCUBE_TEST_IWAD_PATH)
     /*

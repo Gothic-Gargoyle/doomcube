@@ -118,6 +118,11 @@ endif
 #       WARP_MAP=6
 #
 # TEST_PWAD is optional, but requires TEST_IWAD.
+# Build the single-artifact automated regression image.
+ifneq ($(strip $(REGRESSION)),)
+CFLAGS += -DDOOMCUBE_REGRESSION=1
+endif
+
 ifneq ($(strip $(TEST_IWAD)),)
 CFLAGS += \
     -DDOOMCUBE_TEST_IWAD_PATH=\"dvd:/data/wad/$(TEST_IWAD)\"
@@ -267,6 +272,7 @@ CFILES := \
 	gc_controls.c \
 	gc_dvd_fst.c \
 	gc_launcher.c \
+	gc_regression.c \
 	gc_memcard.c \
 	gc_save_stdio.c \
 	doomgeneric.c \
@@ -476,6 +482,14 @@ test:
 		--filesystem="$(CURDIR):ro" \
 		org.DolphinEmu.dolphin-emu \
 		"$(ISO_OUT)"
+
+#---------------------------------------------------------------------------------
+# Automated regression tests
+#---------------------------------------------------------------------------------
+
+.PHONY: regression
+regression:
+	@./tools/regression.sh
 
 #---------------------------------------------------------------------------------
 # Inner build

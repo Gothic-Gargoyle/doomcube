@@ -9,6 +9,7 @@
 #include "m_controls.h"
 
 #include "gc_launcher.h"
+#include "gc_regression.h"
 #include "gc_memcard.h"
 #include "m_menu.h"
 #include "gc_controls.h"
@@ -935,6 +936,11 @@ int main(int argc, char **argv)
     char *doomArgv[9] = { NULL };
     int doomArgc;
 
+#ifdef DOOMCUBE_REGRESSION
+    const gc_regression_case_t *regressionCase;
+    char regressionEpisode[12];
+    char regressionMap[12];
+#endif
 
     (void)argc;
     (void)argv;
@@ -944,6 +950,20 @@ int main(int argc, char **argv)
         return 1;
     }
 
+#ifdef DOOMCUBE_REGRESSION
+    if (!GC_RegressionInit())
+    {
+        return 1;
+    }
+
+    regressionCase =
+        GC_RegressionGetCase();
+
+    if (regressionCase == NULL)
+    {
+        return 1;
+    }
+#endif
 
     if (!GC_LauncherSelectGame(
             renderer,
@@ -985,8 +1005,38 @@ int main(int argc, char **argv)
             selection.iwadPath);
     }
 
-#if defined(DOOMCUBE_TEST_WARP_EPISODE) && \
-    defined(DOOMCUBE_TEST_WARP_MAP)
+#ifdef DOOMCUBE_REGRESSION
+    if (regressionCase->episode > 0 &&
+        regressionCase->map > 0)
+    {
+        snprintf(
+            regressionEpisode,
+            sizeof(regressionEpisode),
+            "%d",
+            regressionCase->episode);
+
+        snprintf(
+            regressionMap,
+            sizeof(regressionMap),
+            "%d",
+            regressionCase->map);
+
+        doomArgv[doomArgc++] =
+            "-warp";
+
+        doomArgv[doomArgc++] =
+            regressionEpisode;
+
+        doomArgv[doomArgc++] =
+            regressionMap;
+
+        DC_INFO(
+            "DoomCube: REGRESSION WARP: E%sM%s\n",
+            regressionEpisode,
+            regressionMap);
+    }
+#elif defined(DOOMCUBE_TEST_WARP_EPISODE) && \
+      defined(DOOMCUBE_TEST_WARP_MAP)
     doomArgv[doomArgc++] =
         "-warp";
 
