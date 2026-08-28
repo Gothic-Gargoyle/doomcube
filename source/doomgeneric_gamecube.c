@@ -13,6 +13,7 @@
 #include "gc_memcard.h"
 #include "m_menu.h"
 #include "gc_controls.h"
+#include "gc_rumble.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -25,8 +26,8 @@
 #include "gc_dvd_fst.h"
 #include <ogc/dvd.h>
 
-#define DOOMGENERIC_RESX 640
-#define DOOMGENERIC_RESY 400
+#define DOOMGENERIC_RESX 320
+#define DOOMGENERIC_RESY 200
 
 #define GC_OUTPUT_WIDTH  640
 #define GC_OUTPUT_HEIGHT 480
@@ -101,13 +102,7 @@ static int gcStrafeRight;
 static int gcPrevWeapon;
 static int gcNextWeapon;
 
-static int gcRumbleFrames;
-static int gcRumbleOnFrames;
-static int gcRumbleOffFrames;
-static int gcRumblePulsesLeft;
 
-static bool gcRumbleOn;
-static bool gcRumbleHardStop;
 
 static bool platformInitialized;
 static bool dvdMounted;
@@ -572,60 +567,6 @@ static void handleGameCubeInput(void)
         KEY_ESCAPE);
 
 
-    /* ------------------------------------------------------------------ */
-    /* Rumble                                                             */
-    /* ------------------------------------------------------------------ */
-
-    if (gcRumbleFrames > 0)
-    {
-        gcRumbleFrames--;
-
-        if (gcRumbleFrames == 0)
-        {
-            if (gcRumbleOn)
-            {
-                gcRumblePulsesLeft--;
-
-                if (gcRumblePulsesLeft <= 0)
-                {
-                    PAD_ControlMotor(
-                        PAD_CHAN0,
-                        gcRumbleHardStop
-                            ? PAD_MOTOR_STOP_HARD
-                            : PAD_MOTOR_STOP);
-
-                    gcRumbleOn = false;
-                }
-                else if (gcRumbleOffFrames > 0)
-                {
-                    PAD_ControlMotor(
-                        PAD_CHAN0,
-                        PAD_MOTOR_STOP);
-
-                    gcRumbleOn = false;
-
-                    gcRumbleFrames =
-                        gcRumbleOffFrames;
-                }
-                else
-                {
-                    gcRumbleFrames =
-                        gcRumbleOnFrames;
-                }
-            }
-            else
-            {
-                PAD_ControlMotor(
-                    PAD_CHAN0,
-                    PAD_MOTOR_RUMBLE);
-
-                gcRumbleOn = true;
-
-                gcRumbleFrames =
-                    gcRumbleOnFrames;
-            }
-        }
-    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -748,6 +689,11 @@ static bool GC_PlatformInit(void)
         return false;
     }
 
+    DC_DEBUG(
+        "DoomCube: game texture = %dx%d; SDL/GX scales to renderer output\n",
+        DOOMGENERIC_RESX,
+        DOOMGENERIC_RESY);
+
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
@@ -858,28 +804,9 @@ void DG_SetWindowTitle(const char *title)
 
 void DG_Rumble(int frames)
 {
-    if (frames <= 0)
-        return;
-
-    if (frames > gcRumbleFrames)
-        gcRumbleFrames = frames;
-
-    /*
-     * Do not let a weaker single pulse shorten a longer
-     * single pulse already in progress.
-     */
-    if (gcRumbleOn &&
-        gcRumblePulsesLeft == 1 &&
-        frames <= gcRumbleFrames)
-    {
-        return;
-    }
-
-    DG_RumblePattern(
-        frames,
-        0,
-        1,
-        true);
+    GC_RumblePulseTicks(
+        frames
+    );
 }
 
 
@@ -889,24 +816,12 @@ void DG_RumblePattern(
     int pulses,
     bool hardStop)
 {
-    if (onFrames <= 0 || pulses <= 0)
-        return;
-
-    if (offFrames < 0)
-        offFrames = 0;
-
-    gcRumbleOnFrames = onFrames;
-    gcRumbleOffFrames = offFrames;
-    gcRumblePulsesLeft = pulses;
-
-    gcRumbleFrames = onFrames;
-
-    gcRumbleOn = true;
-    gcRumbleHardStop = hardStop;
-
-    PAD_ControlMotor(
-        PAD_CHAN0,
-        PAD_MOTOR_RUMBLE);
+    GC_RumblePatternTicks(
+        onFrames,
+        offFrames,
+        pulses,
+        hardStop
+    );
 }
 
 
@@ -1108,11 +1023,12 @@ int main(int argc, char **argv)
         "DoomCube: >>> SYS_MainLoop RETURNED FALSE <<<\n");
 
     /*
-     * Explicitly stop the controller motor when leaving the main loop.
+     * Stop and join the independent rumble sequencer.
+     *
+     * GC_RumbleShutdown() is idempotent; normal Doom exit handling
+     * may already have called it through I_AtExit().
      */
-    PAD_ControlMotor(
-        PAD_CHAN0,
-        PAD_MOTOR_STOP);
+    GC_RumbleShutdown();
 
     GC_MemoryCardShutdown();
 

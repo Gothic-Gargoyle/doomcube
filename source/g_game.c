@@ -74,6 +74,7 @@
 #include "gc_controls.h"
 #include "gc_debug.h"
 #include "gc_regression.h"
+#include "gc_rumble.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -2079,7 +2080,8 @@ G_DeferedInitNew
 
 void G_DoNewGame (void) 
 {
-    demoplayback = false; 
+    demoplayback = false;
+    GC_RumbleSetDemoMode(false);
     netdemo = false;
     netgame = false;
     deathmatch = false;
@@ -2203,6 +2205,7 @@ G_InitNew
     usergame = true;                // will be set false if a demo
     paused = false;
     demoplayback = false;
+    GC_RumbleSetDemoMode(false);
     automapactive = false;
     viewactive = true;
     gameepisode = episode;
@@ -2581,7 +2584,8 @@ void G_DoPlayDemo (void)
     starttime = I_GetTime (); 
 
     usergame = false; 
-    demoplayback = true; 
+    demoplayback = true;
+    GC_RumbleSetDemoMode(true);
 } 
 
 //
@@ -2631,6 +2635,7 @@ boolean G_CheckDemoStatus (void)
         // Prevent recursive calls
         timingdemo = false;
         demoplayback = false;
+        GC_RumbleSetDemoMode(false);
 
 	I_Error ("timed %i gametics in %i realtics (%f fps)",
                  gametic, realtics, fps);
@@ -2639,7 +2644,8 @@ boolean G_CheckDemoStatus (void)
     if (demoplayback) 
     { 
         W_ReleaseLumpName(defdemoname);
-	demoplayback = false; 
+	demoplayback = false;
+	GC_RumbleSetDemoMode(false);
 	netdemo = false;
 	netgame = false;
 	deathmatch = false;

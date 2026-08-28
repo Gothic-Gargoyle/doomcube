@@ -287,6 +287,7 @@ CFILES := \
 	i_video.c \
 	gc_config.c \
 	gc_controls.c \
+	gc_rumble.c \
 	gc_dvd_fst.c \
 	gc_launcher.c \
 	gc_regression.c \
