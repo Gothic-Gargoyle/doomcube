@@ -380,7 +380,7 @@ menuitem_t OptionsMenu[]=
     {2,"M_MSENS",	M_ChangeSensitivity,'m'},
     {-1,"",0,'\0'},
     {1,"M_SVOL",	M_Sound,'s'},
-    {1,"", M_ChangeRumble,'r'},
+    {2,"", M_ChangeRumble,'r'},
     {1,"", M_GameCubeControls,'c'}
 };
 
@@ -1543,11 +1543,24 @@ void M_DrawGameCubeActions(void)
 //
 void M_ChangeRumble(int choice)
 {
-    (void)choice;
+    int enabled =
+        choice != 0;
 
-    GC_RumbleSetEnabled(
-        !gc_rumble_enabled
-    );
+    /*
+     * status == 2 menu semantics:
+     *
+     *     choice 0 = left  = OFF
+     *     choice 1 = right = ON
+     *
+     * Use an explicit target state instead of a toggle.  Repeated
+     * directional input therefore remains idempotent.
+     */
+    if (gc_rumble_enabled != enabled)
+    {
+        GC_RumbleSetEnabled(
+            enabled
+        );
+    }
 }
 
 
