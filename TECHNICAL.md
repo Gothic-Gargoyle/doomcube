@@ -6,6 +6,42 @@ decisions.
 For environment setup and day-to-day build commands, see
 [DEVELOPMENT.md](DEVELOPMENT.md).
 
+# Building DoomCube from source
+
+The player release does not require a development toolchain.
+
+Building DoomCube itself requires a configured devkitPro environment including
+**devkitPPC** and **libogc2**, together with the dependencies used by the
+project.
+
+From the repository root:
+
+```bash
+make
+```
+
+Build the native development disc image with:
+
+```bash
+make iso
+```
+
+Build and launch the development image in the configured Dolphin environment
+with:
+
+```bash
+make test
+```
+
+Build the player-facing production ZIP with:
+
+```bash
+make release
+```
+
+Generated player releases are written under `dist/`.
+
+
 # Runtime architecture
 
 DoomCube's canonical runtime is a native GameCube disc image.
@@ -354,20 +390,27 @@ Renderer high-water telemetry uses debug logging, while exhaustion and other
 important runtime failures use warning/error paths that remain visible in
 normal builds.
 
-# Memory Card notes
+# Memory Card persistence
 
-DoomCube currently has GameCube Memory Card save support, but original hardware
-validation is still pending.
+DoomCube stores savegames and persistent configuration on Memory Card A.
 
-The current save container uses approximately 116 blocks.
+The current implementation is transactional Save System v3. It replaces the
+earlier fixed-size save container with redundant containers and copy-on-write
+updates so that an interrupted write can preserve the previous valid state.
 
-Future save-system work is expected to address:
+Save System v3 includes:
 
-- smaller/right-sized allocation
-- stronger IWAD/PWAD identity protection
-- GameCube icon/banner metadata
-- broader failure-path testing
-- real-hardware validation
+- redundant transactional containers
+- generation-based recovery
+- copy-on-write record updates
+- container growth
+- container compaction
+- separate global configuration persistence
+- IWAD/PWAD-based save identities
+- rejection of cards that are too small for the storage policy
+
+Original GameCube hardware validation is still pending, so Memory Card
+behaviour remains part of the real-hardware acceptance test.
 
 Regression infrastructure should not reserve Memory Card B or otherwise
 consume a card slot for harness bookkeeping, because Memory Card behaviour is
