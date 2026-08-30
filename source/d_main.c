@@ -74,6 +74,7 @@
 #include "statdump.h"
 
 #include "d_main.h"
+#include "gc_rumble.h"
 
 //
 // D-DoomLoop()
@@ -1363,7 +1364,18 @@ void D_DoomMain (void)
 
     D_BindVariables();
 
+    /*
+     * Bind the GameCube rumble preference before loading the
+     * global DoomCube configuration.
+     */
+    M_BindVariable(
+        "gc_rumble_enabled",
+        &gc_rumble_enabled
+    );
+
     M_LoadDefaults();
+
+    GC_RumbleApplyConfig();
 
     // Save configuration at exit.
     I_AtExit(M_SaveDefaults, false);

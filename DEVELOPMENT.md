@@ -197,7 +197,7 @@ make
 Creates a versioned executable similar to:
 
 ```text
-doomcube-v0.1.0-dev-xxxxxxxx.dol
+doomcube-v1.0.0-dev-xxxxxxxx.dol
 ```
 
 The Git commit hash is included in the filename. A modified worktree adds
@@ -212,7 +212,7 @@ make iso
 Creates a versioned native GameCube disc image, for example:
 
 ```text
-doomcube-v0.1.0-dev-xxxxxxxx.iso
+doomcube-v1.0.0-dev-xxxxxxxx.iso
 ```
 
 ## Build and launch in Dolphin

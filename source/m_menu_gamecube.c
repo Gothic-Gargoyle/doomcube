@@ -58,6 +58,7 @@
 
 #include "m_menu.h"
 #include "gc_controls.h"
+#include "gc_rumble.h"
 
 
 extern patch_t*		hu_font[HU_FONTSIZE];
@@ -201,6 +202,7 @@ void M_ReadThis2(int choice);
 void M_QuitDOOM(int choice);
 
 void M_ChangeMessages(int choice);
+void M_ChangeRumble(int choice);
 void M_ChangeSensitivity(int choice);
 void M_SfxVol(int choice);
 void M_MusicVol(int choice);
@@ -363,6 +365,7 @@ enum
     mousesens,
     option_empty2,
     soundvol,
+    rumble,
     gccontrols,
     opt_end
 } options_e;
@@ -377,6 +380,7 @@ menuitem_t OptionsMenu[]=
     {2,"M_MSENS",	M_ChangeSensitivity,'m'},
     {-1,"",0,'\0'},
     {1,"M_SVOL",	M_Sound,'s'},
+    {2,"", M_ChangeRumble,'r'},
     {1,"", M_GameCubeControls,'c'}
 };
 
@@ -386,7 +390,7 @@ menu_t  OptionsDef =
     &MainDef,
     OptionsMenu,
     M_DrawOptions,
-    60,37,
+    60,29,
     0
 };
 
@@ -1240,6 +1244,20 @@ void M_DrawGameCubeControls(void)
             "%d%%",
             GC_ControlsGetTurnSensitivity());
 
+        /*
+         * The Doom menu font is transparent.  Clear the previous
+         * percentage before drawing the new value so LEFT/RIGHT
+         * changes are visible immediately without moving the cursor.
+         */
+        V_DrawFilledBox(
+            231,
+            GameCubeControlsDef.y +
+                LINEHEIGHT * gc_controls_sensitivity - 1,
+            60,
+            10,
+            0
+        );
+
         M_WriteText(
             235,
             GameCubeControlsDef.y +
@@ -1283,6 +1301,40 @@ void M_DrawOptions(void)
         OptionsDef.x,
         OptionsDef.y + LINEHEIGHT * gccontrols,
         "GAMECUBE CONTROLS");
+
+    /*
+     * GameCube-specific item: no vanilla WAD graphic exists,
+     * so draw it through Doom's menu text renderer.
+     */
+    M_WriteText(
+        OptionsDef.x,
+        OptionsDef.y + LINEHEIGHT * rumble,
+        "RUMBLE"
+    );
+
+    /*
+     * ON/OFF uses transparent menu glyphs as well.  Clear only
+     * the dynamic value field before redrawing the current state.
+     *
+     * This intentionally affects presentation only; the current
+     * A-button toggle callback remains unchanged.
+     */
+    V_DrawFilledBox(
+        OptionsDef.x + 116,
+        OptionsDef.y +
+            LINEHEIGHT * rumble - 1,
+        54,
+        10,
+        0
+    );
+
+    M_WriteText(
+        OptionsDef.x + 120,
+        OptionsDef.y + LINEHEIGHT * rumble,
+        gc_rumble_enabled
+            ? "ON"
+            : "OFF"
+    );
 }
 
 void M_Options(int choice)
@@ -1489,6 +1541,29 @@ void M_DrawGameCubeActions(void)
 //
 //      Toggle messages on/off
 //
+void M_ChangeRumble(int choice)
+{
+    int enabled =
+        choice != 0;
+
+    /*
+     * status == 2 menu semantics:
+     *
+     *     choice 0 = left  = OFF
+     *     choice 1 = right = ON
+     *
+     * Use an explicit target state instead of a toggle.  Repeated
+     * directional input therefore remains idempotent.
+     */
+    if (gc_rumble_enabled != enabled)
+    {
+        GC_RumbleSetEnabled(
+            enabled
+        );
+    }
+}
+
+
 void M_ChangeMessages(int choice)
 {
     // warning: unused parameter `int choice'

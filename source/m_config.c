@@ -18,6 +18,7 @@
 //
 
 #include "gc_config.h"
+#include "gc_rumble.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1587,6 +1588,12 @@ static default_t extra_defaults_list[] =
     CONFIG_VARIABLE_INT(gc_menu_back),
 
     CONFIG_VARIABLE_INT(gc_turn_sensitivity),
+
+    /*
+     * GameCube controller rumble master switch.
+     * Stored in the global DoomCube configuration.
+     */
+    CONFIG_VARIABLE_INT(gc_rumble_enabled),
 };
 
 static default_collection_t extra_defaults =

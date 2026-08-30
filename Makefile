@@ -11,7 +11,7 @@ include $(DEVKITPRO)/libogc2/gamecube_rules
 # Version
 #---------------------------------------------------------------------------------
 
-BASE_VERSION ?= 0.1.0
+BASE_VERSION ?= 1.0.0
 VERSION ?= $(BASE_VERSION)-dev
 RC ?= 1
 
@@ -287,6 +287,7 @@ CFILES := \
 	i_video.c \
 	gc_config.c \
 	gc_controls.c \
+	gc_rumble.c \
 	gc_dvd_fst.c \
 	gc_launcher.c \
 	gc_regression.c \

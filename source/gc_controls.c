@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include "m_config.h"
+#include <SDL2/SDL.h>
 
 #define GC_STICK_DEADZONE       16
 #define GC_CSTICK_DEADZONE      24
@@ -181,9 +182,76 @@ static gc_input_t GC_FirstInputHeld(void)
 /* Poll                                                                      */
 /* ------------------------------------------------------------------------- */
 
+static SDL_mutex *gcPadMutex;
+
+
+bool GC_ControlsInitPadMutex(void)
+{
+    if (gcPadMutex)
+        return true;
+
+    gcPadMutex =
+        SDL_CreateMutex();
+
+    return gcPadMutex != NULL;
+}
+
+
+void GC_ControlsShutdownPadMutex(void)
+{
+    if (!gcPadMutex)
+        return;
+
+    SDL_DestroyMutex(
+        gcPadMutex
+    );
+
+    gcPadMutex =
+        NULL;
+}
+
+
+void GC_ControlsMotorCommand(
+    unsigned int command)
+{
+    if (gcPadMutex)
+    {
+        SDL_LockMutex(
+            gcPadMutex
+        );
+    }
+
+    PAD_ControlMotor(
+        PAD_CHAN0,
+        command
+    );
+
+    if (gcPadMutex)
+    {
+        SDL_UnlockMutex(
+            gcPadMutex
+        );
+    }
+}
+
+
 void GC_ControlsPoll(void)
 {
+    if (gcPadMutex)
+    {
+        SDL_LockMutex(
+            gcPadMutex
+        );
+    }
+
     PAD_ScanPads();
+
+    if (gcPadMutex)
+    {
+        SDL_UnlockMutex(
+            gcPadMutex
+        );
+    }
 
     gcHeld =
         PAD_ButtonsHeld(0);
