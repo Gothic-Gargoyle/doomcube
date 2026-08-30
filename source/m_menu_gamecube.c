@@ -1244,6 +1244,20 @@ void M_DrawGameCubeControls(void)
             "%d%%",
             GC_ControlsGetTurnSensitivity());
 
+        /*
+         * The Doom menu font is transparent.  Clear the previous
+         * percentage before drawing the new value so LEFT/RIGHT
+         * changes are visible immediately without moving the cursor.
+         */
+        V_DrawFilledBox(
+            231,
+            GameCubeControlsDef.y +
+                LINEHEIGHT * gc_controls_sensitivity - 1,
+            60,
+            10,
+            0
+        );
+
         M_WriteText(
             235,
             GameCubeControlsDef.y +
@@ -1296,6 +1310,22 @@ void M_DrawOptions(void)
         OptionsDef.x,
         OptionsDef.y + LINEHEIGHT * rumble,
         "RUMBLE"
+    );
+
+    /*
+     * ON/OFF uses transparent menu glyphs as well.  Clear only
+     * the dynamic value field before redrawing the current state.
+     *
+     * This intentionally affects presentation only; the current
+     * A-button toggle callback remains unchanged.
+     */
+    V_DrawFilledBox(
+        OptionsDef.x + 116,
+        OptionsDef.y +
+            LINEHEIGHT * rumble - 1,
+        54,
+        10,
+        0
     );
 
     M_WriteText(
