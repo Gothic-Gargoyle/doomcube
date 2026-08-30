@@ -16,10 +16,10 @@ native GameCube disc images, and a self-contained player packaging workflow.
 
 ## Status
 
-DoomCube **v0.1.0** is the first player-facing release.
+DoomCube **v1.0.0** is the first player-facing release.
 
 Experimental true widescreen support is intentionally **not included in
-v0.1.0**. That work has been postponed in favour of shipping the stable first
+v1.0.0**. That work has been postponed in favour of shipping the stable first
 release.
 
 ## Screenshot
@@ -150,7 +150,7 @@ verify DOOM Shareware v1.9.
 
 DoomCube has not yet been validated on original GameCube hardware.
 
-The v0.1.0 release should therefore still be considered emulator-tested until
+The v1.0.0 release should therefore still be considered emulator-tested until
 it has received an original-hardware test pass.
 
 Saving requires a **Memory Card 251 or larger**.
@@ -175,7 +175,7 @@ SIGIL episode handling, renderer details and regression infrastructure, see:
 
 ## Future work
 
-v0.1.0 prioritises a stable first GameCube release over additional renderer
+v1.0.0 prioritises a stable first GameCube release over additional renderer
 features.
 
 Planned or experimental work includes:
