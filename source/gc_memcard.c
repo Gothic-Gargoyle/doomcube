@@ -3,6 +3,7 @@
 #include "gc_memcard.h"
 #include "gc_save_v3.h"
 #include "gc_save_v3_card.h"
+#include "gc_card_presentation.h"
 
 #include <ogc/card.h>
 #include <ogcsys.h>
@@ -2000,6 +2001,28 @@ static bool validateOpenV3Container(
     {
         *generationOut =
             superblock.generation;
+    }
+
+    /*
+     * The transactional v3 state above is already fully validated.
+     *
+     * CARD banner/icon/comment metadata is deliberately cosmetic:
+     * install or refresh it best-effort, but never turn a valid save
+     * container into an invalid one merely because presentation
+     * metadata could not be written.
+     *
+     * GC_CardPresentationApply() is idempotent, so normal validation
+     * of an already-decorated container performs no CARD write.
+     */
+    if (!GC_CardPresentationApply(
+            file,
+            sectorSize,
+            scratch))
+    {
+        DC_WARN(
+            "DoomCube: CARD presentation update failed; "
+            "validated v3 save container remains usable\n"
+        );
     }
 
     return true;

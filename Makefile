@@ -292,6 +292,8 @@ CFILES := \
 	gc_launcher.c \
 	gc_regression.c \
 	gc_memcard.c \
+	gc_card_presentation.c \
+	gc_card_presentation_data.c \
 	gc_save_stdio.c \
 	gc_save_v3.c \
 	gc_save_v3_card.c \
@@ -474,7 +476,8 @@ iso: all
 		--apploader "$(CURDIR)/tools/native-gcm/apploader.bin" \
 		--root "$(ISO_DIR)" \
 		--output "$(ISO_OUT)" \
-		--title "DOOMCUBE"
+		--title "DOOMCUBE" \
+		--region PAL
 
 	@echo
 	@echo "Built native GameCube ISO:"

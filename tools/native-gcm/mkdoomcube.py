@@ -20,6 +20,18 @@ ALIGN = 0x20
 PWAD_MANIFEST_NAME = "doomcube.lst"
 
 
+#
+# GameCube BI2 region field.
+#
+# This is disc/application identity metadata, not a request to force
+# a particular runtime video mode.
+#
+GC_REGIONS = {
+    "NTSC-J": 0,
+    "NTSC-U": 1,
+    "PAL": 2,
+}
+
 def align(value: int, alignment: int = ALIGN) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
@@ -206,14 +218,37 @@ def make_boot_bin(
     return bytes(b)
 
 
-def make_bi2() -> bytes:
+def make_bi2(region: int) -> bytes:
     """
-    Zero-filled BI2 is sufficient for our homebrew apploader.
+    Build the GameCube BI2 block.
 
-    The apploader installs the BI2 pointer into low memory but DoomCube
-    does not require Nintendo SDK boot metadata from it.
+    DoomCube's homebrew apploader does not require most Nintendo SDK
+    BI2 metadata, so the unused fields remain zero.
+
+    BI2 + 0x18 is the GameCube region field:
+
+        0 = NTSC-J / Japan
+        1 = NTSC-U / USA
+        2 = PAL / Europe
+
+    The region identifies the disc to the platform/emulator.  It does
+    not force DoomCube's runtime video mode.
     """
-    return bytes(BI2_SIZE)
+
+    if region not in GC_REGIONS.values():
+        raise ValueError(
+            f"invalid GameCube region value: {region}"
+        )
+
+    b = bytearray(BI2_SIZE)
+
+    be32(
+        b,
+        0x18,
+        region
+    )
+
+    return bytes(b)
 
 
 def make_apploader_image(binary: bytes) -> bytes:
@@ -314,6 +349,16 @@ def main() -> None:
         default="DOOMCUBE"
     )
 
+    ap.add_argument(
+        "--region",
+        choices=tuple(GC_REGIONS),
+        default="PAL",
+        help=(
+            "GameCube disc region written to BI2 "
+            "(default: PAL)"
+        ),
+    )
+
     args = ap.parse_args()
 
     dol = args.dol.read_bytes()
@@ -398,7 +443,13 @@ def main() -> None:
         user_length=user_length,
     )
 
-    bi2 = make_bi2()
+    region_value = GC_REGIONS[
+        args.region
+    ]
+
+    bi2 = make_bi2(
+        region_value
+    )
 
     image_size = current
 
@@ -470,6 +521,10 @@ def main() -> None:
     print("DoomCube native GCM built")
     print("=========================")
     print(f"output       : {args.output}")
+    print(
+        f"region       : {args.region} "
+        f"(BI2={region_value})"
+    )
     print(f"size         : {len(image):,} bytes")
     print(f"apploader    : 0x{APPLOADER_OFFSET:08x}")
     print(f"DOL offset   : 0x{dol_offset:08x}")
