@@ -24,7 +24,7 @@
 #include <ogcsys.h>
 #include <gccore.h>
 
-#include "gc_dvd_fst.h"
+#include <carryhandle/ch_dvd.h>
 #include <ogc/dvd.h>
 
 #define DOOMGENERIC_RESX 320
@@ -579,7 +579,7 @@ static bool mountIsoFilesystem(void)
     DC_DEBUG(
         "DoomCube: mounting native GameCube FST...\n");
 
-    if (!GC_DVDFST_Mount())
+    if (!CH_DVDMount())
     {
         DC_WARN(
             "DoomCube: native FST mount FAILED\n");
@@ -1047,7 +1047,7 @@ int main(int argc, char **argv)
 
     if (dvdMounted)
     {
-        GC_DVDFST_Unmount();
+        CH_DVDUnmount();
     }
 
     return 0;

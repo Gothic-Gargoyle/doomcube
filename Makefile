@@ -299,7 +299,6 @@ CFILES := \
 	gc_config.c \
 	gc_controls.c \
 	gc_rumble.c \
-	gc_dvd_fst.c \
 	gc_launcher.c \
 	gc_regression.c \
 	gc_memcard.c \
@@ -550,6 +549,7 @@ CARRYHANDLE_DOGFOOD_OFILES := \
     gc_carryhandle_dogfood.o \
     ch_application.o \
     ch_application_save.o \
+    ch_dvd.o \
     ch_card_presentation.o \
     ch_memcard.o \
     ch_persist.o \
