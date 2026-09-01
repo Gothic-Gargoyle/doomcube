@@ -148,16 +148,4 @@ gc_action_t GC_ControlsCaptureAction(void);
 
 void GC_ControlsBindConfig(void);
 
-/*
- * Rumble runs asynchronously from controller polling.
- *
- * These helpers serialize the actual SI/PAD bus operations so
- * PAD_ScanPads() and PAD_ControlMotor() never execute concurrently.
- */
-bool GC_ControlsInitPadMutex(void);
-void GC_ControlsShutdownPadMutex(void);
-
-void GC_ControlsMotorCommand(
-    unsigned int command);
-
 #endif

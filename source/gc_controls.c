@@ -1,11 +1,11 @@
 #include "gc_controls.h"
 
-#include <gccore.h>
-#include <ogc/system.h>
+#include <carryhandle/ch_input.h>
 
+
+#include <stdint.h>
 #include <stdlib.h>
 #include "m_config.h"
-#include <SDL2/SDL.h>
 
 #define GC_STICK_DEADZONE       16
 #define GC_CSTICK_DEADZONE      24
@@ -22,15 +22,15 @@
 /* Raw controller state                                                      */
 /* ------------------------------------------------------------------------- */
 
-static u16 gcHeld;
+static uint16_t gcHeld;
 
-static s8 gcStickX;
-static s8 gcStickY;
+static int8_t gcStickX;
+static int8_t gcStickY;
 
-static s8 gcCStickX;
-static s8 gcCStickY;
+static int8_t gcCStickX;
+static int8_t gcCStickY;
 
-static u8 gcTriggerR;
+static uint8_t gcTriggerR;
 
 static int gcTurnSensitivity =
     GC_TURN_SENSITIVITY_DEFAULT;
@@ -84,23 +84,23 @@ static bool GC_InputHeld(
     {
         case GC_INPUT_A:
             return
-                (gcHeld & PAD_BUTTON_A) != 0;
+                (gcHeld & CH_PAD_BUTTON_A) != 0;
 
         case GC_INPUT_B:
             return
-                (gcHeld & PAD_BUTTON_B) != 0;
+                (gcHeld & CH_PAD_BUTTON_B) != 0;
 
         case GC_INPUT_X:
             return
-                (gcHeld & PAD_BUTTON_X) != 0;
+                (gcHeld & CH_PAD_BUTTON_X) != 0;
 
         case GC_INPUT_Y:
             return
-                (gcHeld & PAD_BUTTON_Y) != 0;
+                (gcHeld & CH_PAD_BUTTON_Y) != 0;
 
         case GC_INPUT_L:
             return
-                (gcHeld & PAD_TRIGGER_L) != 0;
+                (gcHeld & CH_PAD_BUTTON_L) != 0;
 
         case GC_INPUT_R:
             return
@@ -108,19 +108,19 @@ static bool GC_InputHeld(
 
         case GC_INPUT_DPAD_UP:
             return
-                (gcHeld & PAD_BUTTON_UP) != 0;
+                (gcHeld & CH_PAD_BUTTON_UP) != 0;
 
         case GC_INPUT_DPAD_DOWN:
             return
-                (gcHeld & PAD_BUTTON_DOWN) != 0;
+                (gcHeld & CH_PAD_BUTTON_DOWN) != 0;
 
         case GC_INPUT_DPAD_LEFT:
             return
-                (gcHeld & PAD_BUTTON_LEFT) != 0;
+                (gcHeld & CH_PAD_BUTTON_LEFT) != 0;
 
         case GC_INPUT_DPAD_RIGHT:
             return
-                (gcHeld & PAD_BUTTON_RIGHT) != 0;
+                (gcHeld & CH_PAD_BUTTON_RIGHT) != 0;
 
         case GC_INPUT_STICK_UP:
             return
@@ -182,95 +182,33 @@ static gc_input_t GC_FirstInputHeld(void)
 /* Poll                                                                      */
 /* ------------------------------------------------------------------------- */
 
-static SDL_mutex *gcPadMutex;
-
-
-bool GC_ControlsInitPadMutex(void)
-{
-    if (gcPadMutex)
-        return true;
-
-    gcPadMutex =
-        SDL_CreateMutex();
-
-    return gcPadMutex != NULL;
-}
-
-
-void GC_ControlsShutdownPadMutex(void)
-{
-    if (!gcPadMutex)
-        return;
-
-    SDL_DestroyMutex(
-        gcPadMutex
-    );
-
-    gcPadMutex =
-        NULL;
-}
-
-
-void GC_ControlsMotorCommand(
-    unsigned int command)
-{
-    if (gcPadMutex)
-    {
-        SDL_LockMutex(
-            gcPadMutex
-        );
-    }
-
-    PAD_ControlMotor(
-        PAD_CHAN0,
-        command
-    );
-
-    if (gcPadMutex)
-    {
-        SDL_UnlockMutex(
-            gcPadMutex
-        );
-    }
-}
-
-
 void GC_ControlsPoll(void)
 {
-    if (gcPadMutex)
-    {
-        SDL_LockMutex(
-            gcPadMutex
-        );
-    }
+    CH_PadState pad = {0};
 
-    PAD_ScanPads();
+    CH_InputPoll();
 
-    if (gcPadMutex)
-    {
-        SDL_UnlockMutex(
-            gcPadMutex
-        );
-    }
+    (void)CH_InputGetPad(
+        0,
+        &pad);
 
     gcHeld =
-        PAD_ButtonsHeld(0);
+        pad.buttons_held;
 
     gcStickX =
-        PAD_StickX(0);
+        pad.stick_x;
 
     gcStickY =
-        PAD_StickY(0);
-
+        pad.stick_y;
 
     gcCStickX =
-        PAD_SubStickX(0);
+        pad.cstick_x;
 
     gcCStickY =
-        PAD_SubStickY(0);
+        pad.cstick_y;
 
     gcTriggerR =
-        PAD_TriggerR(0);
+        pad.trigger_r;
 
 /*
  * A binding was just assigned.
@@ -490,7 +428,7 @@ int GC_ControlsAnalogMovement(
      * Z owns the controller movement inputs while the automap
      * layer is active.
      */
-    if ((gcHeld & PAD_TRIGGER_Z) != 0)
+    if ((gcHeld & CH_PAD_BUTTON_Z) != 0)
     {
         return 0;
     }
@@ -580,7 +518,7 @@ int GC_ControlsAnalogTurn(void)
     /*
      * Z owns the C-stick while the automap layer is active.
      */
-    if ((gcHeld & PAD_TRIGGER_Z) != 0)
+    if ((gcHeld & CH_PAD_BUTTON_Z) != 0)
     {
         return 0;
     }
@@ -676,7 +614,7 @@ bool GC_MenuStartHeld(void)
         return false;
 
     return
-        (gcHeld & PAD_BUTTON_START) != 0;
+        (gcHeld & CH_PAD_BUTTON_START) != 0;
 }
 
 
@@ -735,7 +673,7 @@ bool GC_MenuMainStickRightHeld(void)
 bool GC_MapModifierHeld(void)
 {
     return
-        (gcHeld & PAD_TRIGGER_Z) != 0;
+        (gcHeld & CH_PAD_BUTTON_Z) != 0;
 }
 
 
@@ -774,49 +712,49 @@ bool GC_MapWestHeld(void)
 bool GC_MapZoomInHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_UP) != 0;
+        (gcHeld & CH_PAD_BUTTON_UP) != 0;
 }
 
 
 bool GC_MapZoomOutHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_DOWN) != 0;
+        (gcHeld & CH_PAD_BUTTON_DOWN) != 0;
 }
 
 
 bool GC_MapMaxZoomHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_LEFT) != 0;
+        (gcHeld & CH_PAD_BUTTON_LEFT) != 0;
 }
 
 
 bool GC_MapFollowHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_RIGHT) != 0;
+        (gcHeld & CH_PAD_BUTTON_RIGHT) != 0;
 }
 
 
 bool GC_MapMarkHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_A) != 0;
+        (gcHeld & CH_PAD_BUTTON_A) != 0;
 }
 
 
 bool GC_MapClearMarkHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_B) != 0;
+        (gcHeld & CH_PAD_BUTTON_B) != 0;
 }
 
 
 bool GC_MapGridHeld(void)
 {
     return
-        (gcHeld & PAD_BUTTON_X) != 0;
+        (gcHeld & CH_PAD_BUTTON_X) != 0;
 }
 
 
