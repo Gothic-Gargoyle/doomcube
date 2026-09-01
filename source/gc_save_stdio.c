@@ -2,6 +2,7 @@
 
 #include "gc_save_stdio.h"
 #include "gc_memcard.h"
+#include "gc_carryhandle_dogfood.h"
 
 #include <ogcsys.h>
 
@@ -262,11 +263,19 @@ FILE *GC_SaveFOpen(
         if (!stream)
             return NULL;
 
-        if (!GC_MemoryCardReadSave(
-                slot,
-                stream->data,
-                stream->capacity,
-                &actualSize))
+        if (!(
+                slot == 0
+                    ? GC_CHDogfoodReadSave(
+                        slot,
+                        stream->data,
+                        stream->capacity,
+                        &actualSize)
+                    : GC_MemoryCardReadSave(
+                        slot,
+                        stream->data,
+                        stream->capacity,
+                        &actualSize)
+             ))
         {
             destroyStream(
                 stream
@@ -604,10 +613,17 @@ int GC_SaveRename(
         (unsigned int)tempSaveSize
     );
 
-    if (!GC_MemoryCardWriteSave(
-            slot,
-            tempSaveData,
-            tempSaveSize))
+    if (!(
+            slot == 0
+                ? GC_CHDogfoodWriteSave(
+                    slot,
+                    tempSaveData,
+                    tempSaveSize)
+                : GC_MemoryCardWriteSave(
+                    slot,
+                    tempSaveData,
+                    tempSaveSize)
+         ))
     {
         DC_WARN(
             "DoomCube: slot %d commit FAILED\n",

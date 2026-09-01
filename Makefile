@@ -45,6 +45,13 @@ TRACE ?= 0
 # Project
 #---------------------------------------------------------------------------------
 
+DOOMCUBE_ROOT := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
+CARRYHANDLE_DIR ?= $(abspath $(DOOMCUBE_ROOT)/../carryhandle)
+
+CARRYHANDLE_MANIFEST      := $(DOOMCUBE_ROOT)/carryhandle.cfg
+CARRYHANDLE_MANIFEST_TOOL := $(CARRYHANDLE_DIR)/tools/ch_manifest.py
+CARRYHANDLE_APP_HEADER    := $(DOOMCUBE_ROOT)/build/ch_application_config.h
+
 TARGET      := doomcube-v$(BUILD_VERSION)-$(BUILD_ID)
 BUILD       := build
 SOURCES     := . source
@@ -153,6 +160,10 @@ ifneq ($(strip $(TEST_PWAD)),)
 $(error TEST_PWAD requires TEST_IWAD)
 endif
 endif
+
+CFLAGS += \
+    -I$(CARRYHANDLE_DIR)/include \
+    -I$(DOOMCUBE_ROOT)/build
 
 CXXFLAGS := $(CFLAGS)
 
@@ -524,11 +535,51 @@ save-probe:
 
 else
 
+# -------------------------------------------------------------------------------
+# CarryHandle dogfood objects
+# -------------------------------------------------------------------------------
+#
+# DoomCube's existing outer build exports its normal object set explicitly.
+# Merely adding another directory to SOURCES therefore does not add objects
+# from that directory to the final ELF.
+#
+# Keep this first integration explicit: one DoomCube adapter plus the
+# CarryHandle runtime objects needed underneath it.
+
+CARRYHANDLE_DOGFOOD_OFILES := \
+    gc_carryhandle_dogfood.o \
+    ch_application.o \
+    ch_application_save.o \
+    ch_card_presentation.o \
+    ch_memcard.o \
+    ch_persist.o \
+    ch_tx.o \
+    ch_tx_format.o \
+    ch_tx_memcard_backend.o \
+    ch_version.o
+
+OFILES += $(CARRYHANDLE_DOGFOOD_OFILES)
+
+VPATH += \
+    $(DOOMCUBE_ROOT)/source \
+    $(CARRYHANDLE_DIR)/source
+
 DEPENDS := $(OFILES:.o=.d)
 
 .PHONY: all
 
 all: $(OUTPUT).dol
+
+$(OFILES): $(CARRYHANDLE_APP_HEADER)
+
+$(CARRYHANDLE_APP_HEADER): \
+        $(CARRYHANDLE_MANIFEST) \
+        $(CARRYHANDLE_MANIFEST_TOOL)
+	@mkdir -p $(dir $@)
+	@PYTHONDONTWRITEBYTECODE=1 python3 \
+		$(CARRYHANDLE_MANIFEST_TOOL) \
+		$(CARRYHANDLE_MANIFEST) \
+		--output-header $(CARRYHANDLE_APP_HEADER)
 
 $(OUTPUT).dol: $(OUTPUT).elf
 

@@ -11,6 +11,7 @@
 #include "gc_launcher.h"
 #include "gc_regression.h"
 #include "gc_memcard.h"
+#include "gc_carryhandle_dogfood.h"
 #include "m_menu.h"
 #include "gc_controls.h"
 #include "gc_rumble.h"
@@ -906,6 +907,18 @@ int main(int argc, char **argv)
         selection.iwadPath,
         selection.pwadPath
     );
+
+    GC_CHDogfoodSetLaunchIdentity(
+        selection.iwadPath,
+        selection.pwadPath
+    );
+
+    /*
+     * Pay the full CarryHandle recovery/log-validation cost once while
+     * transitioning from the launcher into Doom. Save/Load menu probes then
+     * operate from the verified in-memory slot image.
+     */
+    GC_CHDogfoodPrimeSaveCache();
 
     doomArgv[0] =
         "doomcube";
