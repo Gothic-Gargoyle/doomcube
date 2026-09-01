@@ -552,6 +552,7 @@ CARRYHANDLE_DOGFOOD_OFILES := \
     ch_input.o \
     ch_pad_bus.o \
     ch_rumble.o \
+    ch_time.o \
     ch_dvd.o \
     ch_card_presentation.o \
     ch_memcard.o \

@@ -25,6 +25,7 @@
 #include <gccore.h>
 
 #include <carryhandle/ch_dvd.h>
+#include <carryhandle/ch_time.h>
 #include <ogc/dvd.h>
 
 #define DOOMGENERIC_RESX 320
@@ -765,7 +766,7 @@ void DG_SleepMs(uint32_t ms)
 
 uint32_t DG_GetTicksMs(void)
 {
-    return SDL_GetTicks();
+    return (uint32_t)CH_TimeMilliseconds();
 }
 
 
