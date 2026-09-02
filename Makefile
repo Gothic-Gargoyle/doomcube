@@ -54,7 +54,9 @@ CARRYHANDLE_APP_HEADER    := $(DOOMCUBE_ROOT)/build/ch_application_config.h
 
 TARGET      := doomcube-v$(BUILD_VERSION)-$(BUILD_ID)
 BUILD       := build
-SOURCES     := . source
+SOURCES := \
+	$(DOOMCUBE_ROOT) \
+	$(DOOMCUBE_ROOT)/source
 INCLUDES    :=
 LIBDIRS     :=
 
@@ -200,13 +202,8 @@ LIBS := \
 # Outer build
 #---------------------------------------------------------------------------------
 
-ifneq ($(BUILD),$(notdir $(CURDIR)))
 
-export OUTPUT := $(CURDIR)/$(TARGET)
-export DEPSDIR := $(CURDIR)/$(BUILD)
 
-export VPATH := \
-	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 
 #---------------------------------------------------------------------------------
 # Sources
@@ -333,21 +330,15 @@ endif
 # Objects
 #---------------------------------------------------------------------------------
 
-export OFILES := \
-	$(CPPFILES:.cpp=.o) \
-	$(CFILES:.c=.o) \
-	$(sFILES:.s=.o) \
-	$(SFILES:.S=.o)
-
 #---------------------------------------------------------------------------------
 # Includes
 #---------------------------------------------------------------------------------
 
 export INCLUDE := \
-	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+	$(foreach dir,$(INCLUDES),-I$(DOOMCUBE_ROOT)/$(dir)) \
 	$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-	-I$(CURDIR)/$(BUILD) \
-	-I$(CURDIR)/source \
+	-I$(DOOMCUBE_ROOT)/$(BUILD) \
+	-I$(DOOMCUBE_ROOT)/source \
 	-I$(DEVKITPRO)/libogc2/gamecube/include \
 	-I$(DEVKITPRO)/libogc2/gamecube/include/SDL2 \
 	-I$(DEVKITPRO)/portlibs/ppc/include \
@@ -365,86 +356,87 @@ export LIBPATHS := \
 
 #---------------------------------------------------------------------------------
 
-.PHONY: all $(BUILD) clean run iso test
+.PHONY: regression save-probe
 
-all: $(BUILD)
 
-#---------------------------------------------------------------------------------
-# Build
-#---------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# CarryHandle shared GameCube build mechanics
+# -----------------------------------------------------------------------------
 
-$(BUILD):
-	@[ -d $@ ] || mkdir -p $@
+PROJECT_DIR := $(DOOMCUBE_ROOT)
 
-	@echo "Building DoomCube v$(BUILD_VERSION) ($(BUILD_ID))"
+PROJECT_MAKEFILE := \
+	$(DOOMCUBE_ROOT)/Makefile
 
-	@$(MAKE) \
-		--no-print-directory \
-		-C $(BUILD) \
-		-f $(CURDIR)/Makefile \
-		$(CURDIR)/$(TARGET).dol
+CARRY_ROOT := \
+	$(CARRYHANDLE_DIR)
 
-#---------------------------------------------------------------------------------
-# Clean
-#---------------------------------------------------------------------------------
+CH_SOURCE_DIRS := \
+	$(CARRYHANDLE_DIR)/source
 
-clean:
-	@echo clean ...
 
-	@rm -rf \
-		$(BUILD) \
-		$(ISO_DIR) \
-		$(CURDIR)/$(TARGET).elf \
-		$(CURDIR)/$(TARGET).dol \
-		$(ISO_OUT)
+# DoomCube-side adapter.
+#
+# This is application code, not a CarryHandle runtime module.
+# Normalize the source list so it appears exactly once regardless
+# of whether an earlier Doom source list already names it.
+CFILES := \
+	$(filter-out gc_carryhandle_dogfood.c,$(CFILES)) \
+	gc_carryhandle_dogfood.c
 
-#---------------------------------------------------------------------------------
-# Run on hardware
-#---------------------------------------------------------------------------------
 
-run:
-	wiiload $(TARGET).dol
+# Reusable CarryHandle implementation selected by DoomCube.
+CH_CFILES := \
+	ch_application.c \
+	ch_application_save.c \
+	ch_input.c \
+	ch_input_physical.c \
+	ch_input_bindings.c \
+	ch_pad_bus.c \
+	ch_rumble.c \
+	ch_time.c \
+	ch_dvd.c \
+	ch_card_presentation.c \
+	ch_memcard.c \
+	ch_persist.c \
+	ch_tx.c \
+	ch_tx_format.c \
+	ch_tx_memcard_backend.c \
+	ch_version.c
 
-#---------------------------------------------------------------------------------
-# Native GameCube ISO
-#---------------------------------------------------------------------------------
 
-iso: all
-	@test -f "$(CURDIR)/tools/native-gcm/mkdoomcube.py" || \
-		( echo "ERROR: missing native GCM builder." && false )
+# Doom's disc staging directory is application-owned.
+CLEAN_DIRS += \
+	$(ISO_DIR)
 
-	@test -f "$(CURDIR)/tools/native-gcm/apploader.c" || \
-		( echo "ERROR: missing tools/native-gcm/apploader.c" && false )
+RUN_IMAGE := \
+	$(DOOMCUBE_ROOT)/$(TARGET).dol
 
-	@test -d "$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" || \
-		( echo "ERROR: missing build-deps/cubeboot-tools." && false )
 
-	@echo "Building DoomCube apploader"
-	@cp "$(CURDIR)/tools/native-gcm/apploader.c" \
-		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.c"
+include $(CARRYHANDLE_DIR)/make/gamecube.mk
 
-	@$(MAKE) -C \
-		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader" \
-		clean
 
-	@$(MAKE) -C \
-		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader"
+# -----------------------------------------------------------------------------
+# DoomCube disc contents
+# -----------------------------------------------------------------------------
 
-	@cp \
-		"$(CURDIR)/build-deps/cubeboot-tools/ppc/apploader/apploader.bin" \
-		"$(CURDIR)/tools/native-gcm/apploader.bin"
+DOOMCUBE_DISC_STAGE := \
+	doomcube-disc-stage
 
-	@test -f "$(CURDIR)/data/wad/doom1.wad" || \
-		test -f "$(CURDIR)/data/wad/doom.wad" || \
-		test -f "$(CURDIR)/data/wad/doom2.wad" || \
-		test -f "$(CURDIR)/data/wad/tnt.wad" || \
-		test -f "$(CURDIR)/data/wad/plutonia.wad" || \
+.PHONY: $(DOOMCUBE_DISC_STAGE)
+
+$(DOOMCUBE_DISC_STAGE):
+	@test -f "$(DOOMCUBE_ROOT)/data/wad/doom1.wad" || \
+		test -f "$(DOOMCUBE_ROOT)/data/wad/doom.wad" || \
+		test -f "$(DOOMCUBE_ROOT)/data/wad/doom2.wad" || \
+		test -f "$(DOOMCUBE_ROOT)/data/wad/tnt.wad" || \
+		test -f "$(DOOMCUBE_ROOT)/data/wad/plutonia.wad" || \
 		( echo "ERROR: no supported Doom IWAD found in data/wad/." && false )
 
-	@test -d "$(CURDIR)/data/timidity" || \
+	@test -d "$(DOOMCUBE_ROOT)/data/timidity" || \
 		( echo "ERROR: data/timidity is missing." && false )
 
-	@test -f "$(CURDIR)/data/timidity/timidity.cfg" || \
+	@test -f "$(DOOMCUBE_ROOT)/data/timidity/timidity.cfg" || \
 		( echo "ERROR: data/timidity/timidity.cfg is missing." && false )
 
 	@rm -rf "$(ISO_DIR)"
@@ -455,66 +447,112 @@ iso: all
 	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
 
-	@cp "$(CURDIR)/data/launcher/doomcube.bmp" \
+	@cp "$(DOOMCUBE_ROOT)/data/launcher/doomcube.bmp" \
 		"$(ISO_DIR)/launcher/doomcube.bmp"
 
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
-		if [ -f "$(CURDIR)/data/wad/$$wad" ]; then \
+		if [ -f "$(DOOMCUBE_ROOT)/data/wad/$$wad" ]; then \
 			echo "Adding $$wad"; \
-			cp "$(CURDIR)/data/wad/$$wad" "$(ISO_DIR)/data/wad/$$wad"; \
+			cp "$(DOOMCUBE_ROOT)/data/wad/$$wad" \
+				"$(ISO_DIR)/data/wad/$$wad"; \
 		fi; \
 	done
 
-	@if [ -d "$(CURDIR)/data/pwad" ]; then \
-		cp -a "$(CURDIR)/data/pwad/." "$(ISO_DIR)/data/pwad/"; \
+	@if [ -d "$(DOOMCUBE_ROOT)/data/pwad" ]; then \
+		cp -a "$(DOOMCUBE_ROOT)/data/pwad/." \
+			"$(ISO_DIR)/data/pwad/"; \
 	fi
 
-	@if [ -d "$(CURDIR)/data/deh" ]; then \
-		cp -a "$(CURDIR)/data/deh/." "$(ISO_DIR)/data/deh/"; \
+	@python3 -c 'from pathlib import Path; p = Path("$(ISO_DIR)/data/pwad"); names = sorted((entry.name for entry in p.iterdir() if entry.is_file() and entry.suffix.lower() == ".wad" and "\n" not in entry.name and "\r" not in entry.name), key=str.casefold); (p / "doomcube.lst").write_text("".join(name + "\n" for name in names), encoding="utf-8"); print(f"PWAD manifest : {len(names)} file(s)")'
+
+	@if [ -d "$(DOOMCUBE_ROOT)/data/deh" ]; then \
+		cp -a "$(DOOMCUBE_ROOT)/data/deh/." \
+			"$(ISO_DIR)/data/deh/"; \
 	fi
 
 	@echo "Adding TiMidity instrument data"
-	@cp -a "$(CURDIR)/data/timidity/." "$(ISO_DIR)/data/timidity/"
+
+	@cp -a "$(DOOMCUBE_ROOT)/data/timidity/." \
+		"$(ISO_DIR)/data/timidity/"
 
 	@echo
 	@echo "Native disc contents:"
 	@du -sh "$(ISO_DIR)"
 	@echo
 
-	python3 "$(CURDIR)/tools/native-gcm/mkdoomcube.py" \
-		--dol "$(CURDIR)/$(TARGET).dol" \
-		--apploader "$(CURDIR)/tools/native-gcm/apploader.bin" \
-		--root "$(ISO_DIR)" \
-		--output "$(ISO_OUT)" \
-		--title "DOOMCUBE" \
-		--region PAL
 
-	@echo
-	@echo "Built native GameCube ISO:"
-	@ls -lh "$(ISO_OUT)"
-	@echo
+# -----------------------------------------------------------------------------
+# CarryHandle native GCM construction
+# -----------------------------------------------------------------------------
 
-#---------------------------------------------------------------------------------
-# Dolphin test
-#---------------------------------------------------------------------------------
+GCM_DOL := \
+	$(DOOMCUBE_ROOT)/$(TARGET).dol
 
-test:
+GCM_ROOT := \
+	$(ISO_DIR)
+
+GCM_OUTPUT := \
+	$(ISO_OUT)
+
+GCM_TITLE := DOOMCUBE
+
+GCM_REGION := PAL
+
+GCM_PREPARE := \
+	$(DOOMCUBE_DISC_STAGE)
+
+
+include $(CARRYHANDLE_DIR)/make/image.mk
+
+
+# -----------------------------------------------------------------------------
+# DoomCube test policy
+#
+# Preserve DoomCube's established semantics exactly:
+#
+#     clean
+#       -> fresh normal build
+#       -> fresh ISO
+#       -> Dolphin
+#
+# TEST_TARGET lets the generic Dolphin helper launch only after this
+# application-specific serialized policy has completed.
+# -----------------------------------------------------------------------------
+
+DOOMCUBE_TEST_TARGET := \
+	doomcube-test-image
+
+.PHONY: $(DOOMCUBE_TEST_TARGET)
+
+$(DOOMCUBE_TEST_TARGET):
 	$(MAKE) clean
 	$(MAKE)
 	$(MAKE) iso
 
 	@echo
-	@echo "Launching DoomCube..."
-	@echo
-
 	@echo "DOL:"
-	@ls -lh "$(CURDIR)/$(TARGET).dol"
+	@ls -lh "$(DOOMCUBE_ROOT)/$(TARGET).dol"
 	@echo
 
+
+DOLPHIN_IMAGE := \
+	$(ISO_OUT)
+
+DOLPHIN := \
 	flatpak run \
-		--filesystem="$(CURDIR):ro" \
-		org.DolphinEmu.dolphin-emu \
-		"$(ISO_OUT)"
+	--filesystem="$(DOOMCUBE_ROOT):ro" \
+	org.DolphinEmu.dolphin-emu
+
+# Preserve DoomCube's established invocation rather than changing
+# it to CarryHandle's default batch-mode arguments.
+DOLPHIN_ARGS :=
+
+TEST_TARGET := \
+	$(DOOMCUBE_TEST_TARGET)
+
+
+include $(CARRYHANDLE_DIR)/make/dolphin.mk
+
 
 #---------------------------------------------------------------------------------
 # Automated regression tests
@@ -528,68 +566,21 @@ regression:
 save-probe:
 	@./tools/save-size-probe.sh
 
-#---------------------------------------------------------------------------------
-# Inner build
-#---------------------------------------------------------------------------------
-
-else
-
-# -------------------------------------------------------------------------------
-# CarryHandle dogfood objects
-# -------------------------------------------------------------------------------
-#
-# DoomCube's existing outer build exports its normal object set explicitly.
-# Merely adding another directory to SOURCES therefore does not add objects
-# from that directory to the final ELF.
-#
-# Keep this first integration explicit: one DoomCube adapter plus the
-# CarryHandle runtime objects needed underneath it.
-
-CARRYHANDLE_DOGFOOD_OFILES := \
-    gc_carryhandle_dogfood.o \
-    ch_application.o \
-    ch_application_save.o \
-    ch_input.o \
-	ch_input_physical.o \
-	ch_input_bindings.o \
-    ch_pad_bus.o \
-    ch_rumble.o \
-    ch_time.o \
-    ch_dvd.o \
-    ch_card_presentation.o \
-    ch_memcard.o \
-    ch_persist.o \
-    ch_tx.o \
-    ch_tx_format.o \
-    ch_tx_memcard_backend.o \
-    ch_version.o
-
-OFILES += $(CARRYHANDLE_DOGFOOD_OFILES)
-
-VPATH += \
-    $(DOOMCUBE_ROOT)/source \
-    $(CARRYHANDLE_DIR)/source
-
-DEPENDS := $(OFILES:.o=.d)
-
-.PHONY: all
-
-all: $(OUTPUT).dol
+# -----------------------------------------------------------------------------
+# DoomCube build prerequisites layered over CarryHandle's shared inner build
+# -----------------------------------------------------------------------------
 
 $(OFILES): $(CARRYHANDLE_APP_HEADER)
 
 $(CARRYHANDLE_APP_HEADER): \
-        $(CARRYHANDLE_MANIFEST) \
-        $(CARRYHANDLE_MANIFEST_TOOL)
+	$(CARRYHANDLE_MANIFEST) \
+	$(CARRYHANDLE_MANIFEST_TOOL)
 	@mkdir -p $(dir $@)
 	@PYTHONDONTWRITEBYTECODE=1 python3 \
 		$(CARRYHANDLE_MANIFEST_TOOL) \
 		$(CARRYHANDLE_MANIFEST) \
 		--output-header $(CARRYHANDLE_APP_HEADER)
 
-$(OUTPUT).dol: $(OUTPUT).elf
-
-$(OUTPUT).elf: $(OFILES)
 
 #---------------------------------------------------------------------------------
 # GameCube save stdio shim
@@ -599,9 +590,7 @@ g_game.o p_saveg.o m_menu_gamecube.o: CFLAGS += \
 	-DDOOMCUBE_SAVE_SHIM \
 	-include gc_save_stdio.h
 
--include $(DEPENDS)
 
-endif
 
 #---------------------------------------------------------------------------------
 # Player release bundle
