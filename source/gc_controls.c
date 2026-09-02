@@ -1,6 +1,7 @@
 #include "gc_controls.h"
 
 #include <carryhandle/ch_input.h>
+#include <carryhandle/ch_input_bindings.h>
 
 
 #include <stdint.h>
@@ -32,6 +33,8 @@ static int8_t gcCStickY;
 
 static uint8_t gcTriggerR;
 
+static CH_PadState gcPad;
+
 static int gcTurnSensitivity =
     GC_TURN_SENSITIVITY_DEFAULT;
 
@@ -60,6 +63,118 @@ static int gcBindings[GC_ACTION_COUNT] =
     [GC_ACTION_MENU_CONFIRM] = GC_INPUT_A,
     [GC_ACTION_MENU_BACK]    = GC_INPUT_B
 };
+
+
+
+static CH_PhysicalInput GC_InputToPhysical(
+    gc_input_t input)
+{
+    switch (input)
+    {
+        case GC_INPUT_A:
+            return CH_PHYSICAL_A;
+
+        case GC_INPUT_B:
+            return CH_PHYSICAL_B;
+
+        case GC_INPUT_X:
+            return CH_PHYSICAL_X;
+
+        case GC_INPUT_Y:
+            return CH_PHYSICAL_Y;
+
+        case GC_INPUT_L:
+            return CH_PHYSICAL_L;
+
+        case GC_INPUT_R:
+            return CH_PHYSICAL_R;
+
+        case GC_INPUT_DPAD_UP:
+            return CH_PHYSICAL_DPAD_UP;
+
+        case GC_INPUT_DPAD_DOWN:
+            return CH_PHYSICAL_DPAD_DOWN;
+
+        case GC_INPUT_DPAD_LEFT:
+            return CH_PHYSICAL_DPAD_LEFT;
+
+        case GC_INPUT_DPAD_RIGHT:
+            return CH_PHYSICAL_DPAD_RIGHT;
+
+        case GC_INPUT_STICK_UP:
+            return CH_PHYSICAL_STICK_UP;
+
+        case GC_INPUT_STICK_DOWN:
+            return CH_PHYSICAL_STICK_DOWN;
+
+        case GC_INPUT_STICK_LEFT:
+            return CH_PHYSICAL_STICK_LEFT;
+
+        case GC_INPUT_STICK_RIGHT:
+            return CH_PHYSICAL_STICK_RIGHT;
+
+        case GC_INPUT_CSTICK_UP:
+            return CH_PHYSICAL_CSTICK_UP;
+
+        case GC_INPUT_CSTICK_DOWN:
+            return CH_PHYSICAL_CSTICK_DOWN;
+
+        case GC_INPUT_CSTICK_LEFT:
+            return CH_PHYSICAL_CSTICK_LEFT;
+
+        case GC_INPUT_CSTICK_RIGHT:
+            return CH_PHYSICAL_CSTICK_RIGHT;
+
+        case GC_INPUT_NONE:
+        case GC_INPUT_COUNT:
+        default:
+            return CH_PHYSICAL_NONE;
+    }
+}
+
+
+static CH_ActionBindings gcCHBindings;
+
+static CH_PhysicalInput
+    gcCHBindingStorage[GC_ACTION_COUNT];
+
+static bool gcCHBindingsInitialized;
+
+
+static bool GC_SyncCarryHandleBindings(void)
+{
+    size_t action;
+
+    if (!gcCHBindingsInitialized)
+    {
+        if (!CH_ActionBindingsInit(
+                &gcCHBindings,
+                gcCHBindingStorage,
+                GC_ACTION_COUNT))
+        {
+            return false;
+        }
+
+        gcCHBindingsInitialized =
+            true;
+    }
+
+    for (action = 0;
+         action < GC_ACTION_COUNT;
+         ++action)
+    {
+        if (!CH_ActionBindingsSet(
+                &gcCHBindings,
+                action,
+                GC_InputToPhysical(
+                    (gc_input_t)gcBindings[action])))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 
 /* ------------------------------------------------------------------------- */
@@ -192,6 +307,9 @@ void GC_ControlsPoll(void)
         0,
         &pad);
 
+    gcPad =
+        pad;
+
     gcHeld =
         pad.buttons_held;
 
@@ -293,18 +411,34 @@ bool GC_ControlHeld(
         return false;
     }
 
-    return
-        GC_InputHeld(
-            gcBindings[action]);
+    if (!GC_SyncCarryHandleBindings())
+        return false;
+
+    /*
+     * Preserve DoomCube's established trigger behavior.
+     *
+     * CarryHandle's CH_PHYSICAL_R currently means the digital
+     * trigger click. DoomCube historically considers R held once
+     * its analogue travel exceeds GC_TRIGGER_THRESHOLD.
+     */
+    if ((gc_input_t)gcBindings[action] ==
+            GC_INPUT_R)
+    {
+        return
+            gcTriggerR >
+            GC_TRIGGER_THRESHOLD;
+    }
+
+    return CH_ActionBindingsHeld(
+        &gcCHBindings,
+        &gcPad,
+        (size_t)action);
 }
 
 bool GC_ControlHasAnalogAxis(
     gc_action_t negative_action,
     gc_action_t positive_action)
 {
-    gc_input_t negative;
-    gc_input_t positive;
-
     if (negative_action < 0 ||
         negative_action >= GC_ACTION_COUNT ||
         positive_action < 0 ||
@@ -313,43 +447,19 @@ bool GC_ControlHasAnalogAxis(
         return false;
     }
 
-    negative = gcBindings[negative_action];
-    positive = gcBindings[positive_action];
+    if (!GC_SyncCarryHandleBindings())
+        return false;
 
-    if (negative == GC_INPUT_STICK_LEFT &&
-        positive == GC_INPUT_STICK_RIGHT)
-    {
-        return true;
-    }
-
-    if (negative == GC_INPUT_STICK_DOWN &&
-        positive == GC_INPUT_STICK_UP)
-    {
-        return true;
-    }
-
-    if (negative == GC_INPUT_CSTICK_LEFT &&
-        positive == GC_INPUT_CSTICK_RIGHT)
-    {
-        return true;
-    }
-
-    if (negative == GC_INPUT_CSTICK_DOWN &&
-        positive == GC_INPUT_CSTICK_UP)
-    {
-        return true;
-    }
-
-    return false;
+    return CH_ActionBindingsHasAnalogAxis(
+        &gcCHBindings,
+        (size_t)negative_action,
+        (size_t)positive_action);
 }
 
 int GC_ControlAnalogAxis(
     gc_action_t negative_action,
     gc_action_t positive_action)
 {
-    gc_input_t negative;
-    gc_input_t positive;
-
     if (gcCapturing ||
         gcCaptureReleaseWait)
     {
@@ -363,36 +473,12 @@ int GC_ControlAnalogAxis(
         return 0;
     }
 
-    negative = gcBindings[negative_action];
-    positive = gcBindings[positive_action];
-
-    if (negative == GC_INPUT_STICK_LEFT &&
-        positive == GC_INPUT_STICK_RIGHT)
-    {
-        return gcStickX;
-    }
-
-    if (negative == GC_INPUT_STICK_DOWN &&
-        positive == GC_INPUT_STICK_UP)
-    {
-        return gcStickY;
-    }
-
-    if (negative == GC_INPUT_CSTICK_LEFT &&
-        positive == GC_INPUT_CSTICK_RIGHT)
-    {
-        return gcCStickX;
-    }
-
-    if (negative == GC_INPUT_CSTICK_DOWN &&
-        positive == GC_INPUT_CSTICK_UP)
-    {
-        return gcCStickY;
-    }
-
-    return 0;
+    return CH_ActionBindingsAnalogAxisRaw(
+        &gcCHBindings,
+        &gcPad,
+        (size_t)negative_action,
+        (size_t)positive_action);
 }
-
 
 /*
  * Return a proportional -127..127 movement value for a pair of
@@ -794,6 +880,8 @@ void GC_ControlsSetBinding(
 
     gcBindings[action] =
         input;
+
+    (void)GC_SyncCarryHandleBindings();
 }
 
 void GC_ControlsBindConfig(void)

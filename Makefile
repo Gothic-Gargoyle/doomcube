@@ -550,6 +550,8 @@ CARRYHANDLE_DOGFOOD_OFILES := \
     ch_application.o \
     ch_application_save.o \
     ch_input.o \
+	ch_input_physical.o \
+	ch_input_bindings.o \
     ch_pad_bus.o \
     ch_rumble.o \
     ch_time.o \
@@ -786,4 +788,3 @@ test-rc:
 		TRACE=0 \
 		VERSION="$(BASE_VERSION)-rc$(RC)" \
 		test
-
