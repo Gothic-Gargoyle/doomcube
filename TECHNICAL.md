@@ -8,38 +8,18 @@ For environment setup and day-to-day build commands, see
 
 # Building DoomCube from source
 
-The player release does not require a development toolchain.
+Environment setup, DoomCube-specific development commands and release targets
+are documented in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-Building DoomCube itself requires a configured devkitPro environment including
-**devkitPPC** and **libogc2**, together with the dependencies used by the
-project.
+Generic CarryHandle manifest, build-target, parallel-build and dependency
+semantics are documented in:
 
-From the repository root:
-
-```bash
-make
+```text
+deps/carryhandle/README.md
 ```
 
-Build the native development disc image with:
-
-```bash
-make iso
-```
-
-Build and launch the development image in the configured Dolphin environment
-with:
-
-```bash
-make test
-```
-
-Build the player-facing production ZIP with:
-
-```bash
-make release
-```
-
-Generated player releases are written under `dist/`.
+The player release remains self-contained and does not require a development
+toolchain.
 
 
 # Runtime architecture
@@ -51,9 +31,11 @@ The runtime path is roughly:
 ```text
 Doom / DoomGeneric
         |
-GameCube-specific backends
+DoomCube application backends and policy
         |
-libogc2 / SDL2 / SDL2_mixer
+CarryHandle platform services + SDL2 / SDL2_mixer
+        |
+libogc2
         |
 Nintendo GameCube
 ```
@@ -70,58 +52,89 @@ dvd:/launcher/
 
 Bare-DOL SD-card execution is not currently the canonical runtime model.
 
+
 # Native GameCube image and FST
 
-DoomCube builds a native GameCube image rather than an ISO9660 filesystem.
+DoomCube builds a native GameCube GCM/FST image rather than an ISO9660
+filesystem.
 
-The image contains:
+For normal source-tree development, DoomCube owns the application-specific
+disc staging policy while CarryHandle owns the generic native-image mechanics.
 
-```text
-GameCube boot header
-DoomCube apploader
-main DOL
-native GameCube FST
-runtime file data
-```
-
-The low-level image builder is:
+DoomCube's `doomcube-disc-stage` rule prepares the staged disc tree with:
 
 ```text
-tools/native-gcm/mkdoomcube.py
+data/wad/
+data/pwad/
+data/deh/
+data/timidity/
+launcher/
 ```
 
-The native runtime filesystem backend is implemented in:
+It also creates the DoomCube-specific PWAD manifest before image construction.
+
+The staged tree is then passed through CarryHandle's shared image rules from:
 
 ```text
-source/gc_dvd_fst.c
-source/gc_dvd_fst.h
+deps/carryhandle/make/image.mk
 ```
 
-The backend resolves files through the GameCube FST and exposes the paths used
-by the rest of DoomCube.
+CarryHandle supplies the generic native GCM/FST builder, apploader integration
+and manifest-driven disc identity. DoomCube's `carryhandle.cfg` supplies the
+application metadata used by that developer image path.
+
+At runtime, DoomCube mounts and unmounts the native disc through CarryHandle:
+
+```text
+CH_DVDMount()
+CH_DVDUnmount()
+```
+
+The active DVD/FST implementation is CarryHandle's `ch_dvd.c`. DoomCube owns
+the paths and application behavior layered on top of that service.
 
 The native DVD/FST path does not provide ordinary directory enumeration.
-Because of this, PWAD discovery is performed at image-build time rather than
-at runtime.
+DoomCube therefore supplies an explicit PWAD manifest rather than depending on
+runtime directory scanning.
+
+
+# Player-release image tooling
+
+DoomCube also retains its local native-image tooling for the self-contained
+player release bundle:
+
+```text
+tools/native-gcm/apploader.bin
+tools/native-gcm/mkdoomcube.py
+tools/release/pack.py
+```
+
+Those files are intentionally packaged into the release so a player can add
+legal WAD data and build a native GameCube image without installing devkitPPC,
+libogc2 or CarryHandle.
+
+This release-bundle path is separate from the normal source-tree developer
+image path described above.
+
 
 # PWAD manifest discovery
 
-During image construction, `mkdoomcube.py` scans:
+The launcher reads:
 
 ```text
-data/pwad/
+dvd:/data/pwad/doomcube.lst
 ```
 
-and writes:
+The manifest contains one top-level PWAD filename per line.
 
-```text
-data/pwad/doomcube.lst
-```
+For normal developer images, DoomCube's Makefile generates the manifest in the
+staged `data/pwad/` directory before CarryHandle packages the image.
 
-The launcher reads that manifest and checks the corresponding files through
-the normal disc backend.
+For self-contained player releases, the bundled
+`tools/native-gcm/mkdoomcube.py` generates the same manifest while building the
+release image.
 
-This keeps runtime discovery deterministic without requiring a synthetic
+This keeps runtime PWAD discovery deterministic without requiring a synthetic
 directory-enumeration layer in the GameCube filesystem backend.
 
 # WAD merge path

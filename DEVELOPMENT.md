@@ -186,45 +186,31 @@ Expected output:
 192
 ```
 
-# Build targets
+# Build and release workflow
 
-## Build the DOL
+DoomCube uses the shared CarryHandle GameCube build contract from
+`deps/carryhandle`.
+
+Generic target semantics, parallel-build policy, manifest handling and
+CarryHandle dependency management are documented in:
+
+```text
+deps/carryhandle/README.md
+```
+
+From the DoomCube repository root, the normal development entry points are:
 
 ```bash
 make
-```
-
-Creates a versioned executable similar to:
-
-```text
-doomcube-v1.0.0-dev-xxxxxxxx.dol
-```
-
-The Git commit hash is included in the filename. A modified worktree adds
-`-dirty` to the build ID.
-
-## Build the native GameCube image
-
-```bash
 make iso
-```
-
-Creates a versioned native GameCube disc image, for example:
-
-```text
-doomcube-v1.0.0-dev-xxxxxxxx.iso
-```
-
-## Build and launch in Dolphin
-
-```bash
+make dolphin
 make test
 ```
 
-This performs a clean rebuild, creates the native image, and launches it using
-the Flatpak version of Dolphin.
+DoomCube produces versioned development artifacts whose filenames include the
+current Git commit and add `-dirty` when the worktree has tracked changes.
 
-## Release targets
+DoomCube-specific release targets are:
 
 ```text
 make test-rc
@@ -233,15 +219,12 @@ make release
 make release-debug
 ```
 
-`make release` creates a self-contained player release under `dist/`.
-
+`make release` creates the self-contained player release under `dist/`.
 Release archives intentionally contain no commercial IWADs.
 
-## Clean
-
-```bash
-make clean
-```
+Routine development should stay incremental. `make clean` exists for explicit
+cleanup or build-system diagnosis and is not a required precursor to normal
+builds or tests.
 
 # Developer test harness
 

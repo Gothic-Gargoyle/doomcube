@@ -164,12 +164,39 @@ small for the storage policy are rejected rather than partially initialised.
 
 ## Development documentation
 
-For detailed source-build setup and development workflow, see:
+Clone the source tree together with its pinned CarryHandle dependency:
+
+```bash
+git clone --recurse-submodules https://github.com/Gothic-Gargoyle/doomcube
+```
+
+CarryHandle is pinned under:
+
+```text
+deps/carryhandle
+```
+
+Generic CarryHandle integration, manifest, build-target and dependency-update
+documentation lives in `deps/carryhandle/README.md`.
+
+DoomCube's application identity is:
+
+```text
+Memory Card game/company : DOOM / SB
+GameCube disc ID         : GDMPSB
+```
+
+These values are defined through DoomCube's `carryhandle.cfg`; the Memory Card
+identity is deliberately separate from the disc game identifier.
+
+For DoomCube-specific source-build setup, release targets, regression tooling
+and development workflow, see:
 
 **[DEVELOPMENT.md](DEVELOPMENT.md)**
 
-For implementation details including the native FST runtime, PWAD merge path,
-SIGIL episode handling, renderer details and regression infrastructure, see:
+For DoomCube-specific implementation details including the native FST runtime,
+PWAD merge path, SIGIL episode handling, renderer details and regression
+infrastructure, see:
 
 **[TECHNICAL.md](TECHNICAL.md)**
 
