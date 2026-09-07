@@ -35,7 +35,7 @@ TRACE ?= 0
 #---------------------------------------------------------------------------------
 
 DOOMCUBE_ROOT := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
-CARRYHANDLE_DIR ?= $(abspath $(DOOMCUBE_ROOT)/../carryhandle)
+CARRYHANDLE_DIR ?= $(abspath $(DOOMCUBE_ROOT)/deps/carryhandle)
 
 CARRYHANDLE_MANIFEST      := $(DOOMCUBE_ROOT)/carryhandle.cfg
 CARRYHANDLE_MANIFEST_TOOL := $(CARRYHANDLE_DIR)/tools/ch_manifest.py
