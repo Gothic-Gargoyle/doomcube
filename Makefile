@@ -423,6 +423,7 @@ APP_INCLUDES := \
 
 
 include $(CARRYHANDLE_DIR)/make/gamecube.mk
+include $(CARRYHANDLE_DIR)/make/release.mk
 
 
 # -----------------------------------------------------------------------------
