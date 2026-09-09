@@ -482,6 +482,9 @@ $(DOOMCUBE_DISC_STAGE):
 			"$(ISO_DIR)/data/pwad/"; \
 	fi
 
+	@python3 -B "$(DOOMCUBE_ROOT)/tools/launcher_assets.py" \
+		--root "$(ISO_DIR)"
+
 	@python3 -c 'from pathlib import Path; p = Path("$(ISO_DIR)/data/pwad"); names = sorted((entry.relative_to(p).as_posix() for entry in p.rglob("*") if entry.is_file() and entry.suffix.lower() == ".wad" and "\n" not in entry.relative_to(p).as_posix() and "\r" not in entry.relative_to(p).as_posix()), key=str.casefold); (p / "doomcube.lst").write_text("".join(name + "\n" for name in names), encoding="utf-8"); print(f"PWAD manifest : {len(names)} file(s)")'
 
 	@if [ -d "$(DOOMCUBE_ROOT)/data/deh" ]; then \

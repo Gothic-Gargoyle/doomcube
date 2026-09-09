@@ -12,7 +12,7 @@ the self-contained player release:
     |── build.sh
     ├── build.bat
     ├── pack.py
-    ├── WADs/       
+    ├── WADs/
     ├── PWADs/
     ├── DEH/
     └── runtime/
@@ -233,6 +233,8 @@ def stage_bundle(
     manifest: Path,
     presentation_banner: Path,
     packer: Path,
+    launcher_assets: Path,
+    wadgfx: Path,
     launcher: Path,
     timidity: Path,
     shell_launcher: Path,
@@ -299,6 +301,16 @@ def stage_bundle(
     )
 
     shutil.copy2(
+        launcher_assets,
+        runtime / "tools/launcher_assets.py",
+    )
+
+    shutil.copy2(
+        wadgfx,
+        runtime / "tools/wadgfx.py",
+    )
+
+    shutil.copy2(
         manifest,
         runtime / "carryhandle.cfg",
     )
@@ -324,6 +336,14 @@ def stage_bundle(
 
     make_executable(
         runtime / "tools/native-gcm/ch_gcm.py",
+    )
+
+    make_executable(
+        runtime / "tools/launcher_assets.py",
+    )
+
+    make_executable(
+        runtime / "tools/wadgfx.py",
     )
 
     bnr_output = runtime / "opening.bnr"
@@ -555,6 +575,16 @@ def main() -> None:
     presentation_banner = args.presentation_banner.resolve()
     packer = args.packer.resolve()
 
+    launcher_assets = (
+        packer.parent.parent
+        / "launcher_assets.py"
+    ).resolve()
+
+    wadgfx = (
+        packer.parent.parent
+        / "wadgfx.py"
+    ).resolve()
+
     shell_launcher = (
         packer.parent / "build.sh"
     ).resolve()
@@ -621,6 +651,16 @@ def main() -> None:
         packer,
     )
 
+    validate_python(
+        "launcher asset generator",
+        launcher_assets,
+    )
+
+    validate_python(
+        "Doom WAD graphics decoder",
+        wadgfx,
+    )
+
     require_file(
         "Unix player launcher",
         shell_launcher,
@@ -666,6 +706,8 @@ def main() -> None:
         manifest=manifest,
         presentation_banner=presentation_banner,
         packer=packer,
+        launcher_assets=launcher_assets,
+        wadgfx=wadgfx,
         shell_launcher=shell_launcher,
         batch_launcher=batch_launcher,
         launcher=launcher,

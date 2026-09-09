@@ -314,6 +314,7 @@ class Runtime:
     builder: Path
     manifest_tool: Path
     manifest: Path
+    launcher_assets: Path
     opening_bnr: Path | None
     bnr_builder: Path | None
     launcher: Path
@@ -430,6 +431,10 @@ def discover_runtime(script_path: Path) -> Runtime:
             ),
             manifest_tool=runtime_dir / "tools/ch_manifest.py",
             manifest=runtime_dir / "carryhandle.cfg",
+            launcher_assets=(
+                runtime_dir
+                / "tools/launcher_assets.py"
+            ),
             opening_bnr=runtime_dir / "opening.bnr",
             bnr_builder=None,
             launcher=runtime_dir / "launcher/doomcube.bmp",
@@ -482,6 +487,10 @@ def discover_runtime(script_path: Path) -> Runtime:
         ),
         manifest_tool=carryhandle / "tools/ch_manifest.py",
         manifest=repo_root / "carryhandle.cfg",
+        launcher_assets=(
+            repo_root
+            / "tools/launcher_assets.py"
+        ),
         opening_bnr=None,
         bnr_builder=(
             carryhandle
@@ -502,6 +511,10 @@ def validate_runtime(runtime: Runtime) -> None:
         ("CarryHandle native GCM builder", runtime.builder),
         ("CarryHandle manifest tool", runtime.manifest_tool),
         ("CarryHandle manifest", runtime.manifest),
+        (
+            "DoomCube launcher asset generator",
+            runtime.launcher_assets,
+        ),
         ("launcher artwork", runtime.launcher),
         ("TiMidity configuration", runtime.timidity / "timidity.cfg"),
     ]
@@ -700,6 +713,33 @@ def write_pwad_manifest(pwad_dir: Path) -> None:
     )
 
 
+def generate_launcher_assets(
+    runtime: Runtime,
+    staging: Path,
+) -> None:
+    print()
+    info("Generating launcher TITLEPIC artwork")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(runtime.launcher_assets),
+            "--root",
+            str(staging),
+        ],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        print(
+            "[WARN] Launcher artwork generator failed "
+            f"with exit status {result.returncode}.\n"
+            "       Disc construction will continue; "
+            "DoomCube will use its runtime artwork fallback."
+        )
+
+
 def stage_disc(
     runtime: Runtime,
     found_wads: dict[str, Path],
@@ -725,6 +765,11 @@ def stage_disc(
     copy_optional_tree(
         runtime.default_pwads,
         pwad_dir,
+    )
+
+    generate_launcher_assets(
+        runtime,
+        staging,
     )
 
     write_pwad_manifest(pwad_dir)
