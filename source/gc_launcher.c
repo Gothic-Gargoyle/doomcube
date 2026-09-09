@@ -221,6 +221,104 @@ static int GC_NextAvailableCustomBase(
     return -1;
 }
 
+
+static int GC_CustomPwadCount(int baseIndex)
+{
+    int i;
+    int count = 0;
+
+    for (i = 0; i < gcAvailablePwadCount; ++i)
+    {
+        if (gcPwads[i].baseIndex == baseIndex)
+        {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+
+static int GC_FirstCustomPwad(int baseIndex)
+{
+    int i;
+
+    for (i = 0; i < gcAvailablePwadCount; ++i)
+    {
+        if (gcPwads[i].baseIndex == baseIndex)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+
+static int GC_NextCustomPwad(
+    int current,
+    int baseIndex,
+    int direction)
+{
+    int attempts;
+
+    if (gcAvailablePwadCount <= 0)
+    {
+        return -1;
+    }
+
+    for (attempts = 0;
+         attempts < gcAvailablePwadCount;
+         ++attempts)
+    {
+        current += direction;
+
+        if (current < 0)
+        {
+            current =
+                gcAvailablePwadCount - 1;
+        }
+        else if (current >= gcAvailablePwadCount)
+        {
+            current = 0;
+        }
+
+        if (gcPwads[current].baseIndex == baseIndex)
+        {
+            return current;
+        }
+    }
+
+    return -1;
+}
+
+
+static int GC_CustomPwadOrdinal(
+    int baseIndex,
+    int pwadIndex)
+{
+    int i;
+    int ordinal = 0;
+
+    for (i = 0; i < gcAvailablePwadCount; ++i)
+    {
+        if (gcPwads[i].baseIndex != baseIndex)
+        {
+            continue;
+        }
+
+        if (i == pwadIndex)
+        {
+            return ordinal;
+        }
+
+        ++ordinal;
+    }
+
+    return -1;
+}
+
+
 static int GC_LauncherScanPwads(void)
 {
     FILE *manifest;
@@ -1066,6 +1164,329 @@ static int GC_LauncherRunCustomBase(
         SDL_Delay(16);
     }
 }
+
+
+static void GC_DrawCustomPwadLauncher(
+    SDL_Renderer *renderer,
+    int baseIndex,
+    int selected)
+{
+    const char *title = "SELECT PWAD";
+    const char *controls =
+        "A - START    B - BACK";
+
+    const int visibleRows = 7;
+
+    int total;
+    int selectedOrdinal;
+    int first;
+    int last;
+    int ordinal;
+    int i;
+
+    if (baseIndex < 0 ||
+        baseIndex >= GC_CUSTOM_BASE_COUNT)
+    {
+        return;
+    }
+
+    total =
+        GC_CustomPwadCount(
+            baseIndex);
+
+    selectedOrdinal =
+        GC_CustomPwadOrdinal(
+            baseIndex,
+            selected);
+
+    first = 0;
+
+    if (selectedOrdinal >= visibleRows)
+    {
+        first =
+            selectedOrdinal -
+            visibleRows +
+            1;
+    }
+
+    last =
+        first +
+        visibleRows;
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(renderer);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(title, 4)) / 2,
+        45,
+        title,
+        4);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(
+                gcCustomBases[baseIndex].name,
+                2)) / 2,
+        100,
+        gcCustomBases[baseIndex].name,
+        2);
+
+    ordinal = 0;
+
+    for (i = 0; i < gcAvailablePwadCount; ++i)
+    {
+        int y;
+        char displayName[48];
+        int textWidth;
+
+        if (gcPwads[i].baseIndex != baseIndex)
+        {
+            continue;
+        }
+
+        if (ordinal < first ||
+            ordinal >= last)
+        {
+            ++ordinal;
+            continue;
+        }
+
+        y =
+            145 +
+            (ordinal - first) *
+                GC_LAUNCHER_LINE_HEIGHT;
+
+        if (i == selected)
+        {
+            SDL_Rect marker =
+            {
+                45,
+                y - 5,
+                550,
+                28
+            };
+
+            SDL_SetRenderDrawColor(
+                renderer,
+                70,
+                45,
+                120,
+                255);
+
+            SDL_RenderFillRect(
+                renderer,
+                &marker);
+
+            SDL_SetRenderDrawColor(
+                renderer,
+                255,
+                255,
+                255,
+                255);
+        }
+
+        /*
+         * Keep pathological filenames inside the safe width of
+         * this temporary built-in-font menu.
+         */
+        snprintf(
+            displayName,
+            sizeof(displayName),
+            "%.43s",
+            gcPwads[i].name);
+
+        textWidth =
+            GC_TextWidth(
+                displayName,
+                2);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                textWidth) / 2,
+            y,
+            displayName,
+            2);
+
+        ++ordinal;
+    }
+
+    if (total > visibleRows)
+    {
+        char position[32];
+
+        snprintf(
+            position,
+            sizeof(position),
+            "%d / %d",
+            selectedOrdinal + 1,
+            total);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(position, 1)) / 2,
+            380,
+            position,
+            1);
+    }
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(controls, 2)) / 2,
+        420,
+        controls,
+        2);
+
+    SDL_RenderPresent(renderer);
+}
+
+
+static int GC_LauncherRunCustomPwad(
+    SDL_Renderer *renderer,
+    int baseIndex)
+{
+    int selected;
+    int stickHeld = 0;
+
+    selected =
+        GC_FirstCustomPwad(
+            baseIndex);
+
+    if (selected < 0)
+    {
+        return -1;
+    }
+
+    GC_DrawCustomPwadLauncher(
+        renderer,
+        baseIndex,
+        selected);
+
+    /*
+     * Consume the A/START transition that entered this submenu.
+     */
+    for (int i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
+
+    DC_DEBUG(
+        "DoomCube: entering CUSTOM PWAD selection for %s\n",
+        gcCustomBases[baseIndex].name);
+
+    for (;;)
+    {
+        u32 down;
+        int stickY;
+        int stickDirection = 0;
+
+        PAD_ScanPads();
+
+        down =
+            PAD_ButtonsDown(0);
+
+        stickY =
+            PAD_StickY(0);
+
+        if (stickY > GC_LAUNCHER_DEADZONE)
+        {
+            stickDirection = -1;
+        }
+        else if (stickY < -GC_LAUNCHER_DEADZONE)
+        {
+            stickDirection = 1;
+        }
+
+        if ((down & PAD_BUTTON_UP) ||
+            (stickDirection < 0 &&
+             !stickHeld))
+        {
+            int previous =
+                GC_NextCustomPwad(
+                    selected,
+                    baseIndex,
+                    -1);
+
+            if (previous >= 0)
+            {
+                selected =
+                    previous;
+
+                GC_DrawCustomPwadLauncher(
+                    renderer,
+                    baseIndex,
+                    selected);
+            }
+        }
+
+        if ((down & PAD_BUTTON_DOWN) ||
+            (stickDirection > 0 &&
+             !stickHeld))
+        {
+            int next =
+                GC_NextCustomPwad(
+                    selected,
+                    baseIndex,
+                    1);
+
+            if (next >= 0)
+            {
+                selected =
+                    next;
+
+                GC_DrawCustomPwadLauncher(
+                    renderer,
+                    baseIndex,
+                    selected);
+            }
+        }
+
+        stickHeld =
+            stickDirection != 0;
+
+        if (down & PAD_BUTTON_B)
+        {
+            DC_DEBUG(
+                "DoomCube: CUSTOM PWAD selection cancelled\n");
+
+            return -2;
+        }
+
+        if (down &
+            (PAD_BUTTON_A |
+             PAD_BUTTON_START))
+        {
+            DC_DEBUG(
+                "DoomCube: CUSTOM PWAD selected %s\n",
+                gcPwads[selected].path);
+
+            return selected;
+        }
+
+        SDL_Delay(16);
+    }
+}
+
 
 static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
 {
@@ -2417,35 +2838,89 @@ bool GC_LauncherSelectGame(
 
         if (selectedGame == GC_CUSTOM_GAME_INDEX)
         {
-            int selectedBase =
-                GC_LauncherRunCustomBase(
-                    renderer);
-
-            if (selectedBase == -2)
+            for (;;)
             {
+                int selectedBase =
+                    GC_LauncherRunCustomBase(
+                        renderer);
+
                 /*
-                 * B returns to the normal launcher.
+                 * B from SELECT BASE returns to the carousel.
                  */
-                continue;
-            }
+                if (selectedBase == -2)
+                {
+                    break;
+                }
 
-            if (selectedBase < 0)
-            {
-                DC_WARN(
-                    "DoomCube: CUSTOM has no selectable base\n");
+                if (selectedBase < 0)
+                {
+                    DC_WARN(
+                        "DoomCube: CUSTOM has no selectable base\n");
 
-                continue;
+                    break;
+                }
+
+                {
+                    int selectedPwad =
+                        GC_LauncherRunCustomPwad(
+                            renderer,
+                            selectedBase);
+
+                    /*
+                     * B from SELECT PWAD returns one level to
+                     * SELECT BASE.
+                     */
+                    if (selectedPwad == -2)
+                    {
+                        continue;
+                    }
+
+                    if (selectedPwad < 0)
+                    {
+                        DC_WARN(
+                            "DoomCube: CUSTOM base %s has no selectable PWAD\n",
+                            gcCustomBases[selectedBase].name);
+
+                        continue;
+                    }
+
+                    selection->iwadPath =
+                        gcCustomBases[selectedBase].iwadPath;
+
+                    selection->pwadPath =
+                        gcPwads[selectedPwad].path;
+
+                    GC_DrawLoadingOverlay(
+                        renderer);
+
+                    GC_MemoryCardSetGame(
+                        gcCustomBases[
+                            selectedBase
+                        ].saveGameId);
+
+                    DC_INFO(
+                        "DoomCube: CUSTOM launcher selected base %s (%s)\n",
+                        gcCustomBases[selectedBase].name,
+                        selection->iwadPath);
+
+                    DC_INFO(
+                        "DoomCube: CUSTOM launcher add-on %s\n",
+                        selection->pwadPath);
+
+                    if (logo != NULL)
+                    {
+                        SDL_DestroyTexture(
+                            logo);
+                    }
+
+                    return true;
+                }
             }
 
             /*
-             * Atom 7 checkpoint:
-             * prove CUSTOM -> SELECT BASE before attaching the
-             * filtered PWAD selector.
+             * Leaving SELECT BASE with B returns to the
+             * already-selected CUSTOM carousel entry.
              */
-            DC_INFO(
-                "DoomCube: CUSTOM checkpoint selected base %s\n",
-                gcCustomBases[selectedBase].name);
-
             continue;
         }
 
