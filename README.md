@@ -16,11 +16,11 @@ native GameCube disc images, and a self-contained player packaging workflow.
 
 ## Status
 
-DoomCube **v1.0.0** is the first player-facing release.
+DoomCube **v1.1.0** is the first release verified on real Nintendo GameCube hardware.
 
 Experimental true widescreen support is intentionally **not included in
-v1.0.0**. That work has been postponed in favour of shipping the stable first
-release.
+v1.1.0**. That work remains postponed while DoomCube prioritises the
+hardware-verified native GameCube release path.
 
 ## Screenshot
 
@@ -53,7 +53,7 @@ Controls can be customised in the in-game options menu.
 - GameCube-native launcher
 - GameCube controller support
 - GameCube controller rumble
-- Memory Card A save support (16 blocks initially, grows up to 64 blocks)
+- Memory Card A save/config support (16 blocks initially, grows up to 64 blocks; experimental on real hardware)
 - Persistent global configuration
 - Transactional Save System v3
 - Per-game save identities
@@ -95,17 +95,26 @@ A release extracts roughly as follows:
 
 ```text
 DoomCube/
-├── WADs/
-├── PWADs/
-├── DEH/
 ├── build.sh
 ├── build.bat
 ├── pack.py
+├── WADs/
+├── PWADs/
+├── DEH/
 └── runtime/
     ├── doomcube.dol
     ├── apploader.bin
-    ├── mkdoomcube.py
+    ├── carryhandle.cfg
+    ├── opening.bnr
+    ├── assets/
+    │   └── presentation/
+    │       └── banner.png
+    ├── tools/
+    │   ├── ch_manifest.py
+    │   └── native-gcm/
+    │       └── ch_gcm.py
     ├── launcher/
+    │   └── doomcube.bmp
     └── timidity/
 ```
 
@@ -148,12 +157,18 @@ verify DOOM Shareware v1.9.
 
 ## Hardware status
 
-DoomCube has not yet been validated on original GameCube hardware.
+DoomCube v1.1.0 has been verified on an original Nintendo GameCube using
+PicoLoader to boot Swiss, with DoomCube stored as a native GameCube `.iso` on
+an SD Gecko.
 
-The v1.0.0 release should therefore still be considered emulator-tested until
-it has received an original-hardware test pass.
+This verified path covers Swiss presentation, launcher assets, IWAD detection,
+image-backed game-data reads, controller-driven gameplay, and actual DOOM II
+play. It does **not** imply validation of burned optical discs, other ODEs or
+loaders, other Swiss storage devices, or direct-DOL launching.
 
-Saving requires a **Memory Card 251 or larger**.
+Memory Card save/config support has **not** yet been validated on real
+hardware. Treat Memory Card support as experimental and do not use a card
+containing saves you care about.
 
 A new DoomCube Save System v3 container starts at **16 blocks** and can grow up
 to **64 blocks** as additional save data is stored.
@@ -202,8 +217,9 @@ infrastructure, see:
 
 ## Future work
 
-v1.0.0 prioritises a stable first GameCube release over additional renderer
-features.
+v1.1.0 prioritises a hardware-verified native GameCube release, a consistent
+CarryHandle-backed player image path, and conservative real-hardware support
+claims over additional renderer work.
 
 Planned or experimental work includes:
 

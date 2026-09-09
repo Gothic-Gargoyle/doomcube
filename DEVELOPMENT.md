@@ -314,5 +314,10 @@ make regression
 For changes that affect release packaging, also exercise the relevant release
 target.
 
-Original GameCube hardware still needs broader validation, especially for
-Memory Card behaviour, audio, rumble, disc access, and long-running stability.
+Original GameCube hardware validation now covers the PicoLoader -> Swiss ->
+SD Gecko native-ISO path used for DoomCube v1.1.0, including Swiss
+presentation, launcher operation, IWAD/game-data reads, controller-driven
+gameplay, and actual DOOM II play. Memory Card save/config writes and
+Memory Card presentation remain unvalidated on real hardware; other loaders,
+storage devices, burned optical discs, direct-DOL launch paths, rumble, and
+long-running stability should be treated as separate validation targets.

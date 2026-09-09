@@ -100,22 +100,46 @@ runtime directory scanning.
 
 # Player-release image tooling
 
-DoomCube also retains its local native-image tooling for the self-contained
-player release bundle:
+The player release remains self-contained and does not require a development
+toolchain.
+
+`tools/release/build_bundle.py` packages the already-built DoomCube runtime
+together with the pinned CarryHandle host tooling needed to construct a native
+GameCube image:
 
 ```text
-tools/native-gcm/apploader.bin
-tools/native-gcm/mkdoomcube.py
-tools/release/pack.py
+runtime/
+├── doomcube.dol
+├── apploader.bin
+├── carryhandle.cfg
+├── opening.bnr
+├── assets/
+│   └── presentation/
+│       └── banner.png
+├── tools/
+│   ├── ch_manifest.py
+│   └── native-gcm/
+│       └── ch_gcm.py
+├── launcher/
+│   └── doomcube.bmp
+└── timidity/
 ```
 
-Those files are intentionally packaged into the release so a player can add
-legal WAD data and build a native GameCube image without installing devkitPPC,
-libogc2 or CarryHandle.
+`opening.bnr` is generated when the release bundle itself is created, using
+the pinned CarryHandle BNR1 encoder and DoomCube's manifest/presentation art.
+The player therefore does not need Pillow or `ch_bnr.py`.
 
-This release-bundle path is separate from the normal source-tree developer
-image path described above.
+`tools/release/pack.py` stages the bundled runtime plus user-supplied IWAD/PWAD
+data into a temporary GameCube disc root, copies the pre-generated
+`opening.bnr`, and invokes the bundled CarryHandle `ch_gcm.py` with the bundled
+`carryhandle.cfg`.
 
+This intentionally keeps player-generated images on the same manifest-driven
+disc-identity and native GCM/FST path as normal DoomCube developer images. In
+particular, the GameCube disc ID comes from `carryhandle.cfg` rather than a
+DoomCube-specific hard-coded builder.
+
+The release ZIP itself contains no commercial IWADs.
 
 # PWAD manifest discovery
 
