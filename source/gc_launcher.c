@@ -699,33 +699,6 @@ static void GC_DrawLauncher(
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-    /*
-     * Build identification.
-     *
-     * Keep this small and unobtrusive in the bottom-right corner.
-     * The strings are supplied by the Makefile.
-     */
-    {
-        char versionText[96];
-        int versionWidth;
-
-        snprintf(
-            versionText,
-            sizeof(versionText),
-            "DOOMCUBE V%s (%s)",
-            DOOMCUBE_APP_VERSION,
-            DOOMCUBE_GIT_ID);
-
-        versionWidth =
-            GC_TextWidth(versionText, 1);
-
-        GC_DrawText(
-            renderer,
-            640 - versionWidth - 8,
-            480 - 7 - 8,
-            versionText,
-            1);
-    }
 
     if (logo != NULL)
     {
@@ -813,23 +786,7 @@ static void GC_DrawLauncher(
     }
 
     {
-        const char *startText = "A - START";
-        const char *copyright =
-            "@ COPYLEFT 2026 SPERGE BRIGADE STUDIOS";
-
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH - GC_TextWidth(startText, 2)) / 2,
-            395,
-            startText,
-            2);
-
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH - GC_TextWidth(copyright, 2)) / 2,
-            425,
-            copyright,
-            2);
+        const char *startText = "A - START    B - BACK";
     }
 
     SDL_RenderPresent(renderer);
@@ -1096,6 +1053,205 @@ static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
     SDL_RenderPresent(renderer);
 }
 
+static void GC_DrawSplash(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo)
+{
+    const char *prompt = "PRESS START";
+    const char *copyleft =
+        "@ COPYLEFT 2026 SPERGE BRIGADE STUDIOS";
+    char versionText[96];
+    int versionWidth;
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(renderer);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+
+    if (logo != NULL)
+    {
+        int logoWidth;
+        int logoHeight;
+
+        if (SDL_QueryTexture(
+                logo,
+                NULL,
+                NULL,
+                &logoWidth,
+                &logoHeight) == 0)
+        {
+            SDL_Rect logoRect;
+
+            logoRect.x =
+                (GC_LAUNCHER_WIDTH - logoWidth) / 2;
+
+            /*
+             * Move the logo slightly above true vertical centre
+             * so PRESS START has comfortable breathing room.
+             */
+            logoRect.y =
+                (480 - logoHeight) / 2 - 35;
+
+            if (logoRect.y < 20)
+            {
+                logoRect.y = 20;
+            }
+
+            logoRect.w = logoWidth;
+            logoRect.h = logoHeight;
+
+            SDL_RenderCopy(
+                renderer,
+                logo,
+                NULL,
+                &logoRect);
+        }
+        else
+        {
+            DC_WARN(
+                "DoomCube: splash SDL_QueryTexture failed: %s\n",
+                SDL_GetError());
+        }
+    }
+    else
+    {
+        const char *title = "DOOMCUBE";
+        int titleWidth =
+            GC_TextWidth(
+                title,
+                5);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH - titleWidth) / 2,
+            145,
+            title,
+            5);
+    }
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(prompt, 3)) / 2,
+        350,
+        prompt,
+        3);
+
+    /*
+     * Splash footer.
+     *
+     * Keep the project credit and build identification in their
+     * own fixed region so neither depends on the logo dimensions.
+     */
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(copyleft, 2)) / 2,
+        420,
+        copyleft,
+        2);
+
+    snprintf(
+        versionText,
+        sizeof(versionText),
+        "DOOMCUBE V%s (%s)",
+        DOOMCUBE_APP_VERSION,
+        DOOMCUBE_GIT_ID);
+
+    versionWidth =
+        GC_TextWidth(
+            versionText,
+            1);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH - versionWidth) / 2,
+        455,
+        versionText,
+        1);
+
+    SDL_RenderPresent(renderer);
+}
+
+
+static bool GC_LauncherRunSplash(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo)
+{
+    int i;
+
+    GC_DrawSplash(
+        renderer,
+        logo);
+
+    /*
+     * Consume any transition state left by startup/preflight.
+     */
+    for (i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
+
+    DC_DEBUG(
+        "DoomCube: waiting at PRESS START splash\n");
+
+    while (SYS_MainLoop())
+    {
+        u32 down;
+
+        PAD_ScanPads();
+
+        down =
+            PAD_ButtonsDown(0);
+
+        /*
+         * This is deliberately START-only.
+         *
+         * A belongs to game selection after the splash;
+         * B will later become carousel -> splash navigation.
+         */
+        if (down & PAD_BUTTON_START)
+        {
+            DC_DEBUG(
+                "DoomCube: splash START pressed\n");
+
+            /*
+             * Explicitly consume the splash transition.
+             *
+             * GC_LauncherRun() also has its own stale-input
+             * flush, so the menu is protected on both sides
+             * against START immediately launching a game.
+             */
+            for (i = 0; i < 3; ++i)
+            {
+                PAD_ScanPads();
+                (void)PAD_ButtonsDown(0);
+                SDL_Delay(16);
+            }
+
+            return true;
+        }
+
+        SDL_Delay(16);
+    }
+
+    return false;
+}
+
+
 static int GC_LauncherRun(
     SDL_Renderer *renderer,
     SDL_Texture *logo)
@@ -1164,6 +1320,14 @@ static int GC_LauncherRun(
         }
 
         stickHeld = stickDirection != 0;
+
+        if (down & PAD_BUTTON_B)
+        {
+            DC_DEBUG(
+                "DoomCube: launcher returning to splash\n");
+
+            return -2;
+        }
 
         if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
         {
@@ -2073,12 +2237,40 @@ bool GC_LauncherSelectGame(
     logo =
         GC_LoadLauncherLogo(renderer);
 
+    if (!GC_LauncherRunSplash(
+            renderer,
+            logo))
+    {
+        if (logo != NULL)
+        {
+            SDL_DestroyTexture(logo);
+        }
+
+        return false;
+    }
+
     for (;;)
     {
         selectedGame =
             GC_LauncherRun(
                 renderer,
                 logo);
+
+        if (selectedGame == -2)
+        {
+            /*
+             * B from the game-selection screen returns to the
+             * DoomCube root splash.  START re-enters selection.
+             */
+            if (!GC_LauncherRunSplash(
+                    renderer,
+                    logo))
+            {
+                break;
+            }
+
+            continue;
+        }
 
         if (selectedGame < 0)
         {
