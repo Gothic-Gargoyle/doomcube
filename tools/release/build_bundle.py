@@ -680,10 +680,11 @@ def main() -> None:
 
     print()
     # The player-facing README is application-owned release prose.
-    # args.packer is tools/release/pack.py; its parent is the release/
-    # directory containing README.txt.
+    # build_bundle.py lives under tools/release/, while the player README
+    # lives in the repository-level release/ directory.
     player_readme = (
-        args.packer.resolve().parent
+        Path(__file__).resolve().parents[2]
+        / "release"
         / "README.txt"
     )
     stage_player_readme(
