@@ -67,9 +67,9 @@ def write_pwad_manifest(root: Path) -> None:
     GameCube DVD filesystem: it can read this ordinary file instead.
 
     Manifest format:
-        one PWAD filename per UTF-8 line
+        one PWAD path per UTF-8 line, relative to data/pwad
 
-    Only top-level .wad files in data/pwad are listed.
+    Nested directories are supported.
     """
     pwad_dir = root / "data" / "pwad"
 
@@ -78,12 +78,12 @@ def write_pwad_manifest(root: Path) -> None:
 
     pwads = sorted(
         (
-            entry.name
-            for entry in pwad_dir.iterdir()
+            entry.relative_to(pwad_dir).as_posix()
+            for entry in pwad_dir.rglob("*")
             if entry.is_file()
             and entry.suffix.lower() == ".wad"
-            and "\n" not in entry.name
-            and "\r" not in entry.name
+            and "\n" not in entry.relative_to(pwad_dir).as_posix()
+            and "\r" not in entry.relative_to(pwad_dir).as_posix()
         ),
         key=str.casefold,
     )

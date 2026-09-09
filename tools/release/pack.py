@@ -675,6 +675,31 @@ def copy_optional_tree(source: Path, destination: Path) -> None:
     )
 
 
+def write_pwad_manifest(pwad_dir: Path) -> None:
+    pwads = sorted(
+        (
+            entry.relative_to(pwad_dir).as_posix()
+            for entry in pwad_dir.rglob("*")
+            if entry.is_file()
+            and entry.suffix.lower() == ".wad"
+            and "\n" not in entry.relative_to(pwad_dir).as_posix()
+            and "\r" not in entry.relative_to(pwad_dir).as_posix()
+        ),
+        key=str.casefold,
+    )
+
+    manifest = pwad_dir / "doomcube.lst"
+
+    manifest.write_text(
+        "".join(f"{name}\n" for name in pwads),
+        encoding="utf-8",
+    )
+
+    print(
+        f"PWAD manifest : {len(pwads)} file(s)"
+    )
+
+
 def stage_disc(
     runtime: Runtime,
     found_wads: dict[str, Path],
@@ -701,6 +726,8 @@ def stage_disc(
         runtime.default_pwads,
         pwad_dir,
     )
+
+    write_pwad_manifest(pwad_dir)
 
     copy_optional_tree(
         runtime.default_deh,

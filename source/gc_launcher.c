@@ -26,7 +26,8 @@
 #define GC_LAUNCHER_LOGO_PATH    "dvd:/launcher/doomcube.bmp"
 #define GC_LAUNCHER_LOGO_Y       5
 
-#define GC_MAX_GAMES 5
+#define GC_MAX_GAMES 8
+#define GC_CUSTOM_GAME_INDEX 7
 
 #define GC_PWAD_MANIFEST_PATH "dvd:/data/pwad/doomcube.lst"
 #define GC_PWAD_DIRECTORY     "dvd:/data/pwad"
@@ -34,32 +35,99 @@
 #define GC_MAX_PWADS          64
 #define GC_PWAD_NAME_MAX      128
 #define GC_PWAD_PATH_MAX      256
-#define GC_PWAD_VISIBLE_ROWS  7
 
+#define GC_CUSTOM_BASE_COUNT  4
 typedef struct
 {
     const char *name;
     const char *iwadPath;
+    const char *pwadPath;
+    const char *artPath;
     bool available;
     gc_savegame_id_t saveGameId;
 } gc_game_entry_t;
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
-    { "DOOM SHAREWARE", "dvd:/data/wad/doom1.wad",    false, GC_SAVEGAME_DOOM1 },
-    { "DOOM",           "dvd:/data/wad/doom.wad",     false, GC_SAVEGAME_DOOM },
-    { "DOOM II",        "dvd:/data/wad/doom2.wad",    false, GC_SAVEGAME_DOOM2 },
-    { "TNT: EVILUTION", "dvd:/data/wad/tnt.wad",      false, GC_SAVEGAME_TNT },
-    { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", false, GC_SAVEGAME_PLUTONIA }
+    { "DOOM SHAREWARE", "dvd:/data/wad/doom1.wad",    NULL,                                             NULL, false, GC_SAVEGAME_DOOM1 },
+    { "DOOM",           "dvd:/data/wad/doom.wad",     NULL,                                             NULL, false, GC_SAVEGAME_DOOM },
+    { "DOOM II",        "dvd:/data/wad/doom2.wad",    NULL,                                             NULL, false, GC_SAVEGAME_DOOM2 },
+    { "TNT: EVILUTION", "dvd:/data/wad/tnt.wad",      NULL,                                             NULL, false, GC_SAVEGAME_TNT },
+    { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", NULL,                                             NULL, false, GC_SAVEGAME_PLUTONIA },
+    { "SIGIL",          "dvd:/data/wad/doom.wad",     "dvd:/data/pwad/doom/SIGIL_V1_23.wad",           NULL, false, GC_SAVEGAME_DOOM },
+    { "SIGIL II",       "dvd:/data/wad/doom.wad",     "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",         NULL, false, GC_SAVEGAME_DOOM },
+    { "CUSTOM",         NULL,                           NULL,                                             NULL, false, GC_SAVEGAME_DOOM }
+};
+
+typedef struct
+{
+    const char *name;
+    const char *directory;
+    const char *iwadPath;
+    gc_savegame_id_t saveGameId;
+} gc_custom_base_t;
+
+static const gc_custom_base_t gcCustomBases[GC_CUSTOM_BASE_COUNT] =
+{
+    {
+        "DOOM",
+        "doom",
+        "dvd:/data/wad/doom.wad",
+        GC_SAVEGAME_DOOM
+    },
+    {
+        "DOOM II",
+        "doom2",
+        "dvd:/data/wad/doom2.wad",
+        GC_SAVEGAME_DOOM2
+    },
+    {
+        "TNT: EVILUTION",
+        "tnt",
+        "dvd:/data/wad/tnt.wad",
+        GC_SAVEGAME_TNT
+    },
+    {
+        "PLUTONIA",
+        "plutonia",
+        "dvd:/data/wad/plutonia.wad",
+        GC_SAVEGAME_PLUTONIA
+    }
 };
 
 typedef struct
 {
     char name[GC_PWAD_NAME_MAX];
     char path[GC_PWAD_PATH_MAX];
+    int baseIndex;
 } gc_pwad_entry_t;
 
 static gc_pwad_entry_t gcPwads[GC_MAX_PWADS];
+
+static int GC_PwadBaseIndex(const char *manifestPath)
+{
+    int i;
+
+    if (manifestPath == NULL)
+        return -1;
+
+    for (i = 0; i < GC_CUSTOM_BASE_COUNT; ++i)
+    {
+        size_t prefixLength =
+            strlen(gcCustomBases[i].directory);
+
+        if (strncmp(
+                manifestPath,
+                gcCustomBases[i].directory,
+                prefixLength) == 0 &&
+            manifestPath[prefixLength] == '/')
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
 
 static int gcAvailableGameCount;
 static int gcAvailablePwadCount;
@@ -70,10 +138,93 @@ static bool GC_FileExists(const char *path)
     return stat(path, &info) == 0;
 }
 
+static bool GC_CustomBaseAvailable(int baseIndex)
+{
+    int i;
+
+    if (baseIndex < 0 ||
+        baseIndex >= GC_CUSTOM_BASE_COUNT)
+    {
+        return false;
+    }
+
+    if (!GC_FileExists(
+            gcCustomBases[baseIndex].iwadPath))
+    {
+        return false;
+    }
+
+    for (i = 0; i < gcAvailablePwadCount; ++i)
+    {
+        if (gcPwads[i].baseIndex == baseIndex)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool GC_CustomAnyBaseAvailable(void)
+{
+    int i;
+
+    for (i = 0; i < GC_CUSTOM_BASE_COUNT; ++i)
+    {
+        if (GC_CustomBaseAvailable(i))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int GC_FirstAvailableCustomBase(void)
+{
+    int i;
+
+    for (i = 0; i < GC_CUSTOM_BASE_COUNT; ++i)
+    {
+        if (GC_CustomBaseAvailable(i))
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static int GC_NextAvailableCustomBase(
+    int current,
+    int direction)
+{
+    int attempts;
+
+    for (attempts = 0;
+         attempts < GC_CUSTOM_BASE_COUNT;
+         ++attempts)
+    {
+        current += direction;
+
+        if (current < 0)
+            current = GC_CUSTOM_BASE_COUNT - 1;
+        else if (current >= GC_CUSTOM_BASE_COUNT)
+            current = 0;
+
+        if (GC_CustomBaseAvailable(current))
+        {
+            return current;
+        }
+    }
+
+    return -1;
+}
+
 static int GC_LauncherScanPwads(void)
 {
     FILE *manifest;
-    char line[GC_PWAD_NAME_MAX + 4];
+    char line[GC_PWAD_PATH_MAX];
 
     gcAvailablePwadCount = 0;
 
@@ -170,16 +321,49 @@ static int GC_LauncherScanPwads(void)
             continue;
         }
 
-        snprintf(
-            gcPwads[gcAvailablePwadCount].name,
-            sizeof(gcPwads[gcAvailablePwadCount].name),
-            "%s",
-            line);
+        {
+            const char *displayName =
+                strrchr(line, '/');
 
-        DC_DEBUG(
-            "DoomCube: found PWAD %s (%s)\n",
-            gcPwads[gcAvailablePwadCount].name,
-            gcPwads[gcAvailablePwadCount].path);
+            if (displayName != NULL)
+                ++displayName;
+            else
+                displayName = line;
+
+            snprintf(
+                gcPwads[gcAvailablePwadCount].name,
+                sizeof(gcPwads[gcAvailablePwadCount].name),
+                "%.*s",
+                (int)sizeof(
+                    gcPwads[gcAvailablePwadCount].name) - 1,
+                displayName);
+        }
+
+        gcPwads[gcAvailablePwadCount].baseIndex =
+            GC_PwadBaseIndex(line);
+
+        if (gcPwads[gcAvailablePwadCount].baseIndex >= 0)
+        {
+            DC_DEBUG(
+                "DoomCube: found PWAD %s (%s) [base %s]\n",
+                gcPwads[gcAvailablePwadCount].name,
+                gcPwads[gcAvailablePwadCount].path,
+                gcCustomBases[
+                    gcPwads[gcAvailablePwadCount].baseIndex
+                ].name);
+        }
+        else
+        {
+            /*
+             * Keep unbucketed entries available for automated test and
+             * regression lookup while the old scanner still exists.
+             * CUSTOM will only expose bucketed entries.
+             */
+            DC_DEBUG(
+                "DoomCube: found unbucketed PWAD %s (%s)\n",
+                gcPwads[gcAvailablePwadCount].name,
+                gcPwads[gcAvailablePwadCount].path);
+        }
 
         ++gcAvailablePwadCount;
     }
@@ -281,7 +465,31 @@ static int GC_LauncherScanGames(void)
 
     for (i = 0; i < GC_MAX_GAMES; ++i)
     {
-        gcGames[i].available = GC_FileExists(gcGames[i].iwadPath);
+        if (i == GC_CUSTOM_GAME_INDEX)
+        {
+            gcGames[i].available =
+                GC_CustomAnyBaseAvailable();
+
+            if (!gcGames[i].available)
+                continue;
+
+            ++gcAvailableGameCount;
+
+            DC_DEBUG(
+                "DoomCube: found CUSTOM launcher entry\n");
+
+            continue;
+        }
+
+        gcGames[i].available =
+            GC_FileExists(gcGames[i].iwadPath);
+
+        if (gcGames[i].available &&
+            gcGames[i].pwadPath != NULL)
+        {
+            gcGames[i].available =
+                GC_FileExists(gcGames[i].pwadPath);
+        }
 
         if (!gcGames[i].available)
             continue;
@@ -289,9 +497,11 @@ static int GC_LauncherScanGames(void)
         ++gcAvailableGameCount;
 
         DC_DEBUG(
-            "DoomCube: found %s (%s)\n",
+            "DoomCube: found %s (%s%s%s)\n",
             gcGames[i].name,
-            gcGames[i].iwadPath);
+            gcGames[i].iwadPath,
+            gcGames[i].pwadPath != NULL ? " + " : "",
+            gcGames[i].pwadPath != NULL ? gcGames[i].pwadPath : "");
     }
 
     DC_DEBUG(
@@ -627,33 +837,15 @@ static void GC_DrawLauncher(
 
 
 
-static const char *GC_PwadSelectionName(int selected)
-{
-    if (selected == 0)
-    {
-        return "VANILLA";
-    }
-
-    if (selected < 1 ||
-        selected > gcAvailablePwadCount)
-    {
-        return "";
-    }
-
-    return gcPwads[selected - 1].name;
-}
-
-static void GC_DrawPwadLauncher(
+static void GC_DrawCustomBaseLauncher(
     SDL_Renderer *renderer,
     int selected)
 {
-    int total;
-    int first;
-    int last;
-    int i;
+    const char *title = "SELECT BASE";
+    const char *controls = "A - SELECT    B - BACK";
 
-    const char *title = "SELECT ADD-ON";
-    const char *controls = "A - START    B - BACK";
+    int i;
+    int shown = 0;
 
     SDL_SetRenderDrawColor(
         renderer,
@@ -679,56 +871,17 @@ static void GC_DrawPwadLauncher(
         title,
         4);
 
-    total =
-        gcAvailablePwadCount + 1;
-
-    first = 0;
-
-    if (selected >= GC_PWAD_VISIBLE_ROWS)
+    for (i = 0; i < GC_CUSTOM_BASE_COUNT; ++i)
     {
-        first =
-            selected -
-            GC_PWAD_VISIBLE_ROWS +
-            1;
-    }
-
-    if (total > GC_PWAD_VISIBLE_ROWS)
-    {
-        int maxFirst =
-            total -
-            GC_PWAD_VISIBLE_ROWS;
-
-        if (first > maxFirst)
-        {
-            first = maxFirst;
-        }
-    }
-
-    last =
-        first +
-        GC_PWAD_VISIBLE_ROWS;
-
-    if (last > total)
-    {
-        last = total;
-    }
-
-    for (i = first; i < last; ++i)
-    {
-        const char *name;
-        int row;
         int y;
         int textWidth;
 
-        name =
-            GC_PwadSelectionName(i);
-
-        row =
-            i - first;
+        if (!GC_CustomBaseAvailable(i))
+            continue;
 
         y =
-            145 +
-            row * GC_LAUNCHER_LINE_HEIGHT;
+            155 +
+            shown * GC_LAUNCHER_LINE_HEIGHT;
 
         if (i == selected)
         {
@@ -761,7 +914,7 @@ static void GC_DrawPwadLauncher(
 
         textWidth =
             GC_TextWidth(
-                name,
+                gcCustomBases[i].name,
                 2);
 
         GC_DrawText(
@@ -769,62 +922,41 @@ static void GC_DrawPwadLauncher(
             (GC_LAUNCHER_WIDTH -
                 textWidth) / 2,
             y,
-            name,
+            gcCustomBases[i].name,
             2);
+
+        ++shown;
     }
 
     GC_DrawText(
         renderer,
         (GC_LAUNCHER_WIDTH -
             GC_TextWidth(controls, 2)) / 2,
-        395,
+        400,
         controls,
         2);
-
-    /*
-     * Build identification, matching the main launcher.
-     */
-    {
-        char versionText[96];
-        int versionWidth;
-
-        snprintf(
-            versionText,
-            sizeof(versionText),
-            "DOOMCUBE V%s (%s)",
-            DOOMCUBE_APP_VERSION,
-            DOOMCUBE_GIT_ID);
-
-        versionWidth =
-            GC_TextWidth(
-                versionText,
-                1);
-
-        GC_DrawText(
-            renderer,
-            640 - versionWidth - 8,
-            480 - 7 - 8,
-            versionText,
-            1);
-    }
 
     SDL_RenderPresent(renderer);
 }
 
-static int GC_LauncherRunPwad(
+static int GC_LauncherRunCustomBase(
     SDL_Renderer *renderer)
 {
-    int selected = 0;
+    int selected;
     int stickHeld = 0;
-    int total =
-        gcAvailablePwadCount + 1;
 
-    GC_DrawPwadLauncher(
+    selected =
+        GC_FirstAvailableCustomBase();
+
+    if (selected < 0)
+        return -1;
+
+    GC_DrawCustomBaseLauncher(
         renderer,
         selected);
 
     /*
-     * Consume any transition left by the game-selection screen.
+     * Flush stale button transitions before entering the submenu.
      */
     for (int i = 0; i < 3; ++i)
     {
@@ -833,13 +965,10 @@ static int GC_LauncherRunPwad(
         SDL_Delay(16);
     }
 
-    DC_DEBUG(
-        "DoomCube: entering PWAD selection loop\n");
-
-    while (SYS_MainLoop())
+    for (;;)
     {
-        u16 down;
-        s8 stickY;
+        u32 down;
+        int stickY;
         int stickDirection = 0;
 
         PAD_ScanPads();
@@ -850,48 +979,45 @@ static int GC_LauncherRunPwad(
         stickY =
             PAD_StickY(0);
 
-        if (stickY >
-            GC_LAUNCHER_DEADZONE)
-        {
-            stickDirection = 1;
-        }
-        else if (stickY <
-                 -GC_LAUNCHER_DEADZONE)
-        {
+        if (stickY > GC_LAUNCHER_DEADZONE)
             stickDirection = -1;
-        }
+        else if (stickY < -GC_LAUNCHER_DEADZONE)
+            stickDirection = 1;
 
         if ((down & PAD_BUTTON_UP) ||
-            (stickDirection > 0 &&
-             !stickHeld))
+            (stickDirection < 0 && !stickHeld))
         {
-            --selected;
+            int next =
+                GC_NextAvailableCustomBase(
+                    selected,
+                    -1);
 
-            if (selected < 0)
+            if (next >= 0)
             {
-                selected =
-                    total - 1;
-            }
+                selected = next;
 
-            GC_DrawPwadLauncher(
-                renderer,
-                selected);
+                GC_DrawCustomBaseLauncher(
+                    renderer,
+                    selected);
+            }
         }
 
         if ((down & PAD_BUTTON_DOWN) ||
-            (stickDirection < 0 &&
-             !stickHeld))
+            (stickDirection > 0 && !stickHeld))
         {
-            ++selected;
+            int next =
+                GC_NextAvailableCustomBase(
+                    selected,
+                    1);
 
-            if (selected >= total)
+            if (next >= 0)
             {
-                selected = 0;
-            }
+                selected = next;
 
-            GC_DrawPwadLauncher(
-                renderer,
-                selected);
+                GC_DrawCustomBaseLauncher(
+                    renderer,
+                    selected);
+            }
         }
 
         stickHeld =
@@ -900,7 +1026,7 @@ static int GC_LauncherRunPwad(
         if (down & PAD_BUTTON_B)
         {
             DC_DEBUG(
-                "DoomCube: PWAD selection cancelled\n");
+                "DoomCube: CUSTOM base selection cancelled\\n");
 
             return -2;
         }
@@ -909,13 +1035,15 @@ static int GC_LauncherRunPwad(
             (PAD_BUTTON_A |
              PAD_BUTTON_START))
         {
+            DC_DEBUG(
+                "DoomCube: CUSTOM base selected %s\\n",
+                gcCustomBases[selected].name);
+
             return selected;
         }
 
         SDL_Delay(16);
     }
-
-    return -1;
 }
 
 static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
@@ -1744,7 +1872,6 @@ bool GC_LauncherSelectGame(
 {
     int availableGames;
     int selectedGame;
-    int selectedPwad;
     const gc_game_entry_t *game;
     SDL_Texture *logo;
 
@@ -1759,10 +1886,10 @@ bool GC_LauncherSelectGame(
     selection->iwadPath = NULL;
     selection->pwadPath = NULL;
 
+    GC_LauncherScanPwads();
+
     availableGames =
         GC_LauncherScanGames();
-
-    GC_LauncherScanPwads();
 
 #ifdef DOOMCUBE_REGRESSION
     /*
@@ -1970,50 +2097,46 @@ bool GC_LauncherSelectGame(
             break;
         }
 
-        selectedPwad = 0;
-
-        /*
-         * DOOM Shareware explicitly rejects -file.
-         *
-         * With no PWADs present there is no reason to show an
-         * add-on screen either.
-         */
-        if (game->saveGameId !=
-                GC_SAVEGAME_DOOM1 &&
-            gcAvailablePwadCount > 0)
+        if (selectedGame == GC_CUSTOM_GAME_INDEX)
         {
-            selectedPwad =
-                GC_LauncherRunPwad(
+            int selectedBase =
+                GC_LauncherRunCustomBase(
                     renderer);
 
-            /*
-             * B returns to IWAD selection.
-             */
-            if (selectedPwad == -2)
+            if (selectedBase == -2)
             {
+                /*
+                 * B returns to the normal launcher.
+                 */
                 continue;
             }
 
-            if (selectedPwad < 0)
+            if (selectedBase < 0)
             {
-                break;
+                DC_WARN(
+                    "DoomCube: CUSTOM has no selectable base\n");
+
+                continue;
             }
+
+            /*
+             * Atom 7 checkpoint:
+             * prove CUSTOM -> SELECT BASE before attaching the
+             * filtered PWAD selector.
+             */
+            DC_INFO(
+                "DoomCube: CUSTOM checkpoint selected base %s\n",
+                gcCustomBases[selectedBase].name);
+
+            continue;
         }
+
 
         selection->iwadPath =
             game->iwadPath;
+        selection->pwadPath =
+            game->pwadPath;
 
-        if (selectedPwad > 0)
-        {
-            selection->pwadPath =
-                gcPwads[
-                    selectedPwad - 1
-                ].path;
-        }
-        else
-        {
-            selection->pwadPath = NULL;
-        }
 
         GC_DrawLoadingOverlay(renderer);
 
