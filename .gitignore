@@ -6,7 +6,7 @@
 *.user
 *~
 .vs/
-.vscode/
+.vscode/*
 Debug/
 Release/
 Build/
@@ -39,3 +39,4 @@ build-deps
 /dist/
 tools/release/__pycache__/build_bundle.cpython-314.pyc
 tools/native-gcm/__pycache__/mkdoomcube.cpython-314.pyc
+.vscode/c_cpp_properties.json
