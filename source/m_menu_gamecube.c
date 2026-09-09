@@ -243,6 +243,16 @@ void M_ClearMenus (void);
 
 
 
+
+static void M_ShowSharewareSaveUnavailable(void)
+{
+    M_StartMessage(
+        "Game saves are not available in DOOM Shareware.",
+        NULL,
+        false
+    );
+}
+
 //
 // DOOM MENU
 //
@@ -746,7 +756,14 @@ void M_LoadSelect(int choice)
 //
 void M_LoadGame (int choice)
 {
-    if (netgame)
+
+    if (!G_SaveGamesAllowed())
+    {
+        M_ShowSharewareSaveUnavailable();
+        return;
+    }
+
+if (netgame)
     {
 	M_StartMessage(DEH_String(LOADNET),NULL,false);
 	return;
@@ -783,7 +800,14 @@ void M_DrawSave(void)
 //
 void M_DoSave(int slot)
 {
-    G_SaveGame (slot,savegamestrings[slot]);
+
+    if (!G_SaveGamesAllowed())
+    {
+        M_ShowSharewareSaveUnavailable();
+        return;
+    }
+
+G_SaveGame (slot,savegamestrings[slot]);
     M_ClearMenus ();
 
     // PICK QUICKSAVE SLOT YET?
@@ -828,7 +852,14 @@ void M_SaveSelect(int choice)
 //
 void M_SaveGame (int choice)
 {
-    if (!usergame)
+
+    if (!G_SaveGamesAllowed())
+    {
+        M_ShowSharewareSaveUnavailable();
+        return;
+    }
+
+if (!usergame)
     {
 	M_StartMessage(DEH_String(SAVEDEAD),NULL,false);
 	return;
@@ -859,7 +890,14 @@ void M_QuickSaveResponse(int key)
 
 void M_QuickSave(void)
 {
-    if (!usergame)
+
+    if (!G_SaveGamesAllowed())
+    {
+        M_ShowSharewareSaveUnavailable();
+        return;
+    }
+
+if (!usergame)
     {
 	S_StartSound(NULL,sfx_oof);
 	return;
@@ -897,7 +935,14 @@ void M_QuickLoadResponse(int key)
 
 void M_QuickLoad(void)
 {
-    if (netgame)
+
+    if (!G_SaveGamesAllowed())
+    {
+        M_ShowSharewareSaveUnavailable();
+        return;
+    }
+
+if (netgame)
     {
 	M_StartMessage(DEH_String(QLOADNET),NULL,false);
 	return;
@@ -2658,7 +2703,15 @@ void M_Init (void)
     messageLastMenuActive = menuactive;
     quickSaveSlot = -1;
 
-    // Here we could catch other version dependencies,
+
+
+    /*
+     * DoomCube intentionally does not provide game saves for DOOM Shareware.
+     * Keep the normal menu layout, but make LOAD GAME / SAVE GAME inert.
+     */
+    MainMenu[loadgame].status = G_SaveGamesAllowed() ? 1 : 0;
+    MainMenu[savegame].status = G_SaveGamesAllowed() ? 1 : 0;
+// Here we could catch other version dependencies,
     //  like HELP1/2, and four episodes.
 
   

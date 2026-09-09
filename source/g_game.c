@@ -1885,8 +1885,21 @@ void R_ExecuteSetViewSize (void);
 
 char	savename[256];
 
+
+boolean G_SaveGamesAllowed(void)
+{
+    return !(gamemission == doom && gamemode == shareware);
+}
+
 void G_LoadGame (char* name) 
 { 
+
+    if (!G_SaveGamesAllowed())
+    {
+        gameaction = ga_nothing;
+        return;
+    }
+
     M_StringCopy(savename, name, sizeof(savename));
     gameaction = ga_loadgame; 
 } 
@@ -1900,6 +1913,12 @@ void G_DoLoadGame (void)
 	 
     gameaction = ga_nothing; 
 	 
+
+    if (!G_SaveGamesAllowed())
+    {
+        return;
+    }
+
     save_stream = fopen(savename, "rb");
 
     if (save_stream == NULL)
@@ -1973,6 +1992,13 @@ G_SaveGame
 ( int	slot,
   char*	description )
 {
+
+    if (!G_SaveGamesAllowed())
+    {
+        sendsave = false;
+        return;
+    }
+
     savegameslot = slot;
     M_StringCopy(savedescription, description, sizeof(savedescription));
     sendsave = true;
@@ -1983,6 +2009,15 @@ void G_DoSaveGame (void)
     char *savegame_file;
     char *temp_savegame_file;
     char *recovery_savegame_file;
+
+
+    if (!G_SaveGamesAllowed())
+    {
+        gameaction = ga_nothing;
+        sendsave = false;
+        M_StringCopy(savedescription, "", sizeof(savedescription));
+        return;
+    }
 
     recovery_savegame_file = NULL;
     temp_savegame_file = P_TempSaveGameFile();

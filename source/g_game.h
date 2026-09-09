@@ -48,6 +48,7 @@ void G_DoLoadGame (void);
 // Called by M_Responder.
 void G_SaveGame (int slot, char* description);
 
+boolean G_SaveGamesAllowed(void);
 // Only called by startup code.
 void G_RecordDemo (char* name);
 
