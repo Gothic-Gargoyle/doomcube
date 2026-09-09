@@ -363,6 +363,58 @@ def stage_bundle(
     validate_stage(stage)
 
 
+
+# DOOMCUBE_PLAYER_README_V1
+#
+# The player-facing README is application-owned prose. Keep it outside
+# CarryHandle's runtime/application manifest and stage it only when building
+# the downloadable player bundle.
+MEMORY_CARD_WARNING_PREFIX = (
+    b"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+    b"WARNING: MEMORY CARD SUPPORT IS EXPERIMENTAL\n"
+    b"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+    b"\n"
+    b"DO NOT USE A MEMORY CARD CONTAINING SAVES OR OTHER DATA YOU CARE ABOUT.\n"
+    b"\n"
+    b"MEMORY CARD SAVE/CONFIG WRITING HAS NOT YET BEEN VALIDATED ON REAL\n"
+    b"HARDWARE. UNTIL IT HAS BEEN PROVEN SAFE, USE A DISPOSABLE/TEST CARD\n"
+    b"ONLY.\n"
+    b"\n"
+    b"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+    b"\n"
+)
+
+
+def stage_player_readme(
+    readme: Path,
+    stage: Path,
+) -> Path:
+    # Stage and verify DoomCube's player-facing README.txt.
+
+    if not readme.is_file():
+        raise RuntimeError(
+            f"Player README is missing: {readme}"
+        )
+
+    source = readme.read_bytes()
+
+    if not source.startswith(MEMORY_CARD_WARNING_PREFIX):
+        raise RuntimeError(
+            "Player README does not begin with the required "
+            "all-caps experimental Memory Card warning."
+        )
+
+    destination = stage / "README.txt"
+    shutil.copy2(readme, destination)
+
+    if destination.read_bytes() != source:
+        raise RuntimeError(
+            "Staged README.txt does not match the source README."
+        )
+
+    ok("player README.txt staged")
+    return destination
+
 def create_zip(
     *,
     dist: Path,
@@ -627,6 +679,18 @@ def main() -> None:
     ok("No .gitkeep or Python cache files packaged")
 
     print()
+    # The player-facing README is application-owned release prose.
+    # args.packer is tools/release/pack.py; its parent is the release/
+    # directory containing README.txt.
+    player_readme = (
+        args.packer.resolve().parent
+        / "README.txt"
+    )
+    stage_player_readme(
+        player_readme,
+        stage,
+    )
+
     print("Creating ZIP")
     print("============")
 
