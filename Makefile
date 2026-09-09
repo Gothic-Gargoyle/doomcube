@@ -11,7 +11,7 @@ include $(DEVKITPRO)/libogc2/gamecube_rules
 # Version
 #---------------------------------------------------------------------------------
 
-BASE_VERSION ?= 1.1.0
+BASE_VERSION ?= 1.1.1
 VERSION ?= $(BASE_VERSION)-dev
 RC ?= 1
 
@@ -423,6 +423,15 @@ APP_INCLUDES := \
 
 
 include $(CARRYHANDLE_DIR)/make/gamecube.mk
+# Final release orchestration is owned by CarryHandle.
+# DoomCube owns only the application-specific release-bundle contents and the
+# production build variables passed to that hook.
+CH_RELEASE_PACKAGE_VARS = \
+	DEBUG=0 \
+	TRACE=0 \
+	VERSION="$(RELEASE_VERSION)" \
+	RELEASE_ARCHIVE_NAME="doomcube-v$(RELEASE_VERSION).zip"
+
 include $(CARRYHANDLE_DIR)/make/release.mk
 
 
@@ -616,7 +625,7 @@ DOOMCUBE_RELEASE_ZIP := $(DOOMCUBE_RELEASE_DIR)/$(RELEASE_ARCHIVE_NAME)
 
 DOOMCUBE_BUNDLE_BUILDER := $(CURDIR)/tools/release/build_bundle.py
 
-.PHONY: rc release release-debug release-bundle
+.PHONY: rc release-debug release-bundle
 
 # ------------------------------------------------------------------
 # Public build flavours
@@ -634,9 +643,9 @@ DOOMCUBE_BUNDLE_BUILDER := $(CURDIR)/tools/release/build_bundle.py
 #       DEBUG   = 0
 #       TRACE   = 0
 #
-# make release
-#     Final production release:
-#       VERSION = <base>
+# make release RELEASE_TAG=vX.Y.Z
+#     Final production release through CarryHandle:
+#       VERSION = X.Y.Z
 #       DEBUG   = 0
 #       TRACE   = 0
 #
@@ -665,20 +674,6 @@ rc:
 		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION)-rc$(RC).zip" \
 		release-bundle
 
-release:
-	@echo
-	@echo "============================================================"
-	@echo " DoomCube release $(BASE_VERSION)"
-	@echo " Production logging"
-	@echo "============================================================"
-	@echo
-	@$(MAKE) clean
-	@$(MAKE) \
-		DEBUG=0 \
-		TRACE=0 \
-		VERSION="$(BASE_VERSION)" \
-		RELEASE_ARCHIVE_NAME="doomcube-v$(BASE_VERSION).zip" \
-		release-bundle
 
 release-debug:
 	@echo
@@ -697,9 +692,9 @@ release-debug:
 
 # Internal packaging implementation.
 #
-# Do not call this target for normal release work; use rc, release or
-# release-debug so the correct logging configuration and clean rebuild
-# are guaranteed.
+# CarryHandle calls this target for final releases. The rc and release-debug
+# convenience targets also call it with their own application-specific build
+# variables.
 release-bundle: all
 	@echo
 	@echo "============================================================"
