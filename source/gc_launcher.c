@@ -688,105 +688,169 @@ static int GC_NextAvailableGame(int current, int direction)
 
 static void GC_DrawLauncher(
     SDL_Renderer *renderer,
-    SDL_Texture *logo,
     int selected)
 {
-    int i;
-    int shown = 0;
+    int previous;
+    int next;
+    int textWidth;
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
     SDL_RenderClear(renderer);
 
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
 
-
-    if (logo != NULL)
+    /*
+     * Temporary pre-artwork carousel presentation.
+     *
+     * The full-screen TITLEPIC will replace this empty upper
+     * area later.  Keep the actual carousel geometry simple
+     * and stable so navigation can be proven independently.
+     */
     {
-        int logoWidth;
-        int logoHeight;
-        SDL_Rect logoRect;
-
-        if (SDL_QueryTexture(
-                logo,
-                NULL,
-                NULL,
-                &logoWidth,
-                &logoHeight) == 0)
-        {
-            logoRect.x =
-                (GC_LAUNCHER_WIDTH - logoWidth) / 2;
-
-            logoRect.y =
-                GC_LAUNCHER_LOGO_Y;
-
-            logoRect.w =
-                logoWidth;
-
-            logoRect.h =
-                logoHeight;
-
-            SDL_RenderCopy(
-                renderer,
-                logo,
-                NULL,
-                &logoRect);
-        }
-        else
-        {
-            DC_WARN(
-                "DoomCube: SDL_QueryTexture failed: %s\n",
-                SDL_GetError());
-        }
-    }
-    else
-    {
-        const char *title = "DOOMCUBE";
-        int titleWidth = GC_TextWidth(title, 5);
+        const char *heading = "SELECT GAME";
 
         GC_DrawText(
             renderer,
-            (GC_LAUNCHER_WIDTH - titleWidth) / 2,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(heading, 3)) / 2,
             75,
-            title,
-            5);
+            heading,
+            3);
     }
 
-    for (i = 0; i < GC_MAX_GAMES; ++i)
+    /*
+     * Selected game.
+     */
     {
-        int y;
-        int textWidth;
-
-        if (!gcGames[i].available)
-            continue;
-
-        y = 180 + shown * GC_LAUNCHER_LINE_HEIGHT;
-
-        if (i == selected)
+        SDL_Rect marker =
         {
-            SDL_Rect marker = { 95, y - 5, 450, 28 };
+            80,
+            170,
+            480,
+            72
+        };
 
-            SDL_SetRenderDrawColor(renderer, 70, 45, 120, 255);
-            SDL_RenderFillRect(renderer, &marker);
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        }
+        SDL_SetRenderDrawColor(
+            renderer,
+            70,
+            45,
+            120,
+            255);
+
+        SDL_RenderFillRect(
+            renderer,
+            &marker);
+
+        SDL_SetRenderDrawColor(
+            renderer,
+            255,
+            255,
+            255,
+            255);
 
         textWidth =
             GC_TextWidth(
-                gcGames[i].name,
-                GC_LAUNCHER_FONT_SCALE);
+                gcGames[selected].name,
+                4);
 
         GC_DrawText(
             renderer,
             (GC_LAUNCHER_WIDTH - textWidth) / 2,
-            y,
-            gcGames[i].name,
-            GC_LAUNCHER_FONT_SCALE);
-
-        ++shown;
+            192,
+            gcGames[selected].name,
+            4);
     }
 
+    previous =
+        GC_NextAvailableGame(
+            selected,
+            -1);
+
+    next =
+        GC_NextAvailableGame(
+            selected,
+            1);
+
+    /*
+     * Previous item.
+     *
+     * Do not repeat the selected game if this disc only has
+     * one available carousel entry.
+     */
+    if (previous >= 0 &&
+        previous != selected)
     {
-        const char *startText = "A - START    B - BACK";
+        int width =
+            GC_TextWidth(
+                gcGames[previous].name,
+                2);
+
+        GC_DrawText(
+            renderer,
+            160 - width / 2,
+            305,
+            gcGames[previous].name,
+            2);
+    }
+
+    /*
+     * Next item.
+     */
+    if (next >= 0 &&
+        next != selected)
+    {
+        int width =
+            GC_TextWidth(
+                gcGames[next].name,
+                2);
+
+        GC_DrawText(
+            renderer,
+            480 - width / 2,
+            305,
+            gcGames[next].name,
+            2);
+    }
+
+    /*
+     * Temporary navigation hints.
+     *
+     * These will eventually be rendered with the extracted
+     * Doom font over the TITLEPIC safe area.
+     */
+    {
+        const char *selectText =
+            "LEFT RIGHT - SELECT";
+
+        const char *actionText =
+            "A - START    B - BACK";
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(selectText, 2)) / 2,
+            365,
+            selectText,
+            2);
+
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(actionText, 2)) / 2,
+            400,
+            actionText,
+            2);
     }
 
     SDL_RenderPresent(renderer);
@@ -1221,7 +1285,7 @@ static bool GC_LauncherRunSplash(
          * This is deliberately START-only.
          *
          * A belongs to game selection after the splash;
-         * B will later become carousel -> splash navigation.
+         * B belongs to carousel -> splash navigation.
          */
         if (down & PAD_BUTTON_START)
         {
@@ -1253,21 +1317,41 @@ static bool GC_LauncherRunSplash(
 
 
 static int GC_LauncherRun(
-    SDL_Renderer *renderer,
-    SDL_Texture *logo)
+    SDL_Renderer *renderer)
 {
-    int selected;
+    static int selected = -1;
     int stickHeld = 0;
 
-    selected = GC_FirstAvailableGame();
+    /*
+     * Preserve the carousel position across:
+     *
+     *   carousel -> splash -> carousel
+     *
+     * and:
+     *
+     *   CUSTOM submenu -> carousel
+     *
+     * Re-resolve only if the remembered entry is no longer
+     * usable.
+     */
+    if (selected < 0 ||
+        selected >= GC_MAX_GAMES ||
+        !gcGames[selected].available)
+    {
+        selected =
+            GC_FirstAvailableGame();
+    }
 
     if (selected < 0)
         return -1;
 
-    GC_DrawLauncher(renderer, logo, selected);
+    GC_DrawLauncher(
+        renderer,
+        selected);
 
     /*
-     * Flush stale controller transition state before entering the launcher.
+     * Flush stale controller transition state before entering
+     * the carousel.
      */
     for (int i = 0; i < 3; ++i)
     {
@@ -1277,62 +1361,105 @@ static int GC_LauncherRun(
     }
 
     DC_DEBUG(
-        "DoomCube: entering launcher input loop\n");
+        "DoomCube: entering horizontal carousel input loop\n");
 
     while (SYS_MainLoop())
     {
         u16 down;
-        s8 stickY;
+        s8 stickX;
         int stickDirection = 0;
 
         PAD_ScanPads();
 
-        down = PAD_ButtonsDown(0);
-        stickY = PAD_StickY(0);
+        down =
+            PAD_ButtonsDown(0);
 
-        if (stickY > GC_LAUNCHER_DEADZONE)
-            stickDirection = 1;
-        else if (stickY < -GC_LAUNCHER_DEADZONE)
-            stickDirection = -1;
+        stickX =
+            PAD_StickX(0);
 
-        if ((down & PAD_BUTTON_UP) ||
-            (stickDirection > 0 && !stickHeld))
+        if (stickX > GC_LAUNCHER_DEADZONE)
         {
-            int next = GC_NextAvailableGame(selected, -1);
-
-            if (next >= 0)
-            {
-                selected = next;
-                GC_DrawLauncher(renderer, logo, selected);
-            }
+            stickDirection = 1;
+        }
+        else if (stickX < -GC_LAUNCHER_DEADZONE)
+        {
+            stickDirection = -1;
         }
 
-        if ((down & PAD_BUTTON_DOWN) ||
+        /*
+         * Previous game.
+         */
+        if ((down & PAD_BUTTON_LEFT) ||
             (stickDirection < 0 && !stickHeld))
         {
-            int next = GC_NextAvailableGame(selected, 1);
+            int previous =
+                GC_NextAvailableGame(
+                    selected,
+                    -1);
 
-            if (next >= 0)
+            if (previous >= 0)
             {
-                selected = next;
-                GC_DrawLauncher(renderer, logo, selected);
+                selected =
+                    previous;
+
+                DC_DEBUG(
+                    "DoomCube: carousel previous -> %s\n",
+                    gcGames[selected].name);
+
+                GC_DrawLauncher(
+                    renderer,
+                    selected);
             }
         }
 
-        stickHeld = stickDirection != 0;
+        /*
+         * Next game.
+         */
+        if ((down & PAD_BUTTON_RIGHT) ||
+            (stickDirection > 0 && !stickHeld))
+        {
+            int next =
+                GC_NextAvailableGame(
+                    selected,
+                    1);
+
+            if (next >= 0)
+            {
+                selected =
+                    next;
+
+                DC_DEBUG(
+                    "DoomCube: carousel next -> %s\n",
+                    gcGames[selected].name);
+
+                GC_DrawLauncher(
+                    renderer,
+                    selected);
+            }
+        }
+
+        /*
+         * One movement per analogue-stick deflection.
+         * The player must return through the deadzone before
+         * another stick movement is accepted.
+         */
+        stickHeld =
+            stickDirection != 0;
 
         if (down & PAD_BUTTON_B)
         {
             DC_DEBUG(
-                "DoomCube: launcher returning to splash\n");
+                "DoomCube: carousel returning to splash\n");
 
             return -2;
         }
 
-        if (down & (PAD_BUTTON_A | PAD_BUTTON_START))
+        if (down &
+            (PAD_BUTTON_A |
+             PAD_BUTTON_START))
         {
             DC_DEBUG(
-                "DoomCube: launcher selected %s\n",
+                "DoomCube: carousel selected %s\n",
                 gcGames[selected].name);
 
             return selected;
@@ -2253,8 +2380,7 @@ bool GC_LauncherSelectGame(
     {
         selectedGame =
             GC_LauncherRun(
-                renderer,
-                logo);
+                renderer);
 
         if (selectedGame == -2)
         {
