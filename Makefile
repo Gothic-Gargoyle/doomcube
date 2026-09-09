@@ -402,6 +402,26 @@ RUN_IMAGE := \
 	$(DOOMCUBE_ROOT)/$(TARGET).dol
 
 
+# -----------------------------------------------------------------------------
+# CarryHandle application compiler contract
+# -----------------------------------------------------------------------------
+#
+# DoomCube predates CarryHandle's APP_* scaffold and still assembles its
+# compiler policy above in CFLAGS. Preserve that established application policy
+# verbatim while presenting it through CarryHandle's consumer interface.
+#
+# Keep source/SDL2/portlibs include ownership explicit here: CarryHandle owns
+# its own public include path plus the generic project/build/libogc paths.
+#
+APP_CFLAGS := \
+	$(CFLAGS)
+
+APP_INCLUDES := \
+	$(DOOMCUBE_ROOT)/source \
+	$(DEVKITPRO)/libogc2/gamecube/include/SDL2 \
+	$(DEVKITPRO)/portlibs/ppc/include
+
+
 include $(CARRYHANDLE_DIR)/make/gamecube.mk
 
 
