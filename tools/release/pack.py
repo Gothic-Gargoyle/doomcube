@@ -11,7 +11,7 @@ It combines:
     - DoomCube runtime assets
     - user-supplied IWADs
 
-into a native GameCube disc image using mkdoomcube.py.
+into a manifest-driven native GameCube disc image using CarryHandle.
 
 It supports two layouts:
 
@@ -28,7 +28,15 @@ Release bundle layout:
     └── runtime/
         ├── doomcube.dol
         ├── apploader.bin
-        ├── mkdoomcube.py
+        ├── carryhandle.cfg
+        ├── opening.bnr
+        ├── assets/
+        │   └── presentation/
+        │       └── banner.png
+        ├── tools/
+        │   ├── ch_manifest.py
+        │   └── native-gcm/
+        │       └── ch_gcm.py
         ├── launcher/
         │   └── doomcube.bmp
         └── timidity/
@@ -304,6 +312,10 @@ class Runtime:
     dol: Path
     apploader: Path
     builder: Path
+    manifest_tool: Path
+    manifest: Path
+    opening_bnr: Path | None
+    bnr_builder: Path | None
     launcher: Path
     timidity: Path
     default_wads: Path
@@ -372,7 +384,11 @@ def find_repo_root(start: Path) -> Path | None:
     for candidate in candidates:
         if (
             (candidate / "Makefile").is_file()
-            and (candidate / "tools/native-gcm/mkdoomcube.py").is_file()
+            and (candidate / "carryhandle.cfg").is_file()
+            and (
+                candidate
+                / "deps/carryhandle/tools/native-gcm/ch_gcm.py"
+            ).is_file()
         ):
             return candidate
 
@@ -403,19 +419,21 @@ def discover_runtime(script_path: Path) -> Runtime:
         if dol is None:
             die(f"No DoomCube DOL found in {runtime_dir}")
 
-        apploader = runtime_dir / "apploader.bin"
-        builder = runtime_dir / "mkdoomcube.py"
-        launcher = runtime_dir / "launcher/doomcube.bmp"
-        timidity = runtime_dir / "timidity"
-
         return Runtime(
             mode="release",
             root=bundle_root,
             dol=dol,
-            apploader=apploader,
-            builder=builder,
-            launcher=launcher,
-            timidity=timidity,
+            apploader=runtime_dir / "apploader.bin",
+            builder=(
+                runtime_dir
+                / "tools/native-gcm/ch_gcm.py"
+            ),
+            manifest_tool=runtime_dir / "tools/ch_manifest.py",
+            manifest=runtime_dir / "carryhandle.cfg",
+            opening_bnr=runtime_dir / "opening.bnr",
+            bnr_builder=None,
+            launcher=runtime_dir / "launcher/doomcube.bmp",
+            timidity=runtime_dir / "timidity",
             default_wads=bundle_root / "WADs",
             default_pwads=bundle_root / "PWADs",
             default_deh=bundle_root / "DEH",
@@ -448,12 +466,27 @@ def discover_runtime(script_path: Path) -> Runtime:
             "already been compiled with 'make'."
         )
 
+    carryhandle = repo_root / "deps/carryhandle"
+
     return Runtime(
         mode="source",
         root=repo_root,
         dol=dol,
-        apploader=repo_root / "tools/native-gcm/apploader.bin",
-        builder=repo_root / "tools/native-gcm/mkdoomcube.py",
+        apploader=(
+            carryhandle
+            / "tools/native-gcm/apploader.bin"
+        ),
+        builder=(
+            carryhandle
+            / "tools/native-gcm/ch_gcm.py"
+        ),
+        manifest_tool=carryhandle / "tools/ch_manifest.py",
+        manifest=repo_root / "carryhandle.cfg",
+        opening_bnr=None,
+        bnr_builder=(
+            carryhandle
+            / "tools/native-gcm/ch_bnr.py"
+        ),
         launcher=repo_root / "data/launcher/doomcube.bmp",
         timidity=repo_root / "data/timidity",
         default_wads=repo_root / "data/wad",
@@ -463,17 +496,47 @@ def discover_runtime(script_path: Path) -> Runtime:
 
 
 def validate_runtime(runtime: Runtime) -> None:
-    required_files = (
+    required_files = [
         ("DoomCube DOL", runtime.dol),
         ("GameCube apploader", runtime.apploader),
-        ("native GCM builder", runtime.builder),
+        ("CarryHandle native GCM builder", runtime.builder),
+        ("CarryHandle manifest tool", runtime.manifest_tool),
+        ("CarryHandle manifest", runtime.manifest),
         ("launcher artwork", runtime.launcher),
         ("TiMidity configuration", runtime.timidity / "timidity.cfg"),
-    )
+    ]
+
+    if runtime.opening_bnr is not None:
+        required_files.append(
+            ("pre-generated opening.bnr", runtime.opening_bnr)
+        )
+
+    if runtime.bnr_builder is not None:
+        required_files.append(
+            ("CarryHandle BNR builder", runtime.bnr_builder)
+        )
 
     for description, path in required_files:
         if not path.is_file():
             die(f"Missing {description}: {path}")
+
+    if (
+        runtime.builder.resolve().parent.parent
+        != runtime.manifest_tool.resolve().parent
+    ):
+        die(
+            "CarryHandle GCM builder and manifest tool do not have "
+            "the expected tools/native-gcm + tools layout."
+        )
+
+    if runtime.opening_bnr is not None:
+        bnr_data = runtime.opening_bnr.read_bytes()
+
+        if len(bnr_data) != 6496 or bnr_data[:4] != b"BNR1":
+            die(
+                f"Invalid pre-generated opening.bnr: "
+                f"{runtime.opening_bnr}"
+            )
 
     if not runtime.timidity.is_dir():
         die(f"Missing TiMidity directory: {runtime.timidity}")
@@ -656,6 +719,43 @@ def stage_disc(
         launcher_dir / "doomcube.bmp",
     )
 
+    opening_bnr = staging / "opening.bnr"
+
+    if runtime.opening_bnr is not None:
+        shutil.copy2(
+            runtime.opening_bnr,
+            opening_bnr,
+        )
+    elif runtime.bnr_builder is not None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(runtime.bnr_builder),
+                "--manifest",
+                str(runtime.manifest),
+                "--output",
+                str(opening_bnr),
+            ],
+            check=False,
+        )
+
+        if result.returncode != 0:
+            die(
+                "CarryHandle BNR generation failed "
+                f"with exit status {result.returncode}."
+            )
+    else:
+        die("No opening.bnr source or BNR builder is available.")
+
+    if not opening_bnr.is_file():
+        die("opening.bnr was not staged.")
+
+    bnr_data = opening_bnr.read_bytes()
+
+    if len(bnr_data) != 6496 or bnr_data[:4] != b"BNR1":
+        die("Staged opening.bnr is not a valid CarryHandle BNR1.")
+
 
 def run_builder(
     runtime: Runtime,
@@ -675,8 +775,8 @@ def run_builder(
         str(staging),
         "--output",
         str(output),
-        "--title",
-        "DOOMCUBE",
+        "--manifest",
+        str(runtime.manifest),
     ]
 
     print()

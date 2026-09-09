@@ -613,11 +613,6 @@ RELEASE_ARCHIVE_NAME ?= $(TARGET).zip
 
 DOOMCUBE_RELEASE_ZIP := $(DOOMCUBE_RELEASE_DIR)/$(RELEASE_ARCHIVE_NAME)
 
-DOOMCUBE_APPLOADER_SRC := $(CURDIR)/tools/native-gcm/apploader.c
-DOOMCUBE_APPLOADER_DIR := $(CURDIR)/build-deps/cubeboot-tools/ppc/apploader
-DOOMCUBE_COMMON_DIR    := $(CURDIR)/build-deps/cubeboot-tools/ppc/common
-DOOMCUBE_APPLOADER_BIN := $(CURDIR)/tools/native-gcm/apploader.bin
-
 DOOMCUBE_BUNDLE_BUILDER := $(CURDIR)/tools/release/build_bundle.py
 
 .PHONY: rc release release-debug release-bundle
@@ -711,45 +706,20 @@ release-bundle: all
 	@echo "============================================================"
 	@echo
 
-	@test -f "$(DOOMCUBE_APPLOADER_SRC)" || \
-		( echo "ERROR: missing tracked apploader source:"; \
-		  echo "  $(DOOMCUBE_APPLOADER_SRC)"; false )
-
-	@test -d "$(DOOMCUBE_APPLOADER_DIR)" || \
-		( echo "ERROR: cubeboot-tools apploader directory is missing."; \
-		  echo "Run the developer setup first."; false )
-
-	@test -d "$(DOOMCUBE_COMMON_DIR)" || \
-		( echo "ERROR: cubeboot-tools common directory is missing."; false )
-
 	@test -f "$(DOOMCUBE_BUNDLE_BUILDER)" || \
 		( echo "ERROR: release bundle builder is missing:"; \
 		  echo "  $(DOOMCUBE_BUNDLE_BUILDER)"; false )
 
-	@echo "Building DoomCube-owned apploader..."
-
-	@cp \
-		"$(DOOMCUBE_APPLOADER_SRC)" \
-		"$(DOOMCUBE_APPLOADER_DIR)/apploader.c"
-
-	@$(MAKE) -C "$(DOOMCUBE_COMMON_DIR)"
-	@$(MAKE) -C "$(DOOMCUBE_APPLOADER_DIR)" clean
-	@$(MAKE) -C "$(DOOMCUBE_APPLOADER_DIR)"
-
-	@test -f "$(DOOMCUBE_APPLOADER_DIR)/apploader.bin" || \
-		( echo "ERROR: apploader build did not produce apploader.bin."; false )
-
-	@cp \
-		"$(DOOMCUBE_APPLOADER_DIR)/apploader.bin" \
-		"$(DOOMCUBE_APPLOADER_BIN)"
-
-	@echo
-	@echo "Building player release bundle..."
+	@echo "Building player release bundle with pinned CarryHandle tooling..."
 
 	@python3 "$(DOOMCUBE_BUNDLE_BUILDER)" \
 		--dol "$(CURDIR)/$(TARGET).dol" \
-		--apploader "$(DOOMCUBE_APPLOADER_BIN)" \
-		--builder "$(CURDIR)/tools/native-gcm/mkdoomcube.py" \
+		--apploader "$(CARRYHANDLE_DIR)/tools/native-gcm/apploader.bin" \
+		--builder "$(CARRYHANDLE_DIR)/tools/native-gcm/ch_gcm.py" \
+		--manifest-tool "$(CARRYHANDLE_DIR)/tools/ch_manifest.py" \
+		--bnr-tool "$(CARRYHANDLE_DIR)/tools/native-gcm/ch_bnr.py" \
+		--manifest "$(CURDIR)/carryhandle.cfg" \
+		--presentation-banner "$(CURDIR)/assets/presentation/banner.png" \
 		--packer "$(CURDIR)/tools/release/pack.py" \
 		--launcher "$(CURDIR)/data/launcher/doomcube.bmp" \
 		--timidity "$(CURDIR)/data/timidity" \

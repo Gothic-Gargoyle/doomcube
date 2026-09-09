@@ -18,7 +18,15 @@ the self-contained player release:
     └── runtime/
         ├── doomcube.dol
         ├── apploader.bin
-        ├── mkdoomcube.py
+        ├── carryhandle.cfg
+        ├── opening.bnr
+        ├── assets/
+        │   └── presentation/
+        │       └── banner.png
+        ├── tools/
+        │   ├── ch_manifest.py
+        │   └── native-gcm/
+        │       └── ch_gcm.py
         ├── launcher/
         │   └── doomcube.bmp
         └── timidity/
@@ -33,6 +41,8 @@ from __future__ import annotations
 import argparse
 import shutil
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -218,6 +228,10 @@ def stage_bundle(
     dol: Path,
     apploader: Path,
     image_builder: Path,
+    manifest_tool: Path,
+    bnr_tool: Path,
+    manifest: Path,
+    presentation_banner: Path,
     packer: Path,
     launcher: Path,
     timidity: Path,
@@ -233,6 +247,8 @@ def stage_bundle(
         stage / "WADs",
         stage / "PWADs",
         stage / "DEH",
+        runtime / "assets/presentation",
+        runtime / "tools/native-gcm",
         runtime / "launcher",
         runtime / "timidity",
     )
@@ -242,7 +258,7 @@ def stage_bundle(
             parents=True,
             exist_ok=True,
         )
-        
+
     shutil.copy2(
         packer,
         stage / "pack.py",
@@ -274,7 +290,22 @@ def stage_bundle(
 
     shutil.copy2(
         image_builder,
-        runtime / "mkdoomcube.py",
+        runtime / "tools/native-gcm/ch_gcm.py",
+    )
+
+    shutil.copy2(
+        manifest_tool,
+        runtime / "tools/ch_manifest.py",
+    )
+
+    shutil.copy2(
+        manifest,
+        runtime / "carryhandle.cfg",
+    )
+
+    shutil.copy2(
+        presentation_banner,
+        runtime / "assets/presentation/banner.png",
     )
 
     shutil.copy2(
@@ -292,8 +323,42 @@ def stage_bundle(
     )
 
     make_executable(
-        runtime / "mkdoomcube.py",
+        runtime / "tools/native-gcm/ch_gcm.py",
     )
+
+    bnr_output = runtime / "opening.bnr"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(bnr_tool),
+            "--manifest",
+            str(runtime / "carryhandle.cfg"),
+            "--output",
+            str(bnr_output),
+        ],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        die(
+            "CarryHandle BNR generation failed "
+            f"with exit status {result.returncode}."
+        )
+
+    require_file(
+        "generated opening.bnr",
+        bnr_output,
+    )
+
+    bnr_data = bnr_output.read_bytes()
+
+    if len(bnr_data) != 6496 or bnr_data[:4] != b"BNR1":
+        die(
+            "Generated opening.bnr is not the expected "
+            "6496-byte BNR1 payload."
+        )
 
     validate_stage(stage)
 
@@ -351,14 +416,42 @@ def parse_args() -> argparse.Namespace:
         "--apploader",
         type=Path,
         required=True,
-        help="compiled GameCube apploader.bin",
+        help="pinned CarryHandle apploader.bin",
     )
 
     parser.add_argument(
         "--builder",
         type=Path,
         required=True,
-        help="mkdoomcube.py",
+        help="pinned CarryHandle ch_gcm.py",
+    )
+
+    parser.add_argument(
+        "--manifest-tool",
+        type=Path,
+        required=True,
+        help="pinned CarryHandle ch_manifest.py",
+    )
+
+    parser.add_argument(
+        "--bnr-tool",
+        type=Path,
+        required=True,
+        help="pinned CarryHandle ch_bnr.py",
+    )
+
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="DoomCube carryhandle.cfg",
+    )
+
+    parser.add_argument(
+        "--presentation-banner",
+        type=Path,
+        required=True,
+        help="DoomCube 96x32 presentation banner",
     )
 
     parser.add_argument(
@@ -404,14 +497,19 @@ def main() -> None:
     dol = args.dol.resolve()
     apploader = args.apploader.resolve()
     image_builder = args.builder.resolve()
+    manifest_tool = args.manifest_tool.resolve()
+    bnr_tool = args.bnr_tool.resolve()
+    manifest = args.manifest.resolve()
+    presentation_banner = args.presentation_banner.resolve()
     packer = args.packer.resolve()
+
     shell_launcher = (
         packer.parent / "build.sh"
     ).resolve()
 
     batch_launcher = (
         packer.parent / "build.bat"
-        ).resolve()
+    ).resolve()
 
     launcher = args.launcher.resolve()
     timidity = args.timidity.resolve()
@@ -423,7 +521,9 @@ def main() -> None:
 
     info(f"DOL:       {dol}")
     info(f"Apploader: {apploader}")
-    info(f"Builder:   {image_builder}")
+    info(f"GCM:       {image_builder}")
+    info(f"Manifest:  {manifest}")
+    info(f"BNR tool:  {bnr_tool}")
     info(f"Packer:    {packer}")
     info(f"Launcher:  {launcher}")
     info(f"TiMidity:  {timidity}")
@@ -435,13 +535,33 @@ def main() -> None:
     )
 
     require_file(
-        "GameCube apploader",
+        "CarryHandle apploader",
         apploader,
     )
 
     validate_python(
-        "native GameCube image builder",
+        "CarryHandle native GameCube image builder",
         image_builder,
+    )
+
+    validate_python(
+        "CarryHandle manifest tool",
+        manifest_tool,
+    )
+
+    validate_python(
+        "CarryHandle BNR tool",
+        bnr_tool,
+    )
+
+    require_file(
+        "DoomCube CarryHandle manifest",
+        manifest,
+    )
+
+    require_file(
+        "DoomCube presentation banner",
+        presentation_banner,
     )
 
     validate_python(
@@ -489,6 +609,10 @@ def main() -> None:
         dol=dol,
         apploader=apploader,
         image_builder=image_builder,
+        manifest_tool=manifest_tool,
+        bnr_tool=bnr_tool,
+        manifest=manifest,
+        presentation_banner=presentation_banner,
         packer=packer,
         shell_launcher=shell_launcher,
         batch_launcher=batch_launcher,
@@ -497,6 +621,8 @@ def main() -> None:
     )
 
     ok("Player bundle staged")
+    ok("CarryHandle manifest/GCM tooling packaged")
+    ok("opening.bnr generated at release-build time")
     ok("No IWADs packaged")
     ok("No .gitkeep or Python cache files packaged")
 
