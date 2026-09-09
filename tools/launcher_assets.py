@@ -26,6 +26,46 @@ import wadgfx
 TITLEPIC_WIDTH = 320
 TITLEPIC_HEIGHT = 200
 
+#
+# Doom's STCFN small-font patches are at most 9x8 in the IWADs
+# currently supported by DoomCube.
+#
+# Give every glyph a one-pixel transparent gutter inside a fixed cell.
+# This keeps the atlas trivial to consume and prevents neighbouring
+# glyph pixels from being sampled when the texture is scaled.
+#
+FONT_ATLAS_COLUMNS = 16
+FONT_CELL_WIDTH = 12
+FONT_CELL_HEIGHT = 10
+FONT_CELL_PADDING = 1
+
+FONT_CHROMA_KEY = (255, 0, 255)
+FONT_BACKGROUND_INDEX = 0
+
+FONT_SPACE_ADVANCE = 4
+FONT_LINE_HEIGHT = 9
+
+#
+# 33..95 are Doom's ordinary small-font character range.
+# STCFN121 is also present in every currently supported IWAD, so retain
+# it in the generated atlas rather than silently throwing source data
+# away.
+#
+FONT_CODES = tuple(range(33, 96)) + (121,)
+
+#
+# Launcher text is deliberately sourced only from an IWAD, never from
+# PWAD override data.  Prefer the normal DOOM family when available and
+# fall back deterministically for discs containing only another game.
+#
+FONT_SOURCE_PRIORITY = (
+    ("DOOM", "data/wad/doom.wad"),
+    ("DOOM II", "data/wad/doom2.wad"),
+    ("TNT: EVILUTION", "data/wad/tnt.wad"),
+    ("PLUTONIA", "data/wad/plutonia.wad"),
+    ("DOOM SHAREWARE", "data/wad/doom1.wad"),
+)
+
 
 @dataclass(frozen=True)
 class Campaign:
@@ -190,6 +230,280 @@ def generate_campaign(
     return True
 
 
+def select_font_source(
+    root: Path,
+) -> tuple[str, Path] | None:
+    for label, relative in FONT_SOURCE_PRIORITY:
+        path = root / relative
+
+        if path.is_file():
+            return label, path
+
+    return None
+
+
+def generate_font(root: Path) -> bool:
+    output_dir = root / "launcher" / "font"
+    atlas_path = output_dir / "doomfont.bmp"
+    metrics_path = output_dir / "doomfont.txt"
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    #
+    # Never retain stale generated assets if this helper is rerun
+    # against a persistent developer staging directory.
+    #
+    for path in (atlas_path, metrics_path):
+        if path.exists():
+            path.unlink()
+
+    selected = select_font_source(root)
+
+    if selected is None:
+        info(
+            "Launcher Doom font: skipped; "
+            "no supported base IWAD is present"
+        )
+        return False
+
+    source_label, source_path = selected
+
+    try:
+        wad = wadgfx.WadFile(source_path)
+
+        palette_wad, palette = wadgfx.resolve_palette(
+            [wad],
+            0,
+        )
+
+        glyphs = []
+
+        for code in FONT_CODES:
+            name = f"STCFN{code:03d}"
+            lump = wad.find_last(name)
+
+            if lump is None:
+                raise wadgfx.WadError(
+                    f"required font lump {name} is missing"
+                )
+
+            patch = wadgfx.decode_patch(
+                wad.lump_data(lump)
+            )
+
+            if (
+                patch.width >
+                    FONT_CELL_WIDTH
+                    - 2 * FONT_CELL_PADDING
+                or patch.height >
+                    FONT_CELL_HEIGHT
+                    - 2 * FONT_CELL_PADDING
+            ):
+                raise wadgfx.WadError(
+                    f"{name} is too large for font cell: "
+                    f"{patch.width}x{patch.height}"
+                )
+
+            #
+            # Palette index 0 is reserved as the atlas background.
+            # The supported IWAD STCFN graphics do not use it.
+            #
+            for pixel, opaque in zip(
+                patch.pixels,
+                patch.opaque,
+            ):
+                if (
+                    opaque
+                    and pixel == FONT_BACKGROUND_INDEX
+                ):
+                    raise wadgfx.WadError(
+                        f"{name} uses reserved font "
+                        f"background palette index "
+                        f"{FONT_BACKGROUND_INDEX}"
+                    )
+
+            glyphs.append(
+                (code, patch)
+            )
+
+        rows = (
+            len(glyphs)
+            + FONT_ATLAS_COLUMNS
+            - 1
+        ) // FONT_ATLAS_COLUMNS
+
+        atlas_width = (
+            FONT_ATLAS_COLUMNS
+            * FONT_CELL_WIDTH
+        )
+
+        atlas_height = (
+            rows
+            * FONT_CELL_HEIGHT
+        )
+
+        atlas_pixels = bytearray(
+            atlas_width * atlas_height
+        )
+
+        atlas_opaque = bytearray(
+            atlas_width * atlas_height
+        )
+
+        metrics = [
+            "DOOMCUBE_FONT_V1",
+            f"atlas {atlas_width} {atlas_height}",
+            (
+                "key "
+                f"{FONT_CHROMA_KEY[0]} "
+                f"{FONT_CHROMA_KEY[1]} "
+                f"{FONT_CHROMA_KEY[2]}"
+            ),
+            f"line_height {FONT_LINE_HEIGHT}",
+            f"space {FONT_SPACE_ADVANCE}",
+            (
+                "source "
+                + source_path.relative_to(root).as_posix()
+            ),
+        ]
+
+        for ordinal, (code, patch) in enumerate(glyphs):
+            cell_x = (
+                ordinal % FONT_ATLAS_COLUMNS
+            ) * FONT_CELL_WIDTH
+
+            cell_y = (
+                ordinal // FONT_ATLAS_COLUMNS
+            ) * FONT_CELL_HEIGHT
+
+            glyph_x = (
+                cell_x
+                + FONT_CELL_PADDING
+            )
+
+            glyph_y = (
+                cell_y
+                + FONT_CELL_PADDING
+            )
+
+            for y in range(patch.height):
+                for x in range(patch.width):
+                    source = (
+                        y * patch.width
+                        + x
+                    )
+
+                    if not patch.opaque[source]:
+                        continue
+
+                    destination = (
+                        (glyph_y + y)
+                        * atlas_width
+                        + glyph_x
+                        + x
+                    )
+
+                    atlas_pixels[destination] = (
+                        patch.pixels[source]
+                    )
+
+                    atlas_opaque[destination] = 1
+
+            #
+            # Doom patch origin semantics are intentionally retained.
+            # A runtime renderer should place the bitmap at:
+            #
+            #   draw_x = pen_x - left_offset
+            #   draw_y = pen_y - top_offset
+            #
+            # This is particularly important for punctuation such as
+            # '.', ',' and '_' whose negative top offsets move them
+            # downward relative to ordinary letters.
+            #
+            advance = patch.width + 1
+
+            metrics.append(
+                "glyph "
+                f"{code} "
+                f"{glyph_x} "
+                f"{glyph_y} "
+                f"{patch.width} "
+                f"{patch.height} "
+                f"{patch.left_offset} "
+                f"{patch.top_offset} "
+                f"{advance}"
+            )
+
+        atlas = wadgfx.Patch(
+            width=atlas_width,
+            height=atlas_height,
+            left_offset=0,
+            top_offset=0,
+            pixels=atlas_pixels,
+            opaque=atlas_opaque,
+        )
+
+        #
+        # Reuse wadgfx's already-proven 24-bit BMP writer.
+        #
+        # Index zero is unused by the opaque STCFN pixels, so replace
+        # that palette entry with an unmistakable RGB chroma key.
+        #
+        atlas_palette = list(palette)
+        atlas_palette[FONT_BACKGROUND_INDEX] = (
+            FONT_CHROMA_KEY
+        )
+
+        wadgfx.write_bmp(
+            atlas_path,
+            atlas,
+            atlas_palette,
+            FONT_BACKGROUND_INDEX,
+        )
+
+        metrics_path.write_text(
+            "\n".join(metrics) + "\n",
+            encoding="ascii",
+        )
+
+    except (
+        OSError,
+        ValueError,
+        wadgfx.WadError,
+    ) as exc:
+        for path in (atlas_path, metrics_path):
+            if path.exists():
+                path.unlink()
+
+        warn(
+            "Launcher Doom font unavailable: "
+            f"{exc}; runtime built-in font fallback "
+            "will be used"
+        )
+
+        return False
+
+    print("[OK] Launcher Doom font")
+    print(f"     Source  : {source_label}")
+    print(f"     IWAD    : {source_path}")
+    print(f"     PLAYPAL : {palette_wad.path}")
+    print(
+        "     Atlas   : "
+        f"{atlas_path.relative_to(root).as_posix()} "
+        f"({atlas_width}x{atlas_height})"
+    )
+    print(
+        "     Metrics : "
+        f"{metrics_path.relative_to(root).as_posix()} "
+        f"({len(glyphs)} glyphs)"
+    )
+
+    return True
+
+
 def generate_launcher_assets(root: Path) -> tuple[int, int]:
     output_dir = (
         root
@@ -219,6 +533,20 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
         "Launcher TITLEPIC art: "
         f"{generated} generated, "
         f"{skipped} skipped"
+    )
+
+    print()
+
+    font_generated = generate_font(root)
+
+    print()
+    print(
+        "Launcher Doom font: "
+        + (
+            "generated"
+            if font_generated
+            else "not generated"
+        )
     )
 
     return generated, skipped
