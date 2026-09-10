@@ -396,6 +396,7 @@ CH_CFILES := \
 	ch_version.c \
 	ch_controller_glyph.c \
 	ch_controller_glyph_sdl.c \
+	ch_splash.c \
 	ch_memcard_ui.c
 
 

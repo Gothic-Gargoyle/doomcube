@@ -8,6 +8,7 @@
 
 #include <carryhandle/ch_controller_glyph_sdl.h>
 #include <carryhandle/ch_memcard_ui.h>
+#include <carryhandle/ch_splash.h>
 #include "gc_memcard.h"
 #include "gc_regression.h"
 
@@ -4095,12 +4096,34 @@ static CH_MemCardUI GC_DoomMemCardMakeUI(
 }
 
 
-static void GC_DrawStudioIdentFrame(
-    SDL_Renderer *renderer,
-    SDL_Texture *logo,
-    const SDL_Rect *destination,
-    Uint8 alpha)
+typedef struct GC_StudioIdentPresentation
 {
+    SDL_Texture *texture;
+    SDL_Rect destination;
+} GC_StudioIdentPresentation;
+
+
+static bool GC_DrawStudioIdentFrame(
+    void *userdata,
+    size_t screenIndex,
+    const void *screenData,
+    uint8_t alpha)
+{
+    SDL_Renderer *renderer =
+        (SDL_Renderer *)userdata;
+
+    const GC_StudioIdentPresentation *presentation =
+        (const GC_StudioIdentPresentation *)screenData;
+
+    (void)screenIndex;
+
+    if (renderer == NULL
+        || presentation == NULL
+        || presentation->texture == NULL)
+    {
+        return false;
+    }
+
     SDL_SetRenderDrawColor(
         renderer,
         0,
@@ -4112,71 +4135,19 @@ static void GC_DrawStudioIdentFrame(
         renderer);
 
     SDL_SetTextureAlphaMod(
-        logo,
-        alpha);
+        presentation->texture,
+        (Uint8)alpha);
 
     SDL_RenderCopy(
         renderer,
-        logo,
+        presentation->texture,
         NULL,
-        destination);
+        &presentation->destination);
 
     SDL_RenderPresent(
         renderer);
-}
 
-
-static void GC_RunStudioIdentFade(
-    SDL_Renderer *renderer,
-    SDL_Texture *logo,
-    const SDL_Rect *destination,
-    bool fadeIn)
-{
-    Uint32 start;
-
-    start = SDL_GetTicks();
-
-    for (;;)
-    {
-        Uint32 elapsed =
-            SDL_GetTicks() - start;
-
-        Uint8 alpha;
-
-        if (elapsed >= GC_STUDIO_IDENT_FADE_MS)
-            break;
-
-        if (fadeIn)
-        {
-            alpha =
-                (Uint8)(
-                    elapsed * 255u
-                    / GC_STUDIO_IDENT_FADE_MS);
-        }
-        else
-        {
-            alpha =
-                (Uint8)(
-                    255u
-                    - elapsed * 255u
-                    / GC_STUDIO_IDENT_FADE_MS);
-        }
-
-        GC_DrawStudioIdentFrame(
-            renderer,
-            logo,
-            destination,
-            alpha);
-
-        SDL_Delay(
-            GC_STUDIO_IDENT_FRAME_MS);
-    }
-
-    GC_DrawStudioIdentFrame(
-        renderer,
-        logo,
-        destination,
-        fadeIn ? 255 : 0);
+    return true;
 }
 
 
@@ -4184,7 +4155,9 @@ void GC_LauncherRunStudioIdent(
     SDL_Renderer *renderer)
 {
     SDL_Texture *logo;
-    SDL_Rect destination;
+    GC_StudioIdentPresentation presentation;
+    CH_SplashScreen screens[1];
+    CH_SplashSequence sequence;
     int width;
     int height;
 
@@ -4224,39 +4197,61 @@ void GC_LauncherRunStudioIdent(
             SDL_GetError());
     }
 
-    destination.h =
+    presentation.texture =
+        logo;
+
+    presentation.destination.h =
         GC_STUDIO_IDENT_HEIGHT;
 
-    destination.w =
-        width * destination.h / height;
+    presentation.destination.w =
+        width * presentation.destination.h / height;
 
-    destination.x =
-        (GC_LAUNCHER_WIDTH - destination.w) / 2;
+    presentation.destination.x =
+        (GC_LAUNCHER_WIDTH
+         - presentation.destination.w)
+        / 2;
 
-    destination.y =
-        (480 - destination.h) / 2;
+    presentation.destination.y =
+        (480
+         - presentation.destination.h)
+        / 2;
+
+    screens[0].screen_data =
+        &presentation;
+
+    screens[0].fade_in_ms =
+        GC_STUDIO_IDENT_FADE_MS;
+
+    screens[0].hold_ms =
+        GC_STUDIO_IDENT_HOLD_MS;
+
+    screens[0].fade_out_ms =
+        GC_STUDIO_IDENT_FADE_MS;
+
+    sequence.frame =
+        GC_DrawStudioIdentFrame;
+
+    sequence.userdata =
+        renderer;
+
+    sequence.frame_interval_ms =
+        GC_STUDIO_IDENT_FRAME_MS;
 
     DC_DEBUG(
-        "DoomCube: studio ident starting "
+        "DoomCube: studio ident starting through CarryHandle "
         "(fade=%ums hold=%ums fade=%ums)\n",
-        (unsigned int)GC_STUDIO_IDENT_FADE_MS,
-        (unsigned int)GC_STUDIO_IDENT_HOLD_MS,
-        (unsigned int)GC_STUDIO_IDENT_FADE_MS);
+        (unsigned int)screens[0].fade_in_ms,
+        (unsigned int)screens[0].hold_ms,
+        (unsigned int)screens[0].fade_out_ms);
 
-    GC_RunStudioIdentFade(
-        renderer,
-        logo,
-        &destination,
-        true);
-
-    SDL_Delay(
-        GC_STUDIO_IDENT_HOLD_MS);
-
-    GC_RunStudioIdentFade(
-        renderer,
-        logo,
-        &destination,
-        false);
+    if (!CH_SplashSequenceRun(
+            &sequence,
+            screens,
+            1u))
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle studio ident sequence failed\n");
+    }
 
     SDL_SetRenderDrawColor(
         renderer,
