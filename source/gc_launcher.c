@@ -49,15 +49,72 @@ typedef struct
 
 static gc_game_entry_t gcGames[GC_MAX_GAMES] =
 {
-    { "DOOM SHAREWARE", "dvd:/data/wad/doom1.wad",    NULL,                                             NULL, false, GC_SAVEGAME_DOOM1 },
-    { "DOOM",           "dvd:/data/wad/doom.wad",     NULL,                                             NULL, false, GC_SAVEGAME_DOOM },
-    { "DOOM II",        "dvd:/data/wad/doom2.wad",    NULL,                                             NULL, false, GC_SAVEGAME_DOOM2 },
-    { "TNT: EVILUTION", "dvd:/data/wad/tnt.wad",      NULL,                                             NULL, false, GC_SAVEGAME_TNT },
-    { "PLUTONIA",       "dvd:/data/wad/plutonia.wad", NULL,                                             NULL, false, GC_SAVEGAME_PLUTONIA },
-    { "SIGIL",          "dvd:/data/wad/doom.wad",     "dvd:/data/pwad/doom/SIGIL_V1_23.wad",           NULL, false, GC_SAVEGAME_DOOM },
-    { "SIGIL II",       "dvd:/data/wad/doom.wad",     "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",         NULL, false, GC_SAVEGAME_DOOM },
-    { "CUSTOM",         NULL,                           NULL,                                             NULL, false, GC_SAVEGAME_DOOM }
+    {
+        "DOOM SHAREWARE",
+        "dvd:/data/wad/doom1.wad",
+        NULL,
+        "dvd:/launcher/titlepic/doom1.bmp",
+        false,
+        GC_SAVEGAME_DOOM1
+    },
+    {
+        "DOOM",
+        "dvd:/data/wad/doom.wad",
+        NULL,
+        "dvd:/launcher/titlepic/doom.bmp",
+        false,
+        GC_SAVEGAME_DOOM
+    },
+    {
+        "DOOM II",
+        "dvd:/data/wad/doom2.wad",
+        NULL,
+        "dvd:/launcher/titlepic/doom2.bmp",
+        false,
+        GC_SAVEGAME_DOOM2
+    },
+    {
+        "TNT: EVILUTION",
+        "dvd:/data/wad/tnt.wad",
+        NULL,
+        "dvd:/launcher/titlepic/tnt.bmp",
+        false,
+        GC_SAVEGAME_TNT
+    },
+    {
+        "PLUTONIA",
+        "dvd:/data/wad/plutonia.wad",
+        NULL,
+        "dvd:/launcher/titlepic/plutonia.bmp",
+        false,
+        GC_SAVEGAME_PLUTONIA
+    },
+    {
+        "SIGIL",
+        "dvd:/data/wad/doom.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
+        "dvd:/launcher/titlepic/sigil.bmp",
+        false,
+        GC_SAVEGAME_DOOM
+    },
+    {
+        "SIGIL II",
+        "dvd:/data/wad/doom.wad",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
+        "dvd:/launcher/titlepic/sigil2.bmp",
+        false,
+        GC_SAVEGAME_DOOM
+    },
+    {
+        "CUSTOM",
+        NULL,
+        NULL,
+        NULL,
+        false,
+        GC_SAVEGAME_DOOM
+    }
 };
+
 
 typedef struct
 {
@@ -475,37 +532,49 @@ static int GC_LauncherScanPwads(void)
     return gcAvailablePwadCount;
 }
 
-static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
+static SDL_Texture *GC_LoadLauncherBitmap(
+    SDL_Renderer *renderer,
+    const char *path,
+    const char *description)
 {
     SDL_Surface *loaded;
     SDL_Surface *converted;
     SDL_Texture *texture;
 
-    loaded = SDL_LoadBMP(GC_LAUNCHER_LOGO_PATH);
+    if (path == NULL)
+    {
+        return NULL;
+    }
+
+    loaded = SDL_LoadBMP(path);
 
     if (loaded == NULL)
     {
         DC_WARN(
-            "DoomCube: launcher logo load failed: %s\n",
+            "DoomCube: launcher %s load failed from %s: %s\n",
+            description,
+            path,
             SDL_GetError());
 
         return NULL;
     }
 
     DC_DEBUG(
-        "DoomCube: launcher BMP: %dx%d, format=%s, pitch=%d\n",
+        "DoomCube: launcher %s BMP: %dx%d, "
+        "format=%s, pitch=%d\n",
+        description,
         loaded->w,
         loaded->h,
-        SDL_GetPixelFormatName(loaded->format->format),
+        SDL_GetPixelFormatName(
+            loaded->format->format),
         loaded->pitch);
 
     /*
      * Do not hand SDL_CreateTextureFromSurface() whatever native
      * pixel format SDL_LoadBMP() happened to produce.
      *
-     * Convert explicitly to 32-bit RGBA first.  This avoids the
-     * GameCube renderer having to deal with the BMP's native BGR
-     * surface format.
+     * Convert explicitly to 32-bit RGBA first.  This is the same
+     * GameCube-safe path already proven by the DoomCube splash logo.
      */
     converted = SDL_ConvertSurfaceFormat(
         loaded,
@@ -517,17 +586,23 @@ static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
     if (converted == NULL)
     {
         DC_WARN(
-            "DoomCube: launcher logo conversion failed: %s\n",
+            "DoomCube: launcher %s conversion failed "
+            "for %s: %s\n",
+            description,
+            path,
             SDL_GetError());
 
         return NULL;
     }
 
     DC_DEBUG(
-        "DoomCube: converted logo: %dx%d, format=%s, pitch=%d\n",
+        "DoomCube: converted launcher %s: %dx%d, "
+        "format=%s, pitch=%d\n",
+        description,
         converted->w,
         converted->h,
-        SDL_GetPixelFormatName(converted->format->format),
+        SDL_GetPixelFormatName(
+            converted->format->format),
         converted->pitch);
 
     texture =
@@ -540,18 +615,33 @@ static SDL_Texture *GC_LoadLauncherLogo(SDL_Renderer *renderer)
     if (texture == NULL)
     {
         DC_WARN(
-            "DoomCube: launcher logo texture creation failed: %s\n",
+            "DoomCube: launcher %s texture creation "
+            "failed for %s: %s\n",
+            description,
+            path,
             SDL_GetError());
 
         return NULL;
     }
 
     DC_DEBUG(
-        "DoomCube: launcher logo loaded from %s\n",
-        GC_LAUNCHER_LOGO_PATH);
+        "DoomCube: launcher %s loaded from %s\n",
+        description,
+        path);
 
     return texture;
 }
+
+
+static SDL_Texture *GC_LoadLauncherLogo(
+    SDL_Renderer *renderer)
+{
+    return GC_LoadLauncherBitmap(
+        renderer,
+        GC_LAUNCHER_LOGO_PATH,
+        "logo");
+}
+
 
 static int GC_LauncherScanGames(void)
 {
@@ -788,10 +878,31 @@ static void GC_DrawLauncher(
     SDL_Renderer *renderer,
     int selected)
 {
+    SDL_Texture *background = NULL;
+    bool titlepicLoaded = false;
     int previous;
     int next;
     int textWidth;
 
+    SDL_Rect fullscreen =
+    {
+        0,
+        0,
+        GC_LAUNCHER_WIDTH,
+        480
+    };
+
+    SDL_Rect safePanel =
+    {
+        0,
+        286,
+        GC_LAUNCHER_WIDTH,
+        194
+    };
+
+    /*
+     * Always establish a deterministic black fallback first.
+     */
     SDL_SetRenderDrawColor(
         renderer,
         0,
@@ -801,31 +912,127 @@ static void GC_DrawLauncher(
 
     SDL_RenderClear(renderer);
 
-    SDL_SetRenderDrawColor(
-        renderer,
-        255,
-        255,
-        255,
-        255);
+    /*
+     * First-class games use their pack-time generated TITLEPIC.
+     *
+     * CUSTOM intentionally has no artPath.  Missing or malformed
+     * generated art also lands on the same DoomCube-logo fallback.
+     */
+    if (selected >= 0 &&
+        selected < GC_MAX_GAMES &&
+        gcGames[selected].artPath != NULL)
+    {
+        background =
+            GC_LoadLauncherBitmap(
+                renderer,
+                gcGames[selected].artPath,
+                "TITLEPIC");
+
+        titlepicLoaded =
+            background != NULL;
+    }
+
+    if (background == NULL)
+    {
+        background =
+            GC_LoadLauncherLogo(
+                renderer);
+    }
+
+    if (background != NULL)
+    {
+        if (titlepicLoaded)
+        {
+            /*
+             * Doom TITLEPIC is 320x200.  Stretching it to the
+             * 640x480 launcher surface reproduces the intended
+             * classic 4:3 display aspect rather than preserving
+             * the stored square-pixel 8:5 shape.
+             */
+            if (SDL_RenderCopy(
+                    renderer,
+                    background,
+                    NULL,
+                    &fullscreen) != 0)
+            {
+                DC_WARN(
+                    "DoomCube: TITLEPIC render failed: %s\n",
+                    SDL_GetError());
+            }
+        }
+        else
+        {
+            int logoWidth;
+            int logoHeight;
+
+            /*
+             * Keep DoomCube fallback artwork at native size and
+             * center it in the artwork region above the safe panel.
+             * The splash logo is not a 320x200 TITLEPIC and must
+             * therefore never be stretched fullscreen.
+             */
+            if (SDL_QueryTexture(
+                    background,
+                    NULL,
+                    NULL,
+                    &logoWidth,
+                    &logoHeight) == 0)
+            {
+                SDL_Rect logoRect =
+                {
+                    (GC_LAUNCHER_WIDTH - logoWidth) / 2,
+                    (286 - logoHeight) / 2,
+                    logoWidth,
+                    logoHeight
+                };
+
+                if (logoRect.x < 0)
+                {
+                    logoRect.x = 0;
+                }
+
+                if (logoRect.y < 0)
+                {
+                    logoRect.y = 0;
+                }
+
+                if (SDL_RenderCopy(
+                        renderer,
+                        background,
+                        NULL,
+                        &logoRect) != 0)
+                {
+                    DC_WARN(
+                        "DoomCube: fallback logo render "
+                        "failed: %s\n",
+                        SDL_GetError());
+                }
+            }
+            else
+            {
+                DC_WARN(
+                    "DoomCube: fallback logo query failed: %s\n",
+                    SDL_GetError());
+            }
+        }
+    }
 
     /*
-     * Temporary pre-artwork carousel presentation.
-     *
-     * The full-screen TITLEPIC will replace this empty upper
-     * area later.  Keep the actual carousel geometry simple
-     * and stable so navigation can be proven independently.
+     * The TITLEPIC may contain bright detail anywhere, so keep all
+     * interactive text in an opaque lower safe strip.  Step 8 will
+     * replace this temporary built-in font with the extracted Doom
+     * STCFN atlas without changing the artwork contract.
      */
-    {
-        const char *heading = "SELECT GAME";
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
 
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(heading, 3)) / 2,
-            75,
-            heading,
-            3);
-    }
+    SDL_RenderFillRect(
+        renderer,
+        &safePanel);
 
     /*
      * Selected game.
@@ -833,10 +1040,10 @@ static void GC_DrawLauncher(
     {
         SDL_Rect marker =
         {
-            80,
-            170,
-            480,
-            72
+            70,
+            302,
+            500,
+            54
         };
 
         SDL_SetRenderDrawColor(
@@ -865,7 +1072,7 @@ static void GC_DrawLauncher(
         GC_DrawText(
             renderer,
             (GC_LAUNCHER_WIDTH - textWidth) / 2,
-            192,
+            316,
             gcGames[selected].name,
             4);
     }
@@ -881,11 +1088,17 @@ static void GC_DrawLauncher(
             1);
 
     /*
-     * Previous item.
-     *
-     * Do not repeat the selected game if this disc only has
-     * one available carousel entry.
+     * Keep the proven text-carousel neighbour presentation for this
+     * step.  Step 8 can replace these with Doom-font arrows after the
+     * generated STCFN atlas itself is runtime-proven.
      */
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+
     if (previous >= 0 &&
         previous != selected)
     {
@@ -897,14 +1110,11 @@ static void GC_DrawLauncher(
         GC_DrawText(
             renderer,
             160 - width / 2,
-            305,
+            372,
             gcGames[previous].name,
             2);
     }
 
-    /*
-     * Next item.
-     */
     if (next >= 0 &&
         next != selected)
     {
@@ -916,17 +1126,11 @@ static void GC_DrawLauncher(
         GC_DrawText(
             renderer,
             480 - width / 2,
-            305,
+            372,
             gcGames[next].name,
             2);
     }
 
-    /*
-     * Temporary navigation hints.
-     *
-     * These will eventually be rendered with the extracted
-     * Doom font over the TITLEPIC safe area.
-     */
     {
         const char *selectText =
             "LEFT RIGHT - SELECT";
@@ -938,7 +1142,7 @@ static void GC_DrawLauncher(
             renderer,
             (GC_LAUNCHER_WIDTH -
                 GC_TextWidth(selectText, 2)) / 2,
-            365,
+            414,
             selectText,
             2);
 
@@ -946,14 +1150,26 @@ static void GC_DrawLauncher(
             renderer,
             (GC_LAUNCHER_WIDTH -
                 GC_TextWidth(actionText, 2)) / 2,
-            400,
+            448,
             actionText,
             2);
     }
 
     SDL_RenderPresent(renderer);
-}
 
+    /*
+     * GC_DrawLauncher() is called only when the carousel is initially
+     * entered or its selection changes.  Keep Step 7 ownership simple:
+     * one texture is loaded for this redraw and released after present.
+     * The melt step will deliberately replace this with old/new texture
+     * ownership because it needs both frames simultaneously.
+     */
+    if (background != NULL)
+    {
+        SDL_DestroyTexture(
+            background);
+    }
+}
 
 
 static void GC_DrawCustomBaseLauncher(
