@@ -5,6 +5,8 @@
 #include "gc_debug.h"
 
 #include "gc_launcher.h"
+
+#include <carryhandle/ch_controller_glyph_sdl.h>
 #include "gc_memcard.h"
 #include "gc_regression.h"
 
@@ -30,6 +32,7 @@
 #define GC_DOOM_FONT_METRICS_PATH "dvd:/launcher/font/doomfont.txt"
 #define GC_SPLASH_COLLAGE_PATH    "dvd:/launcher/splash.bmp"
 #define GC_DOOM_MENU_LOGO_PATH    "dvd:/launcher/m_doom.bmp"
+#define GC_DOOM_MENU_SKULL_PATH   "dvd:/launcher/m_skull1.bmp"
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
 
 #define GC_DOOM_FONT_MAX_CODE     127
@@ -737,6 +740,150 @@ static SDL_Texture *GC_LoadLauncherKeyedBitmap(
 
     return texture;
 }
+
+#define GC_DOOM_MENU_SKULL_GAP       8
+#define GC_DOOM_MENU_SKULL_Y_OFFSET -6
+
+static SDL_Texture *gcDoomMenuSkullTexture = NULL;
+static int gcDoomMenuSkullLoadAttempted = 0;
+
+
+static SDL_Texture *GC_LoadDoomMenuSkull(
+    SDL_Renderer *renderer)
+{
+    if (!gcDoomMenuSkullLoadAttempted)
+    {
+        gcDoomMenuSkullLoadAttempted = 1;
+
+        gcDoomMenuSkullTexture =
+            GC_LoadLauncherKeyedBitmap(
+                renderer,
+                GC_DOOM_MENU_SKULL_PATH,
+                "M_SKULL1",
+                255,
+                0,
+                255);
+    }
+
+    return gcDoomMenuSkullTexture;
+}
+
+
+static int GC_DrawDoomMenuSkullCursor(
+    SDL_Renderer *renderer,
+    int textX,
+    int textY)
+{
+    SDL_Texture *texture;
+    SDL_Rect dst;
+    int width;
+    int height;
+
+    texture =
+        GC_LoadDoomMenuSkull(
+            renderer);
+
+    if (texture == NULL)
+        return 0;
+
+    if (SDL_QueryTexture(
+            texture,
+            NULL,
+            NULL,
+            &width,
+            &height) != 0)
+    {
+        DC_WARN(
+            "DoomCube: M_SKULL1 texture query failed: %s\n",
+            SDL_GetError());
+
+        return 0;
+    }
+
+    dst.x =
+        textX
+        - GC_DOOM_MENU_SKULL_GAP
+        - width;
+
+    dst.y =
+        textY
+        + GC_DOOM_MENU_SKULL_Y_OFFSET;
+
+    dst.w = width;
+    dst.h = height;
+
+    SDL_SetTextureColorMod(
+        texture,
+        255,
+        255,
+        255);
+
+    SDL_SetTextureAlphaMod(
+        texture,
+        255);
+
+    if (SDL_RenderCopy(
+            renderer,
+            texture,
+            NULL,
+            &dst) != 0)
+    {
+        DC_WARN(
+            "DoomCube: M_SKULL1 render failed: %s\n",
+            SDL_GetError());
+
+        return 0;
+    }
+
+    return 1;
+}
+
+
+static void GC_DrawCustomSelectionFallback(
+    SDL_Renderer *renderer,
+    int y)
+{
+    SDL_Rect marker =
+    {
+        55,
+        y - 5,
+        530,
+        28
+    };
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        70,
+        45,
+        120,
+        255);
+
+    SDL_RenderFillRect(
+        renderer,
+        &marker);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        255);
+}
+
+
+static void GC_DoomMenuSkullShutdown(void)
+{
+    if (gcDoomMenuSkullTexture != NULL)
+    {
+        SDL_DestroyTexture(
+            gcDoomMenuSkullTexture);
+
+        gcDoomMenuSkullTexture = NULL;
+    }
+
+    gcDoomMenuSkullLoadAttempted = 0;
+}
+
 
 
 static SDL_Texture *GC_LoadLauncherLogo(
@@ -1607,6 +1754,66 @@ static int GC_NextAvailableGame(int current, int direction)
     return -1;
 }
 
+#define GC_CAROUSEL_NAV_GLYPH_SIZE       40
+#define GC_CAROUSEL_NAV_GLYPH_GAP        10
+#define GC_CAROUSEL_NAV_GLYPH_Y         360
+
+#define GC_CAROUSEL_ACTION_GLYPH_SIZE    36
+#define GC_CAROUSEL_ACTION_GLYPH_GAP      8
+#define GC_CAROUSEL_ACTION_PAIR_GAP      28
+#define GC_CAROUSEL_ACTION_GLYPH_Y      435
+#define GC_CAROUSEL_ACTION_TEXT_Y       448
+
+static SDL_Texture *gcCarouselDpadLeftGlyph = NULL;
+static SDL_Texture *gcCarouselDpadRightGlyph = NULL;
+static SDL_Texture *gcCarouselAGlyph = NULL;
+static SDL_Texture *gcCarouselBGlyph = NULL;
+
+static SDL_Texture *GC_LoadCarouselControllerGlyph(
+    SDL_Renderer *renderer,
+    SDL_Texture **cache,
+    CH_ControllerGlyph glyph,
+    int rasterSize,
+    const char *label)
+{
+    if (*cache == NULL)
+    {
+        *cache =
+            CH_ControllerGlyphSDLLoadTexture(
+                renderer,
+                "dvd:/",
+                glyph,
+                rasterSize);
+
+        if (*cache == NULL)
+        {
+            DC_WARN(
+                "DoomCube: launcher %s controller glyph load failed: %s\n",
+                label,
+                SDL_GetError());
+        }
+    }
+
+    return *cache;
+}
+
+static void GC_DrawCarouselControllerGlyph(
+    SDL_Renderer *renderer,
+    SDL_Texture *texture,
+    int x,
+    int y,
+    int size)
+{
+    SDL_Rect dst = { x, y, size, size };
+
+    if (texture == NULL)
+        return;
+
+    SDL_SetTextureColorMod(texture, 255, 255, 255);
+    SDL_SetTextureAlphaMod(texture, 255);
+    SDL_RenderCopy(renderer, texture, NULL, &dst);
+}
+
 static void GC_DrawLauncher(
     SDL_Renderer *renderer,
     int selected)
@@ -1616,6 +1823,39 @@ static void GC_DrawLauncher(
     int previous;
     int next;
     int textWidth;
+    SDL_Texture *dpadLeftGlyph;
+    SDL_Texture *dpadRightGlyph;
+    SDL_Texture *aGlyph;
+    SDL_Texture *bGlyph;
+
+    dpadLeftGlyph = GC_LoadCarouselControllerGlyph(
+        renderer,
+        &gcCarouselDpadLeftGlyph,
+        CH_CONTROLLER_GLYPH_DPAD_LEFT,
+        GC_CAROUSEL_NAV_GLYPH_SIZE,
+        "D-pad left");
+
+    dpadRightGlyph = GC_LoadCarouselControllerGlyph(
+        renderer,
+        &gcCarouselDpadRightGlyph,
+        CH_CONTROLLER_GLYPH_DPAD_RIGHT,
+        GC_CAROUSEL_NAV_GLYPH_SIZE,
+        "D-pad right");
+
+    aGlyph = GC_LoadCarouselControllerGlyph(
+        renderer,
+        &gcCarouselAGlyph,
+        CH_CONTROLLER_GLYPH_A,
+        GC_CAROUSEL_ACTION_GLYPH_SIZE,
+        "A");
+
+    bGlyph = GC_LoadCarouselControllerGlyph(
+        renderer,
+        &gcCarouselBGlyph,
+        CH_CONTROLLER_GLYPH_B,
+        GC_CAROUSEL_ACTION_GLYPH_SIZE,
+        "B");
+
 
     SDL_Rect fullscreen =
     {
@@ -1758,6 +1998,18 @@ static void GC_DrawLauncher(
             360,
             gcGames[previous].name,
             3);
+
+        if (dpadLeftGlyph != NULL)
+        {
+            GC_DrawCarouselControllerGlyph(
+                renderer,
+                dpadLeftGlyph,
+                160 - width / 2
+                    - GC_CAROUSEL_NAV_GLYPH_GAP
+                    - GC_CAROUSEL_NAV_GLYPH_SIZE,
+                GC_CAROUSEL_NAV_GLYPH_Y,
+                GC_CAROUSEL_NAV_GLYPH_SIZE);
+        }
     }
 
     if (next >= 0 &&
@@ -1774,6 +2026,17 @@ static void GC_DrawLauncher(
             360,
             gcGames[next].name,
             3);
+
+        if (dpadRightGlyph != NULL)
+        {
+            GC_DrawCarouselControllerGlyph(
+                renderer,
+                dpadRightGlyph,
+                480 + width / 2
+                    + GC_CAROUSEL_NAV_GLYPH_GAP,
+                GC_CAROUSEL_NAV_GLYPH_Y,
+                GC_CAROUSEL_NAV_GLYPH_SIZE);
+        }
     }
 
     {
@@ -1783,21 +2046,97 @@ static void GC_DrawLauncher(
         const char *actionText =
             "A - START    B - BACK";
 
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(selectText, 3)) / 2,
-            414,
-            selectText,
-            3);
+        /*
+         * D-pad glyphs beside the neighbouring titles teach
+         * horizontal navigation directly. Keep the old prose only
+         * as a fallback if either SVG cannot be loaded.
+         */
+        if (dpadLeftGlyph == NULL ||
+            dpadRightGlyph == NULL)
+        {
+            GC_DrawText(
+                renderer,
+                (GC_LAUNCHER_WIDTH -
+                    GC_TextWidth(selectText, 3)) / 2,
+                414,
+                selectText,
+                3);
+        }
 
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(actionText, 3)) / 2,
-            448,
-            actionText,
-            3);
+        if (aGlyph != NULL &&
+            bGlyph != NULL)
+        {
+            const char *startText = "START";
+            const char *backText = "BACK";
+
+            const int startWidth =
+                GC_TextWidth(startText, 3);
+
+            const int backWidth =
+                GC_TextWidth(backText, 3);
+
+            const int totalWidth =
+                GC_CAROUSEL_ACTION_GLYPH_SIZE
+                + GC_CAROUSEL_ACTION_GLYPH_GAP
+                + startWidth
+                + GC_CAROUSEL_ACTION_PAIR_GAP
+                + GC_CAROUSEL_ACTION_GLYPH_SIZE
+                + GC_CAROUSEL_ACTION_GLYPH_GAP
+                + backWidth;
+
+            int x =
+                (GC_LAUNCHER_WIDTH - totalWidth) / 2;
+
+            GC_DrawCarouselControllerGlyph(
+                renderer,
+                aGlyph,
+                x,
+                GC_CAROUSEL_ACTION_GLYPH_Y,
+                GC_CAROUSEL_ACTION_GLYPH_SIZE);
+
+            x +=
+                GC_CAROUSEL_ACTION_GLYPH_SIZE
+                + GC_CAROUSEL_ACTION_GLYPH_GAP;
+
+            GC_DrawText(
+                renderer,
+                x,
+                GC_CAROUSEL_ACTION_TEXT_Y,
+                startText,
+                3);
+
+            x +=
+                startWidth
+                + GC_CAROUSEL_ACTION_PAIR_GAP;
+
+            GC_DrawCarouselControllerGlyph(
+                renderer,
+                bGlyph,
+                x,
+                GC_CAROUSEL_ACTION_GLYPH_Y,
+                GC_CAROUSEL_ACTION_GLYPH_SIZE);
+
+            x +=
+                GC_CAROUSEL_ACTION_GLYPH_SIZE
+                + GC_CAROUSEL_ACTION_GLYPH_GAP;
+
+            GC_DrawText(
+                renderer,
+                x,
+                GC_CAROUSEL_ACTION_TEXT_Y,
+                backText,
+                3);
+        }
+        else
+        {
+            GC_DrawText(
+                renderer,
+                (GC_LAUNCHER_WIDTH -
+                    GC_TextWidth(actionText, 3)) / 2,
+                448,
+                actionText,
+                3);
+        }
     }
 
     SDL_RenderPresent(renderer);
@@ -1807,6 +2146,101 @@ static void GC_DrawLauncher(
         SDL_DestroyTexture(
             background);
     }
+}
+
+
+#define GC_CUSTOM_ACTION_GLYPH_SIZE 36
+#define GC_CUSTOM_ACTION_GLYPH_GAP   8
+#define GC_CUSTOM_ACTION_PAIR_GAP   28
+#define GC_CUSTOM_ACTION_GLYPH_Y   397
+#define GC_CUSTOM_ACTION_TEXT_Y    410
+
+
+static int GC_DrawCustomActionHints(
+    SDL_Renderer *renderer,
+    const char *primaryText)
+{
+    SDL_Texture *aGlyph;
+    SDL_Texture *bGlyph;
+    const char *backText = "BACK";
+    int primaryWidth;
+    int backWidth;
+    int totalWidth;
+    int x;
+
+    aGlyph =
+        GC_LoadCarouselControllerGlyph(
+            renderer,
+            &gcCarouselAGlyph,
+            CH_CONTROLLER_GLYPH_A,
+            GC_CUSTOM_ACTION_GLYPH_SIZE,
+            "A");
+
+    bGlyph =
+        GC_LoadCarouselControllerGlyph(
+            renderer,
+            &gcCarouselBGlyph,
+            CH_CONTROLLER_GLYPH_B,
+            GC_CUSTOM_ACTION_GLYPH_SIZE,
+            "B");
+
+    if (aGlyph == NULL ||
+        bGlyph == NULL)
+    {
+        return 0;
+    }
+
+    primaryWidth = GC_TextWidth(primaryText, 3);
+    backWidth = GC_TextWidth(backText, 3);
+
+    totalWidth =
+        GC_CUSTOM_ACTION_GLYPH_SIZE
+        + GC_CUSTOM_ACTION_GLYPH_GAP
+        + primaryWidth
+        + GC_CUSTOM_ACTION_PAIR_GAP
+        + GC_CUSTOM_ACTION_GLYPH_SIZE
+        + GC_CUSTOM_ACTION_GLYPH_GAP
+        + backWidth;
+
+    x = (GC_LAUNCHER_WIDTH - totalWidth) / 2;
+
+    GC_DrawCarouselControllerGlyph(
+        renderer,
+        aGlyph,
+        x,
+        GC_CUSTOM_ACTION_GLYPH_Y,
+        GC_CUSTOM_ACTION_GLYPH_SIZE);
+
+    x += GC_CUSTOM_ACTION_GLYPH_SIZE
+        + GC_CUSTOM_ACTION_GLYPH_GAP;
+
+    GC_DrawText(
+        renderer,
+        x,
+        GC_CUSTOM_ACTION_TEXT_Y,
+        primaryText,
+        3);
+
+    x += primaryWidth + GC_CUSTOM_ACTION_PAIR_GAP;
+
+    GC_DrawCarouselControllerGlyph(
+        renderer,
+        bGlyph,
+        x,
+        GC_CUSTOM_ACTION_GLYPH_Y,
+        GC_CUSTOM_ACTION_GLYPH_SIZE);
+
+    x += GC_CUSTOM_ACTION_GLYPH_SIZE
+        + GC_CUSTOM_ACTION_GLYPH_GAP;
+
+    GC_DrawText(
+        renderer,
+        x,
+        GC_CUSTOM_ACTION_TEXT_Y,
+        backText,
+        3);
+
+    return 1;
 }
 
 
@@ -1856,39 +2290,23 @@ static void GC_DrawCustomBaseLauncher(
             155 +
             shown * GC_LAUNCHER_LINE_HEIGHT;
 
-        if (i == selected)
-        {
-            SDL_Rect marker =
-            {
-                55,
-                y - 5,
-                530,
-                28
-            };
 
-            SDL_SetRenderDrawColor(
-                renderer,
-                70,
-                45,
-                120,
-                255);
-
-            SDL_RenderFillRect(
-                renderer,
-                &marker);
-
-            SDL_SetRenderDrawColor(
-                renderer,
-                255,
-                255,
-                255,
-                255);
-        }
 
         textWidth =
             GC_TextWidth(
                 gcCustomBases[i].name,
-                2);
+                3);
+
+        if (i == selected &&
+            !GC_DrawDoomMenuSkullCursor(
+                renderer,
+                (GC_LAUNCHER_WIDTH - textWidth) / 2,
+                y))
+        {
+            GC_DrawCustomSelectionFallback(
+                renderer,
+                y);
+        }
 
         GC_DrawText(
             renderer,
@@ -1896,18 +2314,23 @@ static void GC_DrawCustomBaseLauncher(
                 textWidth) / 2,
             y,
             gcCustomBases[i].name,
-            2);
+            3);
 
         ++shown;
     }
 
-    GC_DrawText(
-        renderer,
-        (GC_LAUNCHER_WIDTH -
-            GC_TextWidth(controls, 2)) / 2,
-        400,
-        controls,
-        2);
+    if (!GC_DrawCustomActionHints(
+            renderer,
+            "SELECT"))
+    {
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(controls, 3)) / 2,
+            410,
+            controls,
+            3);
+    };
 
     SDL_RenderPresent(renderer);
 }
@@ -2096,10 +2519,10 @@ static void GC_DrawCustomPwadLauncher(
         (GC_LAUNCHER_WIDTH -
             GC_TextWidth(
                 gcCustomBases[baseIndex].name,
-                2)) / 2,
+                3)) / 2,
         100,
         gcCustomBases[baseIndex].name,
-        2);
+        3);
 
     ordinal = 0;
 
@@ -2126,34 +2549,7 @@ static void GC_DrawCustomPwadLauncher(
             (ordinal - first) *
                 GC_LAUNCHER_LINE_HEIGHT;
 
-        if (i == selected)
-        {
-            SDL_Rect marker =
-            {
-                45,
-                y - 5,
-                550,
-                28
-            };
 
-            SDL_SetRenderDrawColor(
-                renderer,
-                70,
-                45,
-                120,
-                255);
-
-            SDL_RenderFillRect(
-                renderer,
-                &marker);
-
-            SDL_SetRenderDrawColor(
-                renderer,
-                255,
-                255,
-                255,
-                255);
-        }
 
         /*
          * Keep pathological filenames inside the safe width of
@@ -2162,13 +2558,36 @@ static void GC_DrawCustomPwadLauncher(
         snprintf(
             displayName,
             sizeof(displayName),
-            "%.43s",
+            "%s",
             gcPwads[i].name);
+
+        /* Fit larger scale-3 text inside the safe menu width. */
+        while (displayName[0] != '\0' &&
+               GC_TextWidth(displayName, 3) > 500)
+        {
+            size_t len = strlen(displayName);
+
+            if (len == 0)
+                break;
+
+            displayName[len - 1] = '\0';
+        }
 
         textWidth =
             GC_TextWidth(
                 displayName,
-                2);
+                3);
+
+        if (i == selected &&
+            !GC_DrawDoomMenuSkullCursor(
+                renderer,
+                (GC_LAUNCHER_WIDTH - textWidth) / 2,
+                y))
+        {
+            GC_DrawCustomSelectionFallback(
+                renderer,
+                y);
+        }
 
         GC_DrawText(
             renderer,
@@ -2176,7 +2595,7 @@ static void GC_DrawCustomPwadLauncher(
                 textWidth) / 2,
             y,
             displayName,
-            2);
+            3);
 
         ++ordinal;
     }
@@ -2195,19 +2614,24 @@ static void GC_DrawCustomPwadLauncher(
         GC_DrawText(
             renderer,
             (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(position, 1)) / 2,
+                GC_TextWidth(position, 2)) / 2,
             380,
             position,
-            1);
+            2);
     }
 
-    GC_DrawText(
-        renderer,
-        (GC_LAUNCHER_WIDTH -
-            GC_TextWidth(controls, 2)) / 2,
-        420,
-        controls,
-        2);
+    if (!GC_DrawCustomActionHints(
+            renderer,
+            "START"))
+    {
+        GC_DrawText(
+            renderer,
+            (GC_LAUNCHER_WIDTH -
+                GC_TextWidth(controls, 3)) / 2,
+            410,
+            controls,
+            3);
+    };
 
     SDL_RenderPresent(renderer);
 }
@@ -2392,6 +2816,133 @@ static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
     SDL_RenderPresent(renderer);
 }
 
+
+#define GC_SPLASH_START_GLYPH_RASTER_SIZE 72
+#define GC_SPLASH_START_GLYPH_VISUAL_SLOT 31
+#define GC_SPLASH_START_GLYPH_Y_OFFSET    12
+
+static SDL_Texture *gcSplashStartGlyphTexture;
+static bool gcSplashStartGlyphLoadAttempted;
+
+static SDL_Texture *GC_LoadSplashStartGlyph(
+    SDL_Renderer *renderer)
+{
+    if (gcSplashStartGlyphTexture != NULL)
+        return gcSplashStartGlyphTexture;
+
+    if (gcSplashStartGlyphLoadAttempted)
+        return NULL;
+
+    gcSplashStartGlyphLoadAttempted = true;
+
+    gcSplashStartGlyphTexture =
+        CH_ControllerGlyphSDLLoadTexture(
+            renderer,
+            "dvd:/",
+            CH_CONTROLLER_GLYPH_START,
+            GC_SPLASH_START_GLYPH_RASTER_SIZE);
+
+    if (gcSplashStartGlyphTexture == NULL)
+    {
+        fprintf(
+            stderr,
+            "DoomCube: START controller glyph unavailable: %s\n",
+            SDL_GetError());
+    }
+
+    return gcSplashStartGlyphTexture;
+}
+
+static void GC_DrawSplashStartGlyph(
+    SDL_Renderer *renderer,
+    SDL_Texture *texture,
+    int x,
+    int y)
+{
+    Uint8 red = 255;
+    Uint8 green = 255;
+    Uint8 blue = 255;
+    Uint8 alpha = 255;
+    SDL_Rect dst;
+
+    if (renderer == NULL || texture == NULL)
+        return;
+
+    /*
+     * Step 8's Doom font reads the current renderer alpha. Read the same
+     * state here so the SVG follows the exact PRESS START triangle fade.
+     */
+    if (SDL_GetRenderDrawColor(
+            renderer,
+            &red,
+            &green,
+            &blue,
+            &alpha) != 0)
+    {
+        alpha = 255;
+    }
+
+    SDL_SetTextureAlphaMod(
+        texture,
+        alpha);
+
+    dst.x =
+        x
+        + ((GC_SPLASH_START_GLYPH_VISUAL_SLOT
+            - GC_SPLASH_START_GLYPH_RASTER_SIZE) / 2);
+
+    dst.y =
+        y
+        + GC_SPLASH_START_GLYPH_Y_OFFSET;
+
+    dst.w = GC_SPLASH_START_GLYPH_RASTER_SIZE;
+    dst.h = GC_SPLASH_START_GLYPH_RASTER_SIZE;
+
+    SDL_RenderCopy(
+        renderer,
+        texture,
+        NULL,
+        &dst);
+}
+
+static void GC_LauncherControllerGlyphShutdown(void)
+{
+    if (gcSplashStartGlyphTexture != NULL)
+    {
+        SDL_DestroyTexture(
+            gcSplashStartGlyphTexture);
+
+        gcSplashStartGlyphTexture = NULL;
+    }
+
+    gcSplashStartGlyphLoadAttempted = false;
+
+    if (gcCarouselDpadLeftGlyph != NULL)
+    {
+        SDL_DestroyTexture(gcCarouselDpadLeftGlyph);
+        gcCarouselDpadLeftGlyph = NULL;
+    }
+
+    if (gcCarouselDpadRightGlyph != NULL)
+    {
+        SDL_DestroyTexture(gcCarouselDpadRightGlyph);
+        gcCarouselDpadRightGlyph = NULL;
+    }
+
+    if (gcCarouselAGlyph != NULL)
+    {
+        SDL_DestroyTexture(gcCarouselAGlyph);
+        gcCarouselAGlyph = NULL;
+    }
+
+    if (gcCarouselBGlyph != NULL)
+    {
+        SDL_DestroyTexture(gcCarouselBGlyph);
+        gcCarouselBGlyph = NULL;
+    }
+
+}
+
 static void GC_DrawSplash(
     SDL_Renderer *renderer,
     SDL_Texture *fallbackLogo,
@@ -2569,13 +3120,50 @@ static void GC_DrawSplash(
         255,
         promptAlpha);
 
-    GC_DrawText(
-        renderer,
-        (GC_LAUNCHER_WIDTH -
-            GC_TextWidth(prompt, 3)) / 2,
-        338,
-        prompt,
-        3);
+    {
+        SDL_Texture *startGlyph =
+            GC_LoadSplashStartGlyph(renderer);
+
+        if (startGlyph != NULL)
+        {
+            const int startTextWidth =
+                GC_TextWidth(
+                    prompt,
+                    3);
+
+            const int startTextX =
+                (GC_LAUNCHER_WIDTH -
+                    startTextWidth) / 2;
+
+            const int startGlyphX =
+                startTextX
+                + ((startTextWidth -
+                    GC_SPLASH_START_GLYPH_VISUAL_SLOT) / 2);
+
+            GC_DrawText(
+                renderer,
+                startTextX,
+                350,
+                prompt,
+                3);
+
+            GC_DrawSplashStartGlyph(
+                renderer,
+                startGlyph,
+                startGlyphX,
+                350);
+        }
+        else
+        {
+            GC_DrawText(
+                    renderer,
+                    (GC_LAUNCHER_WIDTH -
+                        GC_TextWidth(prompt, 3)) / 2,
+                    338,
+                    prompt,
+                    3);
+        }
+    }
 
     SDL_SetRenderDrawColor(
         renderer,
@@ -2785,6 +3373,33 @@ static int GC_LauncherRun(
         PAD_ScanPads();
         (void)PAD_ButtonsDown(0);
         SDL_Delay(16);
+    }
+
+    /*
+     * ButtonsDown() gives us button edges, but analogue stick motion
+     * is level-triggered. A stick already outside the deadzone while
+     * START transitions from splash -> carousel must begin in the
+     * held state, not masquerade as a fresh navigation edge.
+     *
+     * Once the stick returns through the deadzone, the normal loop
+     * below clears stickHeld and the next deliberate deflection moves
+     * exactly one carousel item.
+     */
+    PAD_ScanPads();
+    (void)PAD_ButtonsDown(0);
+
+    {
+        s8 entryStickX =
+            PAD_StickX(0);
+
+        stickHeld =
+            entryStickX > GC_LAUNCHER_DEADZONE ||
+            entryStickX < -GC_LAUNCHER_DEADZONE;
+
+        DC_DEBUG(
+            "DoomCube: carousel entry stick X=%d held=%d\n",
+            (int)entryStickX,
+            stickHeld);
     }
 
     DC_DEBUG(
@@ -3799,6 +4414,8 @@ bool GC_LauncherSelectGame(
         {
             SDL_DestroyTexture(logo);
 
+        GC_DoomMenuSkullShutdown();
+        GC_LauncherControllerGlyphShutdown();
         GC_DoomFontShutdown();
         }
 
@@ -3920,6 +4537,8 @@ bool GC_LauncherSelectGame(
                         SDL_DestroyTexture(
                             logo);
 
+                    GC_DoomMenuSkullShutdown();
+                    GC_LauncherControllerGlyphShutdown();
                     GC_DoomFontShutdown();
                     }
 
@@ -3962,6 +4581,8 @@ bool GC_LauncherSelectGame(
         {
             SDL_DestroyTexture(logo);
 
+        GC_DoomMenuSkullShutdown();
+        GC_LauncherControllerGlyphShutdown();
         GC_DoomFontShutdown();
         }
 
@@ -3972,6 +4593,8 @@ bool GC_LauncherSelectGame(
     {
         SDL_DestroyTexture(logo);
 
+        GC_DoomMenuSkullShutdown();
+        GC_LauncherControllerGlyphShutdown();
         GC_DoomFontShutdown();
     }
 

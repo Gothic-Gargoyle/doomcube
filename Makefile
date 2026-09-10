@@ -179,6 +179,7 @@ APP_LIBS := \
 	-lopus \
 	-lwavpack \
 	-lxmp \
+	-lSDL2_image \
 	-lSDL2 \
 	-lopengx \
 	-laesnd \
@@ -361,7 +362,8 @@ CARRY_ROOT := \
 	$(CARRYHANDLE_DIR)
 
 CH_SOURCE_DIRS := \
-	$(CARRYHANDLE_DIR)/source
+	$(CARRYHANDLE_DIR)/source \
+	$(CARRYHANDLE_DIR)/source/sdl
 
 
 # DoomCube-side adapter.
@@ -391,7 +393,9 @@ CH_CFILES := \
 	ch_tx.c \
 	ch_tx_format.c \
 	ch_tx_memcard_backend.c \
-	ch_version.c
+	ch_version.c \
+	ch_controller_glyph.c \
+	ch_controller_glyph_sdl.c
 
 
 # Doom's disc staging directory is application-owned.
@@ -465,6 +469,17 @@ $(DOOMCUBE_DISC_STAGE):
 	@mkdir -p "$(ISO_DIR)/data/deh"
 	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
+	@mkdir -p "$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/Start Pause.svg" \
+		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/Start Pause.svg"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Left.svg" \
+		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Left.svg"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Right.svg" \
+		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Right.svg"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/A.svg" \
+		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/A.svg"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/B.svg" \
+		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/B.svg"
 
 	@cp "$(DOOMCUBE_ROOT)/data/launcher/doomcube.bmp" \
 		"$(ISO_DIR)/launcher/doomcube.bmp"

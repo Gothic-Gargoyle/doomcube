@@ -561,6 +561,7 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
 
     generate_splash_collage(root)
     generate_doom_menu_logo(root)
+    generate_doom_menu_skull(root)
     generate_splash_cube(root)
 
     return generated, skipped
@@ -1144,6 +1145,193 @@ def generate_doom_menu_logo(root: Path) -> bool:
 
     info(
         "Launcher M_DOOM: skipped; "
+        "no supported IWAD provides it"
+    )
+
+    return False
+
+
+def generate_doom_menu_skull(root: Path) -> bool:
+    # Generate the stock Doom menu cursor directly from a supplied IWAD.
+    output = root / "launcher" / "m_skull1.bmp"
+
+    if output.exists():
+        output.unlink()
+
+    for label, relative in DOOM_MENU_LOGO_SOURCES:
+        iwad = root / relative
+
+        if not iwad.is_file():
+            continue
+
+        try:
+            wad = wadgfx.WadFile(iwad)
+            lump = wad.find_last("M_SKULL1")
+
+            if lump is None:
+                continue
+
+            _palette_wad, palette = (
+                wadgfx.resolve_palette(
+                    [wad],
+                    0,
+                )
+            )
+
+            patch = wadgfx.decode_patch(
+                wad.lump_data(lump)
+            )
+
+            rows = patch_rows(patch)
+
+            if (
+                len(rows) != patch.height
+                or any(
+                    len(row) != patch.width
+                    for row in rows
+                )
+            ):
+                raise wadgfx.WadError(
+                    "M_SKULL1 decoded row geometry "
+                    "does not match patch dimensions"
+                )
+
+            width = patch.width
+            height = patch.height
+
+            # Doom patch posts can leave genuine transparent holes.
+            # Preserve every such hole. If this decoder/input instead
+            # presents a painted border background, key only the
+            # border-connected component, as we already do for M_DOOM.
+            has_patch_transparency = any(
+                index is None
+                for row in rows
+                for index in row
+            )
+
+            transparent = [
+                [
+                    rows[y][x] is None
+                    for x in range(width)
+                ]
+                for y in range(height)
+            ]
+
+            if not has_patch_transparency:
+                background_index = rows[0][0]
+                queue: list[tuple[int, int]] = []
+
+                def seed(x: int, y: int) -> None:
+                    if transparent[y][x]:
+                        return
+
+                    if rows[y][x] != background_index:
+                        return
+
+                    transparent[y][x] = True
+                    queue.append((x, y))
+
+                for x in range(width):
+                    seed(x, 0)
+                    seed(x, height - 1)
+
+                for y in range(height):
+                    seed(0, y)
+                    seed(width - 1, y)
+
+                read_index = 0
+
+                while read_index < len(queue):
+                    x, y = queue[read_index]
+                    read_index += 1
+
+                    if x > 0:
+                        seed(x - 1, y)
+
+                    if x + 1 < width:
+                        seed(x + 1, y)
+
+                    if y > 0:
+                        seed(x, y - 1)
+
+                    if y + 1 < height:
+                        seed(x, y + 1)
+
+            pixels: list[
+                list[tuple[int, int, int]]
+            ] = []
+
+            transparent_count = 0
+
+            for y in range(height):
+                row: list[
+                    tuple[int, int, int]
+                ] = []
+
+                for x in range(width):
+                    if transparent[y][x]:
+                        row.append(
+                            DOOM_MENU_LOGO_KEY
+                        )
+                        transparent_count += 1
+                    else:
+                        index = rows[y][x]
+
+                        if index is None:
+                            raise wadgfx.WadError(
+                                "unexpected unkeyed transparent "
+                                "M_SKULL1 pixel"
+                            )
+
+                        row.append(
+                            palette[index]
+                        )
+
+                pixels.append(row)
+
+            write_bmp24(
+                output,
+                pixels,
+            )
+
+        except (
+            OSError,
+            ValueError,
+            wadgfx.WadError,
+        ) as exc:
+            warn(
+                "Launcher M_SKULL1 unavailable "
+                f"from {relative}: {exc}"
+            )
+            continue
+
+        print()
+        print("[OK] Launcher Doom menu skull")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {iwad}")
+        print(
+            f"     Size    : "
+            f"{patch.width}x{patch.height}"
+        )
+        print(
+            f"     Keyed   : "
+            f"{transparent_count} transparent pixels"
+        )
+        print(
+            "     Lump    : M_SKULL1"
+        )
+        print(
+            "     Key     : 255 0 255"
+        )
+        print(
+            "     Output  : "
+            f"{output.relative_to(root).as_posix()}"
+        )
+
+        return True
+
+    info(
+        "Launcher M_SKULL1: skipped; "
         "no supported IWAD provides it"
     )
 
