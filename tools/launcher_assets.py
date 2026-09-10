@@ -165,6 +165,15 @@ LAUNCHER_CYBSIT_SOURCES = (
 )
 
 
+LAUNCHER_MENU_CHOOSE_SOURCES = (
+    ("DOOM", "data/wad/doom.wad"),
+    ("DOOM II", "data/wad/doom2.wad"),
+    ("TNT: EVILUTION", "data/wad/tnt.wad"),
+    ("PLUTONIA", "data/wad/plutonia.wad"),
+    ("DOOM SHAREWARE", "data/wad/doom1.wad"),
+)
+
+
 def warn(message: str) -> None:
     print(f"[WARN] {message}")
 
@@ -1149,6 +1158,75 @@ def generate_cybsit_wav(
     return False
 
 
+def generate_menu_choose_wav(
+    root: Path,
+    output_dir: Path,
+) -> bool:
+    output = output_dir / "menu_choose.wav"
+
+    if output.exists():
+        output.unlink()
+
+    for label, relative in LAUNCHER_MENU_CHOOSE_SOURCES:
+        source = root / relative
+
+        if not source.is_file():
+            continue
+
+        try:
+            wad = wadgfx.WadFile(source)
+            lump = wad.find_last("DSPISTOL")
+
+            if lump is None:
+                continue
+
+            sample_rate, pcm = decode_dmx_sound(
+                wad.lump_data(lump)
+            )
+
+            with wave.open(str(output), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(1)
+                wav.setframerate(sample_rate)
+                wav.writeframes(pcm)
+
+        except (
+            OSError,
+            ValueError,
+            wave.Error,
+            wadgfx.WadError,
+        ) as exc:
+            if output.exists():
+                output.unlink()
+
+            warn(
+                f"Launcher DSPISTOL unavailable "
+                f"from {relative}: {exc}"
+            )
+            continue
+
+        print()
+        print("[OK] Launcher Doom menu confirm sound")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {source}")
+        print("     Lump    : DSPISTOL")
+        print(f"     Rate    : {sample_rate} Hz")
+        print(f"     PCM     : {len(pcm)} bytes")
+        print(
+            "     Output  : "
+            f"{output.relative_to(root).as_posix()}"
+        )
+
+        return True
+
+    info(
+        "Launcher Doom menu confirm sound: skipped; "
+        "no supported IWAD provides DSPISTOL"
+    )
+
+    return False
+
+
 def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
     audio_dir = root / "launcher" / "audio"
     music_dir = root / "launcher" / "music"
@@ -1186,6 +1264,11 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         audio_dir,
     )
 
+    menu_choose_generated = generate_menu_choose_wav(
+        root,
+        audio_dir,
+    )
+
     expected = len(CAMPAIGNS) + 1
 
     print()
@@ -1200,6 +1283,15 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         + (
             "generated"
             if roar_generated
+            else "not generated"
+        )
+    )
+
+    print(
+        "Launcher menu confirm audio: "
+        + (
+            "generated"
+            if menu_choose_generated
             else "not generated"
         )
     )
