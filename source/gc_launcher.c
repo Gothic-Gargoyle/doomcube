@@ -4090,6 +4090,32 @@ static CH_MemCardUI GC_DoomMemCardMakeUI(
 }
 
 
+void GC_LauncherShowMemoryCardChecking(
+    SDL_Renderer *renderer)
+{
+    CH_MemCardUI ui;
+    CH_MemCardUIInfo info;
+
+    if (renderer == NULL)
+        return;
+
+    ui =
+        GC_DoomMemCardMakeUI(
+            renderer);
+
+    CH_MemCardUIInfoInit(
+        &info);
+
+    info.slot = 0;
+    info.application_name = "DOOMCUBE";
+
+    (void)CH_MemCardUIShow(
+        &ui,
+        CH_MEMCARD_UI_CHECKING,
+        &info);
+}
+
+
 static void GC_LauncherShowSaveFileCreated(
     SDL_Renderer *renderer)
 {

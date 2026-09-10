@@ -707,11 +707,21 @@ static bool GC_PlatformInit(void)
         return false;
     }
 
-   if (!GC_MemoryCardInit())
-{
-    DC_WARN(
-        "DoomCube: Memory Card unavailable; continuing without saves\n");
-}
+    GC_LauncherShowMemoryCardChecking(
+        renderer);
+
+    /*
+     * Keep the transient checking screen visible long enough for the
+     * player to actually register it before the card probe replaces it.
+     */
+    SDL_Delay(750);
+
+    if (!GC_MemoryCardInit())
+    {
+        DC_WARN(
+            "DoomCube: Memory Card unavailable; continuing without saves\n");
+    }
+
     /*
      * Run storage policy UI before entering the launcher.
      *
