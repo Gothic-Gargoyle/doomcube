@@ -26,6 +26,15 @@
 #define GC_LAUNCHER_LOGO_PATH    "dvd:/launcher/doomcube.bmp"
 #define GC_LAUNCHER_LOGO_Y       5
 
+#define GC_DOOM_FONT_BITMAP_PATH  "dvd:/launcher/font/doomfont.bmp"
+#define GC_DOOM_FONT_METRICS_PATH "dvd:/launcher/font/doomfont.txt"
+#define GC_SPLASH_COLLAGE_PATH    "dvd:/launcher/splash.bmp"
+#define GC_DOOM_MENU_LOGO_PATH    "dvd:/launcher/m_doom.bmp"
+#define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
+
+#define GC_DOOM_FONT_MAX_CODE     127
+#define GC_DOOM_FONT_EXPECTED_GLYPHS 64
+
 #define GC_MAX_GAMES 8
 #define GC_CUSTOM_GAME_INDEX 7
 
@@ -633,6 +642,103 @@ static SDL_Texture *GC_LoadLauncherBitmap(
 }
 
 
+static SDL_Texture *GC_LoadLauncherKeyedBitmap(
+    SDL_Renderer *renderer,
+    const char *path,
+    const char *description,
+    Uint8 keyRed,
+    Uint8 keyGreen,
+    Uint8 keyBlue)
+{
+    SDL_Surface *loaded;
+    SDL_Surface *converted;
+    SDL_Texture *texture;
+    Uint32 colorKey;
+
+    if (renderer == NULL ||
+        path == NULL ||
+        path[0] == '\0')
+    {
+        return NULL;
+    }
+
+    loaded =
+        SDL_LoadBMP(path);
+
+    if (loaded == NULL)
+    {
+        DC_WARN(
+            "DoomCube: failed to load %s %s: %s\n",
+            description,
+            path,
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    converted =
+        SDL_ConvertSurfaceFormat(
+            loaded,
+            SDL_PIXELFORMAT_RGBA32,
+            0);
+
+    SDL_FreeSurface(loaded);
+
+    if (converted == NULL)
+    {
+        DC_WARN(
+            "DoomCube: failed to convert %s %s: %s\n",
+            description,
+            path,
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    colorKey =
+        SDL_MapRGB(
+            converted->format,
+            keyRed,
+            keyGreen,
+            keyBlue);
+
+    if (SDL_SetColorKey(
+            converted,
+            SDL_TRUE,
+            colorKey) != 0)
+    {
+        DC_WARN(
+            "DoomCube: failed to color-key %s %s: %s\n",
+            description,
+            path,
+            SDL_GetError());
+
+        SDL_FreeSurface(converted);
+        return NULL;
+    }
+
+    texture =
+        SDL_CreateTextureFromSurface(
+            renderer,
+            converted);
+
+    SDL_FreeSurface(converted);
+
+    if (texture == NULL)
+    {
+        DC_WARN(
+            "DoomCube: failed to texture %s %s: %s\n",
+            description,
+            path,
+            SDL_GetError());
+
+        return NULL;
+    }
+
+    return texture;
+}
+
+
 static SDL_Texture *GC_LoadLauncherLogo(
     SDL_Renderer *renderer)
 {
@@ -699,9 +805,42 @@ static int GC_LauncherScanGames(void)
     return gcAvailableGameCount;
 }
 
-static const uint8_t *GC_FontGlyph(char c)
+typedef struct
 {
-    static const uint8_t blank[7] = { 0, 0, 0, 0, 0, 0, 0 };
+    bool valid;
+    int x;
+    int y;
+    int width;
+    int height;
+    int leftOffset;
+    int topOffset;
+    int advance;
+} gc_doom_font_glyph_t;
+
+
+static gc_doom_font_glyph_t
+    gcDoomFontGlyphs[GC_DOOM_FONT_MAX_CODE + 1];
+
+static bool gcDoomFontMetricsLoaded;
+static int gcDoomFontSpaceAdvance = 4;
+static int gcDoomFontLineHeight = 9;
+static SDL_Texture *gcDoomFontTexture;
+static bool gcDoomFontLoadWarningShown;
+
+
+/*
+ * Emergency built-in font.
+ *
+ * The normal DoomCube UI should never use this when generated launcher
+ * assets are present.  Keep it so missing/corrupt font assets do not
+ * turn an error screen into a completely blank screen.
+ */
+static const uint8_t *GC_FallbackFontGlyph(char c)
+{
+    static const uint8_t blank[7] =
+    {
+        0, 0, 0, 0, 0, 0, 0
+    };
 
     static const uint8_t glyphs[26][7] =
     {
@@ -733,42 +872,53 @@ static const uint8_t *GC_FontGlyph(char c)
         {31,1,2,4,8,16,31}      /* Z */
     };
 
-    static const uint8_t colon[7]  = { 0, 4, 4, 0, 4, 4, 0 };
-    static const uint8_t dash[7]   = { 0, 0, 0, 31, 0, 0, 0 };
-    static const uint8_t period[7] = { 0, 0, 0, 0, 0, 4, 4 };
-    static const uint8_t lparen[7] = { 2, 4, 8, 8, 8, 4, 2 };
-    static const uint8_t rparen[7] = { 8, 4, 2, 2, 2, 4, 8 };
+    static const uint8_t colon[7] =
+        { 0, 4, 4, 0, 4, 4, 0 };
+
+    static const uint8_t dash[7] =
+        { 0, 0, 0, 31, 0, 0, 0 };
+
+    static const uint8_t period[7] =
+        { 0, 0, 0, 0, 0, 4, 4 };
+
+    static const uint8_t lparen[7] =
+        { 2, 4, 8, 8, 8, 4, 2 };
+
+    static const uint8_t rparen[7] =
+        { 8, 4, 2, 2, 2, 4, 8 };
 
     static const uint8_t digits[10][7] =
-{
-    {14,17,19,21,25,17,14}, /* 0 */
-    {4,12,4,4,4,4,14},      /* 1 */
-    {14,17,1,2,4,8,31},     /* 2 */
-    {30,1,1,14,1,1,30},     /* 3 */
-    {2,6,10,18,31,2,2},     /* 4 */
-    {31,16,16,30,1,1,30},   /* 5 */
-    {14,16,16,30,17,17,14}, /* 6 */
-    {31,1,2,4,8,8,8},       /* 7 */
-    {14,17,17,14,17,17,14}, /* 8 */
-    {14,17,17,15,1,1,14}    /* 9 */
-};
+    {
+        {14,17,19,21,25,17,14},
+        {4,12,4,4,4,4,14},
+        {14,17,1,2,4,8,31},
+        {30,1,1,14,1,1,30},
+        {2,6,10,18,31,2,2},
+        {31,16,16,30,1,1,30},
+        {14,16,16,30,17,17,14},
+        {31,1,2,4,8,8,8},
+        {14,17,17,14,17,17,14},
+        {14,17,17,15,1,1,14}
+    };
 
-static const uint8_t copyleft[7] =
-{
-    14, /* 01110 */
-    17, /* 10001 */
-    13, /* 10110 */
-    9, /* 10010 */
-    13, /* 10110 */
-    17, /* 10001 */
-    14  /* 01110 */
-};
+    static const uint8_t copyleft[7] =
+    {
+        14,
+        17,
+        13,
+        9,
+        13,
+        17,
+        14
+    };
 
-    unsigned char uc = (unsigned char)toupper((unsigned char)c);
+    unsigned char uc =
+        (unsigned char)toupper(
+            (unsigned char)c);
 
     if (uc >= 'A' && uc <= 'Z')
         return glyphs[uc - 'A'];
-    
+
     if (uc >= '0' && uc <= '9')
         return digits[uc - '0'];
 
@@ -784,11 +934,25 @@ static const uint8_t copyleft[7] =
     }
 }
 
-static void GC_DrawChar(
-    SDL_Renderer *renderer, int x, int y, char c, int scale)
+
+static void GC_DrawFallbackChar(
+    SDL_Renderer *renderer,
+    int x,
+    int y,
+    char c,
+    int scale)
 {
-    const uint8_t *glyph = GC_FontGlyph(c);
-    SDL_Rect pixel = { 0, 0, scale, scale };
+    const uint8_t *glyph =
+        GC_FallbackFontGlyph(c);
+
+    SDL_Rect pixel =
+    {
+        0,
+        0,
+        scale,
+        scale
+    };
+
     int row;
     int col;
 
@@ -796,18 +960,27 @@ static void GC_DrawChar(
     {
         for (col = 0; col < 5; ++col)
         {
-            if ((glyph[row] & (1u << (4 - col))) == 0)
+            if ((glyph[row] &
+                 (1u << (4 - col))) == 0)
+            {
                 continue;
+            }
 
-            pixel.x = x + col * scale;
-            pixel.y = y + row * scale;
+            pixel.x =
+                x + col * scale;
 
-            SDL_RenderFillRect(renderer, &pixel);
+            pixel.y =
+                y + row * scale;
+
+            SDL_RenderFillRect(
+                renderer,
+                &pixel);
         }
     }
 }
 
-static void GC_DrawText(
+
+static void GC_DrawFallbackText(
     SDL_Renderer *renderer,
     int x,
     int y,
@@ -817,14 +990,14 @@ static void GC_DrawText(
     size_t i;
     size_t length;
 
-    if (!text)
+    if (text == NULL)
         return;
 
     length = strlen(text);
 
     for (i = 0; i < length; ++i)
     {
-        GC_DrawChar(
+        GC_DrawFallbackChar(
             renderer,
             x + (int)i * 6 * scale,
             y,
@@ -833,13 +1006,573 @@ static void GC_DrawText(
     }
 }
 
-static int GC_TextWidth(const char *text, int scale)
+
+static int GC_FallbackTextWidth(
+    const char *text,
+    int scale)
 {
-    if (!text)
+    if (text == NULL)
         return 0;
 
-    return (int)strlen(text) * 6 * scale;
+    return
+        (int)strlen(text)
+        * 6
+        * scale;
 }
+
+
+static bool GC_LoadDoomFontMetrics(void)
+{
+    FILE *file;
+    char line[256];
+    gc_doom_font_glyph_t
+        parsed[GC_DOOM_FONT_MAX_CODE + 1];
+
+    int parsedSpace = 4;
+    int parsedLineHeight = 9;
+    int glyphCount = 0;
+
+    if (gcDoomFontMetricsLoaded)
+        return true;
+
+    memset(
+        parsed,
+        0,
+        sizeof(parsed));
+
+    file =
+        fopen(
+            GC_DOOM_FONT_METRICS_PATH,
+            "r");
+
+    if (file == NULL)
+    {
+        return false;
+    }
+
+    if (fgets(
+            line,
+            sizeof(line),
+            file) == NULL ||
+        strcmp(
+            line,
+            "DOOMCUBE_FONT_V1\n") != 0)
+    {
+        fclose(file);
+        return false;
+    }
+
+    while (fgets(
+            line,
+            sizeof(line),
+            file) != NULL)
+    {
+        int code;
+        int x;
+        int y;
+        int width;
+        int height;
+        int leftOffset;
+        int topOffset;
+        int advance;
+        int value;
+
+        if (sscanf(
+                line,
+                "space %d",
+                &value) == 1)
+        {
+            if (value <= 0 ||
+                value > 32)
+            {
+                fclose(file);
+                return false;
+            }
+
+            parsedSpace = value;
+            continue;
+        }
+
+        if (sscanf(
+                line,
+                "line_height %d",
+                &value) == 1)
+        {
+            if (value <= 0 ||
+                value > 32)
+            {
+                fclose(file);
+                return false;
+            }
+
+            parsedLineHeight = value;
+            continue;
+        }
+
+        if (sscanf(
+                line,
+                "glyph %d %d %d %d %d %d %d %d",
+                &code,
+                &x,
+                &y,
+                &width,
+                &height,
+                &leftOffset,
+                &topOffset,
+                &advance) == 8)
+        {
+            if (code < 0 ||
+                code > GC_DOOM_FONT_MAX_CODE ||
+                width <= 0 ||
+                width > 32 ||
+                height <= 0 ||
+                height > 32 ||
+                advance <= 0 ||
+                advance > 32)
+            {
+                fclose(file);
+                return false;
+            }
+
+            parsed[code].valid = true;
+            parsed[code].x = x;
+            parsed[code].y = y;
+            parsed[code].width = width;
+            parsed[code].height = height;
+            parsed[code].leftOffset = leftOffset;
+            parsed[code].topOffset = topOffset;
+            parsed[code].advance = advance;
+
+            ++glyphCount;
+        }
+    }
+
+    fclose(file);
+
+    if (glyphCount != GC_DOOM_FONT_EXPECTED_GLYPHS ||
+        !parsed['?'].valid ||
+        !parsed['A'].valid ||
+        !parsed['Z'].valid ||
+        !parsed['0'].valid ||
+        !parsed['9'].valid)
+    {
+        return false;
+    }
+
+    memcpy(
+        gcDoomFontGlyphs,
+        parsed,
+        sizeof(parsed));
+
+    gcDoomFontSpaceAdvance =
+        parsedSpace;
+
+    gcDoomFontLineHeight =
+        parsedLineHeight;
+
+    gcDoomFontMetricsLoaded =
+        true;
+
+    DC_DEBUG(
+        "DoomCube: Doom launcher font metrics loaded: "
+        "%d glyphs, line=%d, space=%d\n",
+        glyphCount,
+        gcDoomFontLineHeight,
+        gcDoomFontSpaceAdvance);
+
+    return true;
+}
+
+
+static bool GC_LoadDoomFontTexture(
+    SDL_Renderer *renderer)
+{
+    SDL_Surface *loaded;
+    SDL_Surface *converted;
+    SDL_Texture *texture;
+    Uint32 colorKey;
+
+    if (gcDoomFontTexture != NULL)
+        return true;
+
+    if (renderer == NULL ||
+        !GC_LoadDoomFontMetrics())
+    {
+        return false;
+    }
+
+    loaded =
+        SDL_LoadBMP(
+            GC_DOOM_FONT_BITMAP_PATH);
+
+    if (loaded == NULL)
+        goto failed;
+
+    converted =
+        SDL_ConvertSurfaceFormat(
+            loaded,
+            SDL_PIXELFORMAT_RGBA32,
+            0);
+
+    SDL_FreeSurface(loaded);
+
+    if (converted == NULL)
+        goto failed;
+
+    /*
+     * Step 8's pack-time font generator reserves pure magenta for
+     * transparency while preserving the original Doom PLAYPAL colours
+     * of every visible STCFN pixel.
+     */
+    colorKey =
+        SDL_MapRGB(
+            converted->format,
+            255,
+            0,
+            255);
+
+    if (SDL_SetColorKey(
+            converted,
+            SDL_TRUE,
+            colorKey) != 0)
+    {
+        SDL_FreeSurface(converted);
+        goto failed;
+    }
+
+    texture =
+        SDL_CreateTextureFromSurface(
+            renderer,
+            converted);
+
+    SDL_FreeSurface(converted);
+
+    if (texture == NULL)
+        goto failed;
+
+    if (SDL_SetTextureBlendMode(
+            texture,
+            SDL_BLENDMODE_BLEND) != 0)
+    {
+        SDL_DestroyTexture(texture);
+        goto failed;
+    }
+
+    gcDoomFontTexture =
+        texture;
+
+    gcDoomFontLoadWarningShown =
+        false;
+
+    DC_DEBUG(
+        "DoomCube: Doom launcher font loaded from %s\n",
+        GC_DOOM_FONT_BITMAP_PATH);
+
+    return true;
+
+failed:
+    if (!gcDoomFontLoadWarningShown)
+    {
+        DC_WARN(
+            "DoomCube: Doom launcher font unavailable: %s; "
+            "using emergency built-in font\n",
+            SDL_GetError());
+
+        gcDoomFontLoadWarningShown =
+            true;
+    }
+
+    return false;
+}
+
+
+static void GC_DoomFontShutdown(void)
+{
+    if (gcDoomFontTexture != NULL)
+    {
+        SDL_DestroyTexture(
+            gcDoomFontTexture);
+
+        gcDoomFontTexture = NULL;
+    }
+}
+
+
+static int GC_DoomFontCode(char c)
+{
+    unsigned char uc =
+        (unsigned char)c;
+
+    if (uc == ' ')
+        return ' ';
+
+    uc =
+        (unsigned char)toupper(uc);
+
+    if (uc <= GC_DOOM_FONT_MAX_CODE &&
+        gcDoomFontGlyphs[uc].valid)
+    {
+        return (int)uc;
+    }
+
+    return '?';
+}
+
+
+static int GC_DoomFontPhysicalScale(
+    int logicalScale)
+{
+    if (logicalScale <= 0)
+        return 1;
+
+    if (logicalScale <= 2)
+        return 1;
+
+    if (logicalScale <= 4)
+        return 2;
+
+    return 4;
+}
+
+
+static int GC_DoomTextWidth(
+    const char *text,
+    int scale)
+{
+    int width = 0;
+    int renderScale;
+    size_t i;
+
+    if (text == NULL ||
+        scale <= 0 ||
+        !GC_LoadDoomFontMetrics())
+    {
+        return 0;
+    }
+
+    renderScale =
+        GC_DoomFontPhysicalScale(
+            scale);
+
+    for (i = 0; text[i] != '\0'; ++i)
+    {
+        int code =
+            GC_DoomFontCode(
+                text[i]);
+
+        if (code == ' ')
+        {
+            width +=
+                gcDoomFontSpaceAdvance
+                * renderScale;
+        }
+        else
+        {
+            width +=
+                gcDoomFontGlyphs[
+                    code
+                ].advance
+                * renderScale;
+        }
+    }
+
+    /*
+     * The stored advance contains Doom's one-pixel inter-glyph gap.
+     * Do not count that final gap when centering a complete string.
+     */
+    if (width > 0)
+        width -= renderScale;
+
+    return width;
+}
+
+
+static void GC_DrawDoomText(
+    SDL_Renderer *renderer,
+    int x,
+    int y,
+    const char *text,
+    int scale)
+{
+    int penX = x;
+    int renderScale;
+    Uint8 textAlpha = 255;
+    Uint8 ignoredRed;
+    Uint8 ignoredGreen;
+    Uint8 ignoredBlue;
+    size_t i;
+
+    if (text == NULL ||
+        scale <= 0 ||
+        gcDoomFontTexture == NULL)
+    {
+        return;
+    }
+
+    renderScale =
+        GC_DoomFontPhysicalScale(
+            scale);
+
+    /*
+     * Render the atlas with neutral modulation so its original Doom
+     * red/orange PLAYPAL shading reaches the screen unchanged.
+     */
+    SDL_SetTextureColorMod(
+        gcDoomFontTexture,
+        255,
+        255,
+        255);
+
+    if (SDL_GetRenderDrawColor(
+            renderer,
+            &ignoredRed,
+            &ignoredGreen,
+            &ignoredBlue,
+            &textAlpha) != 0)
+    {
+        textAlpha = 255;
+    }
+
+    SDL_SetTextureAlphaMod(
+        gcDoomFontTexture,
+        textAlpha);
+
+    for (i = 0; text[i] != '\0'; ++i)
+    {
+        int code =
+            GC_DoomFontCode(
+                text[i]);
+
+        gc_doom_font_glyph_t *glyph;
+
+        if (code == ' ')
+        {
+            penX +=
+                gcDoomFontSpaceAdvance
+                * renderScale;
+
+            continue;
+        }
+
+        glyph =
+            &gcDoomFontGlyphs[code];
+
+        {
+            SDL_Rect source =
+            {
+                glyph->x,
+                glyph->y,
+                glyph->width,
+                glyph->height
+            };
+
+            SDL_Rect destination =
+            {
+                penX -
+                    glyph->leftOffset
+                    * renderScale,
+
+                y -
+                    glyph->topOffset
+                    * renderScale,
+
+                glyph->width
+                    * renderScale,
+
+                glyph->height
+                    * renderScale
+            };
+
+            SDL_RenderCopy(
+                renderer,
+                gcDoomFontTexture,
+                &source,
+                &destination);
+        }
+
+        penX +=
+            glyph->advance
+            * renderScale;
+    }
+}
+
+
+static void GC_DrawText(
+    SDL_Renderer *renderer,
+    int x,
+    int y,
+    const char *text,
+    int scale)
+{
+    if (GC_LoadDoomFontTexture(renderer))
+    {
+        GC_DrawDoomText(
+            renderer,
+            x,
+            y,
+            text,
+            scale);
+
+        return;
+    }
+
+    GC_DrawFallbackText(
+        renderer,
+        x,
+        y,
+        text,
+        scale);
+}
+
+
+static int GC_TextWidth(
+    const char *text,
+    int scale)
+{
+    int doomWidth;
+
+    doomWidth =
+        GC_DoomTextWidth(
+            text,
+            scale);
+
+    if (doomWidth > 0 ||
+        (text != NULL &&
+         text[0] == '\0'))
+    {
+        return doomWidth;
+    }
+
+    return GC_FallbackTextWidth(
+        text,
+        scale);
+}
+
+
+static void GC_HideRedundantShareware(void)
+{
+    /*
+     * Campaign table order is:
+     *   0 = DOOM Shareware
+     *   1 = full DOOM
+     *
+     * Shareware remains a valid standalone campaign when it is the
+     * only DOOM IWAD.  When full DOOM is present, showing both is
+     * redundant and makes the carousel/splash noisier.
+     */
+    if (gcGames[0].available &&
+        gcGames[1].available)
+    {
+        gcGames[0].available = false;
+
+        if (gcAvailableGameCount > 0)
+            --gcAvailableGameCount;
+
+        DC_DEBUG(
+            "DoomCube: hiding DOOM Shareware because full DOOM is available\n");
+    }
+}
+
 
 static int GC_FirstAvailableGame(void)
 {
@@ -892,17 +1625,6 @@ static void GC_DrawLauncher(
         480
     };
 
-    SDL_Rect safePanel =
-    {
-        0,
-        286,
-        GC_LAUNCHER_WIDTH,
-        194
-    };
-
-    /*
-     * Always establish a deterministic black fallback first.
-     */
     SDL_SetRenderDrawColor(
         renderer,
         0,
@@ -912,12 +1634,6 @@ static void GC_DrawLauncher(
 
     SDL_RenderClear(renderer);
 
-    /*
-     * First-class games use their pack-time generated TITLEPIC.
-     *
-     * CUSTOM intentionally has no artPath.  Missing or malformed
-     * generated art also lands on the same DoomCube-logo fallback.
-     */
     if (selected >= 0 &&
         selected < GC_MAX_GAMES &&
         gcGames[selected].artPath != NULL)
@@ -943,12 +1659,6 @@ static void GC_DrawLauncher(
     {
         if (titlepicLoaded)
         {
-            /*
-             * Doom TITLEPIC is 320x200.  Stretching it to the
-             * 640x480 launcher surface reproduces the intended
-             * classic 4:3 display aspect rather than preserving
-             * the stored square-pixel 8:5 shape.
-             */
             if (SDL_RenderCopy(
                     renderer,
                     background,
@@ -965,12 +1675,6 @@ static void GC_DrawLauncher(
             int logoWidth;
             int logoHeight;
 
-            /*
-             * Keep DoomCube fallback artwork at native size and
-             * center it in the artwork region above the safe panel.
-             * The splash logo is not a 320x200 TITLEPIC and must
-             * therefore never be stretched fullscreen.
-             */
             if (SDL_QueryTexture(
                     background,
                     NULL,
@@ -987,14 +1691,10 @@ static void GC_DrawLauncher(
                 };
 
                 if (logoRect.x < 0)
-                {
                     logoRect.x = 0;
-                }
 
                 if (logoRect.y < 0)
-                {
                     logoRect.y = 0;
-                }
 
                 if (SDL_RenderCopy(
                         renderer,
@@ -1003,79 +1703,36 @@ static void GC_DrawLauncher(
                         &logoRect) != 0)
                 {
                     DC_WARN(
-                        "DoomCube: fallback logo render "
-                        "failed: %s\n",
+                        "DoomCube: fallback logo render failed: %s\n",
                         SDL_GetError());
                 }
-            }
-            else
-            {
-                DC_WARN(
-                    "DoomCube: fallback logo query failed: %s\n",
-                    SDL_GetError());
             }
         }
     }
 
     /*
-     * The TITLEPIC may contain bright detail anywhere, so keep all
-     * interactive text in an opaque lower safe strip.  Step 8 will
-     * replace this temporary built-in font with the extracted Doom
-     * STCFN atlas without changing the artwork contract.
+     * Deliberately no lower black overlay.
+     * Let the TITLEPIC occupy the complete 640x480 presentation.
      */
+
     SDL_SetRenderDrawColor(
         renderer,
-        0,
-        0,
-        0,
+        255,
+        255,
+        255,
         255);
 
-    SDL_RenderFillRect(
-        renderer,
-        &safePanel);
-
-    /*
-     * Selected game.
-     */
-    {
-        SDL_Rect marker =
-        {
-            70,
-            302,
-            500,
-            54
-        };
-
-        SDL_SetRenderDrawColor(
-            renderer,
-            70,
-            45,
-            120,
-            255);
-
-        SDL_RenderFillRect(
-            renderer,
-            &marker);
-
-        SDL_SetRenderDrawColor(
-            renderer,
-            255,
-            255,
-            255,
-            255);
-
-        textWidth =
-            GC_TextWidth(
-                gcGames[selected].name,
-                4);
-
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH - textWidth) / 2,
-            316,
+    textWidth =
+        GC_TextWidth(
             gcGames[selected].name,
-            4);
-    }
+            5);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH - textWidth) / 2,
+        294,
+        gcGames[selected].name,
+        5);
 
     previous =
         GC_NextAvailableGame(
@@ -1087,32 +1744,20 @@ static void GC_DrawLauncher(
             selected,
             1);
 
-    /*
-     * Keep the proven text-carousel neighbour presentation for this
-     * step.  Step 8 can replace these with Doom-font arrows after the
-     * generated STCFN atlas itself is runtime-proven.
-     */
-    SDL_SetRenderDrawColor(
-        renderer,
-        255,
-        255,
-        255,
-        255);
-
     if (previous >= 0 &&
         previous != selected)
     {
         int width =
             GC_TextWidth(
                 gcGames[previous].name,
-                2);
+                3);
 
         GC_DrawText(
             renderer,
             160 - width / 2,
-            372,
+            360,
             gcGames[previous].name,
-            2);
+            3);
     }
 
     if (next >= 0 &&
@@ -1121,14 +1766,14 @@ static void GC_DrawLauncher(
         int width =
             GC_TextWidth(
                 gcGames[next].name,
-                2);
+                3);
 
         GC_DrawText(
             renderer,
             480 - width / 2,
-            372,
+            360,
             gcGames[next].name,
-            2);
+            3);
     }
 
     {
@@ -1141,29 +1786,22 @@ static void GC_DrawLauncher(
         GC_DrawText(
             renderer,
             (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(selectText, 2)) / 2,
+                GC_TextWidth(selectText, 3)) / 2,
             414,
             selectText,
-            2);
+            3);
 
         GC_DrawText(
             renderer,
             (GC_LAUNCHER_WIDTH -
-                GC_TextWidth(actionText, 2)) / 2,
+                GC_TextWidth(actionText, 3)) / 2,
             448,
             actionText,
-            2);
+            3);
     }
 
     SDL_RenderPresent(renderer);
 
-    /*
-     * GC_DrawLauncher() is called only when the carousel is initially
-     * entered or its selection changes.  Keep Step 7 ownership simple:
-     * one texture is loaded for this redraw and released after present.
-     * The melt step will deliberately replace this with old/new texture
-     * ownership because it needs both frames simultaneously.
-     */
     if (background != NULL)
     {
         SDL_DestroyTexture(
@@ -1756,13 +2394,28 @@ static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
 
 static void GC_DrawSplash(
     SDL_Renderer *renderer,
-    SDL_Texture *logo)
+    SDL_Texture *fallbackLogo,
+    SDL_Texture *collage,
+    SDL_Texture *doomMenuLogo,
+    SDL_Texture *splashCube,
+    Uint8 promptAlpha)
 {
-    const char *prompt = "PRESS START";
+    const char *prompt =
+        "PRESS START";
+
     const char *copyleft =
         "@ COPYLEFT 2026 SPERGE BRIGADE STUDIOS";
+
     char versionText[96];
     int versionWidth;
+    SDL_Rect doomLogoRect =
+    {
+        0,
+        0,
+        0,
+        0
+    };
+    bool doomLogoRectValid = false;
 
     SDL_SetRenderDrawColor(
         renderer,
@@ -1773,6 +2426,157 @@ static void GC_DrawSplash(
 
     SDL_RenderClear(renderer);
 
+    if (collage != NULL)
+    {
+        SDL_Rect fullscreen =
+        {
+            0,
+            0,
+            GC_LAUNCHER_WIDTH,
+            480
+        };
+
+        SDL_RenderCopy(
+            renderer,
+            collage,
+            NULL,
+            &fullscreen);
+    }
+
+    if (doomMenuLogo != NULL)
+    {
+        int width;
+        int height;
+
+        if (SDL_QueryTexture(
+                doomMenuLogo,
+                NULL,
+                NULL,
+                &width,
+                &height) == 0)
+        {
+            /*
+             * M_DOOM is only 123x60 in the IWAD.
+             *
+             * Keep this at an exact integer 3x scale.  The previous
+             * ~590px-wide experiment pushed the tiny source art too far
+             * and made the individual source pixels dominate.
+             */
+            doomLogoRect.x = 0;
+            doomLogoRect.y = 30;
+            doomLogoRect.w = width * 3;
+            doomLogoRect.h = height * 3;
+
+            doomLogoRect.x =
+                (GC_LAUNCHER_WIDTH - doomLogoRect.w) / 2;
+
+            doomLogoRectValid = true;
+
+            SDL_RenderCopy(
+                renderer,
+                doomMenuLogo,
+                NULL,
+                &doomLogoRect);
+        }
+    }
+
+    {
+        SDL_Texture *cube =
+            splashCube != NULL
+            ? splashCube
+            : fallbackLogo;
+
+        if (cube != NULL)
+        {
+            int logoWidth;
+            int logoHeight;
+
+            if (SDL_QueryTexture(
+                    cube,
+                    NULL,
+                    NULL,
+                    &logoWidth,
+                    &logoHeight) == 0)
+            {
+                SDL_Rect logoRect =
+                {
+                    0,
+                    0,
+                    logoWidth,
+                    logoHeight
+                };
+
+                /*
+                 * Centre the cube on M_DOOM and pull it substantially
+                 * upward into the notch beneath the two O's.
+                 *
+                 * With a 106px cube and 85px overlap, only ~38px hangs
+                 * below the DOOM logo.  It should read as one combined
+                 * mark rather than two stacked logos.
+                 */
+                if (logoRect.w > 106)
+                {
+                    logoRect.h =
+                        logoRect.h * 106 / logoRect.w;
+
+                    logoRect.w = 106;
+                }
+
+                if (logoRect.h > 106)
+                {
+                    logoRect.w =
+                        logoRect.w * 106 / logoRect.h;
+
+                    logoRect.h = 106;
+                }
+
+                if (doomLogoRectValid)
+                {
+                    logoRect.x =
+                        doomLogoRect.x
+                        + ((doomLogoRect.w - logoRect.w) / 2) - 5;
+
+                    logoRect.y =
+                        doomLogoRect.y
+                        + doomLogoRect.h
+                        -74;
+                }
+                else
+                {
+                    logoRect.x =
+                        (GC_LAUNCHER_WIDTH - logoRect.w) / 2;
+
+                    logoRect.y = 142;
+                }
+
+                SDL_RenderCopy(
+                    renderer,
+                    cube,
+                    NULL,
+                    &logoRect);
+            }
+        }
+    }
+
+    /*
+     * Native STCFN RGB is preserved. Only alpha changes.
+     * Pulse between 64 and 255 over a 1.6 second triangle wave.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        255,
+        255,
+        255,
+        promptAlpha);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH -
+            GC_TextWidth(prompt, 3)) / 2,
+        338,
+        prompt,
+        3);
+
     SDL_SetRenderDrawColor(
         renderer,
         255,
@@ -1780,81 +2584,6 @@ static void GC_DrawSplash(
         255,
         255);
 
-    if (logo != NULL)
-    {
-        int logoWidth;
-        int logoHeight;
-
-        if (SDL_QueryTexture(
-                logo,
-                NULL,
-                NULL,
-                &logoWidth,
-                &logoHeight) == 0)
-        {
-            SDL_Rect logoRect;
-
-            logoRect.x =
-                (GC_LAUNCHER_WIDTH - logoWidth) / 2;
-
-            /*
-             * Move the logo slightly above true vertical centre
-             * so PRESS START has comfortable breathing room.
-             */
-            logoRect.y =
-                (480 - logoHeight) / 2 - 35;
-
-            if (logoRect.y < 20)
-            {
-                logoRect.y = 20;
-            }
-
-            logoRect.w = logoWidth;
-            logoRect.h = logoHeight;
-
-            SDL_RenderCopy(
-                renderer,
-                logo,
-                NULL,
-                &logoRect);
-        }
-        else
-        {
-            DC_WARN(
-                "DoomCube: splash SDL_QueryTexture failed: %s\n",
-                SDL_GetError());
-        }
-    }
-    else
-    {
-        const char *title = "DOOMCUBE";
-        int titleWidth =
-            GC_TextWidth(
-                title,
-                5);
-
-        GC_DrawText(
-            renderer,
-            (GC_LAUNCHER_WIDTH - titleWidth) / 2,
-            145,
-            title,
-            5);
-    }
-
-    GC_DrawText(
-        renderer,
-        (GC_LAUNCHER_WIDTH -
-            GC_TextWidth(prompt, 3)) / 2,
-        350,
-        prompt,
-        3);
-
-    /*
-     * Splash footer.
-     *
-     * Keep the project credit and build identification in their
-     * own fixed region so neither depends on the logo dimensions.
-     */
     GC_DrawText(
         renderer,
         (GC_LAUNCHER_WIDTH -
@@ -1890,11 +2619,35 @@ static bool GC_LauncherRunSplash(
     SDL_Renderer *renderer,
     SDL_Texture *logo)
 {
+    SDL_Texture *collage = NULL;
+    SDL_Texture *doomMenuLogo = NULL;
+    SDL_Texture *splashCube = NULL;
+    bool accepted = false;
     int i;
 
-    GC_DrawSplash(
-        renderer,
-        logo);
+    collage =
+        GC_LoadLauncherBitmap(
+            renderer,
+            GC_SPLASH_COLLAGE_PATH,
+            "splash collage");
+
+    doomMenuLogo =
+        GC_LoadLauncherKeyedBitmap(
+            renderer,
+            GC_DOOM_MENU_LOGO_PATH,
+            "M_DOOM",
+            255,
+            0,
+            255);
+
+    splashCube =
+        GC_LoadLauncherKeyedBitmap(
+            renderer,
+            GC_SPLASH_CUBE_PATH,
+            "splash DoomCube cube",
+            255,
+            0,
+            255);
 
     /*
      * Consume any transition state left by startup/preflight.
@@ -1907,35 +2660,51 @@ static bool GC_LauncherRunSplash(
     }
 
     DC_DEBUG(
-        "DoomCube: waiting at PRESS START splash\n");
+        "DoomCube: waiting at animated PRESS START splash\n");
 
     while (SYS_MainLoop())
     {
         u32 down;
+        Uint32 phase;
+        Uint8 promptAlpha;
+
+        phase =
+            SDL_GetTicks() % 1600u;
+
+        if (phase < 800u)
+        {
+            promptAlpha =
+                (Uint8)(
+                    64u
+                    + phase * 191u / 800u);
+        }
+        else
+        {
+            promptAlpha =
+                (Uint8)(
+                    255u
+                    - (phase - 800u)
+                    * 191u / 800u);
+        }
+
+        GC_DrawSplash(
+            renderer,
+            logo,
+            collage,
+            doomMenuLogo,
+            splashCube,
+            promptAlpha);
 
         PAD_ScanPads();
 
         down =
             PAD_ButtonsDown(0);
 
-        /*
-         * This is deliberately START-only.
-         *
-         * A belongs to game selection after the splash;
-         * B belongs to carousel -> splash navigation.
-         */
         if (down & PAD_BUTTON_START)
         {
             DC_DEBUG(
                 "DoomCube: splash START pressed\n");
 
-            /*
-             * Explicitly consume the splash transition.
-             *
-             * GC_LauncherRun() also has its own stale-input
-             * flush, so the menu is protected on both sides
-             * against START immediately launching a game.
-             */
             for (i = 0; i < 3; ++i)
             {
                 PAD_ScanPads();
@@ -1943,13 +2712,32 @@ static bool GC_LauncherRunSplash(
                 SDL_Delay(16);
             }
 
-            return true;
+            accepted = true;
+            break;
         }
 
         SDL_Delay(16);
     }
 
-    return false;
+    if (splashCube != NULL)
+    {
+        SDL_DestroyTexture(
+            splashCube);
+    }
+
+    if (doomMenuLogo != NULL)
+    {
+        SDL_DestroyTexture(
+            doomMenuLogo);
+    }
+
+    if (collage != NULL)
+    {
+        SDL_DestroyTexture(
+            collage);
+    }
+
+    return accepted;
 }
 
 
@@ -1958,6 +2746,8 @@ static int GC_LauncherRun(
 {
     static int selected = -1;
     int stickHeld = 0;
+
+    GC_HideRedundantShareware();
 
     /*
      * Preserve the carousel position across:
@@ -3008,6 +3798,8 @@ bool GC_LauncherSelectGame(
         if (logo != NULL)
         {
             SDL_DestroyTexture(logo);
+
+        GC_DoomFontShutdown();
         }
 
         return false;
@@ -3127,6 +3919,8 @@ bool GC_LauncherSelectGame(
                     {
                         SDL_DestroyTexture(
                             logo);
+
+                    GC_DoomFontShutdown();
                     }
 
                     return true;
@@ -3167,6 +3961,8 @@ bool GC_LauncherSelectGame(
         if (logo != NULL)
         {
             SDL_DestroyTexture(logo);
+
+        GC_DoomFontShutdown();
         }
 
         return true;
@@ -3175,6 +3971,8 @@ bool GC_LauncherSelectGame(
     if (logo != NULL)
     {
         SDL_DestroyTexture(logo);
+
+        GC_DoomFontShutdown();
     }
 
     return false;

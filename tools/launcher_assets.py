@@ -17,6 +17,7 @@ Dependencies: Python standard library + sibling wadgfx.py.
 from __future__ import annotations
 
 import argparse
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -452,7 +453,16 @@ def generate_font(root: Path) -> bool:
         # Index zero is unused by the opaque STCFN pixels, so replace
         # that palette entry with an unmistakable RGB chroma key.
         #
+        #
+        # Preserve the original Doom PLAYPAL colours of every opaque
+        # STCFN glyph pixel.  Only the reserved background index is
+        # replaced with the magenta transparency key.
+        #
+        # This keeps the native red/orange shading and internal detail
+        # from the WAD instead of flattening each glyph to a white mask.
+        #
         atlas_palette = list(palette)
+
         atlas_palette[FONT_BACKGROUND_INDEX] = (
             FONT_CHROMA_KEY
         )
@@ -549,7 +559,656 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
         )
     )
 
+    generate_splash_collage(root)
+    generate_doom_menu_logo(root)
+    generate_splash_cube(root)
+
     return generated, skipped
+
+
+
+SPLASH_DARKEN_PERCENT = 28
+DOOM_MENU_LOGO_KEY = (255, 0, 255)
+
+DOOM_MENU_LOGO_SOURCES = (
+    ("DOOM", "data/wad/doom.wad"),
+    ("DOOM SHAREWARE", "data/wad/doom1.wad"),
+    ("DOOM II", "data/wad/doom2.wad"),
+    ("TNT: EVILUTION", "data/wad/tnt.wad"),
+    ("PLUTONIA", "data/wad/plutonia.wad"),
+)
+
+
+def patch_rows(
+    patch: wadgfx.Patch,
+) -> list[list[int | None]]:
+    # Normalize wadgfx.Patch.pixels to row-major [y][x] form
+    # without assuming the decoder's internal storage layout.
+
+    pixels = patch.pixels
+    width = patch.width
+    height = patch.height
+    outer = len(pixels)
+
+    first = pixels[0] if outer else None
+
+    nested = False
+
+    if first is not None:
+        try:
+            len(first)
+            nested = not isinstance(
+                first,
+                (str, bytes, bytearray),
+            )
+        except TypeError:
+            nested = False
+
+    if not nested and outer == width * height:
+        return [
+            list(
+                pixels[
+                    y * width:
+                    (y + 1) * width
+                ]
+            )
+            for y in range(height)
+        ]
+
+    if nested and outer == height:
+        if all(
+            len(row) == width
+            for row in pixels
+        ):
+            return [
+                list(row)
+                for row in pixels
+            ]
+
+    if nested and outer == width:
+        if all(
+            len(column) == height
+            for column in pixels
+        ):
+            return [
+                [
+                    pixels[x][y]
+                    for x in range(width)
+                ]
+                for y in range(height)
+            ]
+
+    raise wadgfx.WadError(
+        "unsupported decoded patch pixel layout: "
+        f"outer={outer}, "
+        f"width={width}, "
+        f"height={height}"
+    )
+
+
+def read_bmp24(
+    path: Path,
+) -> tuple[int, int, list[list[tuple[int, int, int]]]]:
+    data = path.read_bytes()
+
+    if data[:2] != b"BM":
+        raise ValueError(
+            f"not a BMP: {path}"
+        )
+
+    pixel_offset = struct.unpack_from(
+        "<I",
+        data,
+        10,
+    )[0]
+
+    width = struct.unpack_from(
+        "<i",
+        data,
+        18,
+    )[0]
+
+    signed_height = struct.unpack_from(
+        "<i",
+        data,
+        22,
+    )[0]
+
+    bpp = struct.unpack_from(
+        "<H",
+        data,
+        28,
+    )[0]
+
+    compression = struct.unpack_from(
+        "<I",
+        data,
+        30,
+    )[0]
+
+    if (
+        width <= 0
+        or signed_height == 0
+        or bpp != 24
+        or compression != 0
+    ):
+        raise ValueError(
+            f"unsupported BMP format: {path}"
+        )
+
+    height = abs(signed_height)
+    bottom_up = signed_height > 0
+    stride = ((width * 3) + 3) & ~3
+    rows: list[list[tuple[int, int, int]]] = []
+
+    for output_y in range(height):
+        source_y = (
+            height - 1 - output_y
+            if bottom_up
+            else output_y
+        )
+
+        row_start = (
+            pixel_offset
+            + source_y * stride
+        )
+
+        row: list[tuple[int, int, int]] = []
+
+        for x in range(width):
+            pos = row_start + x * 3
+            blue, green, red = data[
+                pos:pos + 3
+            ]
+
+            row.append(
+                (red, green, blue)
+            )
+
+        rows.append(row)
+
+    return width, height, rows
+
+
+def write_bmp24(
+    path: Path,
+    pixels: list[list[tuple[int, int, int]]],
+) -> None:
+    if not pixels or not pixels[0]:
+        raise ValueError(
+            "cannot write an empty BMP"
+        )
+
+    height = len(pixels)
+    width = len(pixels[0])
+
+    if any(
+        len(row) != width
+        for row in pixels
+    ):
+        raise ValueError(
+            "BMP rows have inconsistent widths"
+        )
+
+    row_bytes = width * 3
+    stride = (row_bytes + 3) & ~3
+    image_size = stride * height
+    pixel_offset = 54
+    file_size = pixel_offset + image_size
+
+    header = (
+        b"BM"
+        + struct.pack(
+            "<IHHI",
+            file_size,
+            0,
+            0,
+            pixel_offset,
+        )
+        + struct.pack(
+            "<IIIHHIIIIII",
+            40,
+            width,
+            height,
+            1,
+            24,
+            0,
+            image_size,
+            2835,
+            2835,
+            0,
+            0,
+        )
+    )
+
+    body = bytearray()
+
+    for y in range(height - 1, -1, -1):
+        row = bytearray()
+
+        for red, green, blue in pixels[y]:
+            row.extend(
+                (blue, green, red)
+            )
+
+        row.extend(
+            b"\x00" * (stride - row_bytes)
+        )
+
+        body.extend(row)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    path.write_bytes(
+        header + body
+    )
+
+
+def generate_splash_collage(root: Path) -> bool:
+    output = root / "launcher" / "splash.bmp"
+
+    if output.exists():
+        output.unlink()
+
+    available: list[
+        tuple[str, list[list[tuple[int, int, int]]]]
+    ] = []
+
+    full_doom_present = (
+        root
+        / "launcher"
+        / "titlepic"
+        / "doom.bmp"
+    ).is_file()
+
+    for campaign in CAMPAIGNS:
+        if (
+            campaign.key == "doom1"
+            and full_doom_present
+        ):
+            info(
+                "Launcher splash: suppressing DOOM SHAREWARE "
+                "because full DOOM is present"
+            )
+            continue
+
+        titlepic = (
+            root
+            / "launcher"
+            / "titlepic"
+            / f"{campaign.key}.bmp"
+        )
+
+        if not titlepic.is_file():
+            continue
+
+        try:
+            width, height, pixels = read_bmp24(
+                titlepic
+            )
+        except (
+            OSError,
+            ValueError,
+        ) as exc:
+            warn(
+                "Launcher splash: ignoring "
+                f"{titlepic}: {exc}"
+            )
+            continue
+
+        if (
+            width != TITLEPIC_WIDTH
+            or height != TITLEPIC_HEIGHT
+        ):
+            warn(
+                "Launcher splash: ignoring "
+                f"{titlepic}; unexpected "
+                f"{width}x{height}"
+            )
+            continue
+
+        available.append(
+            (campaign.label, pixels)
+        )
+
+    if not available:
+        info(
+            "Launcher splash collage: skipped; "
+            "no generated TITLEPICs"
+        )
+        return False
+
+    result = [
+        [(0, 0, 0)] * TITLEPIC_WIDTH
+        for _ in range(TITLEPIC_HEIGHT)
+    ]
+
+    count = len(available)
+
+    for index, (label, pixels) in enumerate(
+        available
+    ):
+        destination_y0 = (
+            index
+            * TITLEPIC_HEIGHT
+            // count
+        )
+
+        destination_y1 = (
+            (index + 1)
+            * TITLEPIC_HEIGHT
+            // count
+        )
+
+        band_height = (
+            destination_y1
+            - destination_y0
+        )
+
+        source_y0 = (
+            TITLEPIC_HEIGHT
+            - band_height
+        ) // 2
+
+        for offset in range(band_height):
+            source_row = pixels[
+                source_y0 + offset
+            ]
+
+            destination_row = result[
+                destination_y0 + offset
+            ]
+
+            for x in range(TITLEPIC_WIDTH):
+                red, green, blue = source_row[x]
+
+                destination_row[x] = (
+                    red
+                    * SPLASH_DARKEN_PERCENT
+                    // 100,
+                    green
+                    * SPLASH_DARKEN_PERCENT
+                    // 100,
+                    blue
+                    * SPLASH_DARKEN_PERCENT
+                    // 100,
+                )
+
+        print(
+            "[OK] Splash band "
+            f"{index + 1}/{count}: "
+            f"{label} "
+            f"({band_height}px)"
+        )
+
+    write_bmp24(
+        output,
+        result,
+    )
+
+    print()
+    print("[OK] Launcher splash collage")
+    print(
+        f"     Sources : {count}"
+    )
+    print(
+        f"     Layout  : horizontal bands"
+    )
+    print(
+        f"     Size    : "
+        f"{TITLEPIC_WIDTH}x{TITLEPIC_HEIGHT}"
+    )
+    print(
+        f"     Bright  : "
+        f"{SPLASH_DARKEN_PERCENT}%"
+    )
+    print(
+        "     Output  : "
+        f"{output.relative_to(root).as_posix()}"
+    )
+
+    return True
+
+
+def key_border_connected_dark_pixels(
+    pixels: list[list[tuple[int, int, int]]],
+    *,
+    threshold: int,
+    key: tuple[int, int, int],
+) -> tuple[list[list[tuple[int, int, int]]], int]:
+    # Chroma-key only dark pixels connected to the bitmap border.
+    # This removes the rectangular black canvas around splash logos
+    # while preserving enclosed dark shading/detail in the artwork.
+
+    height = len(pixels)
+    width = len(pixels[0])
+
+    transparent = [
+        [False] * width
+        for _ in range(height)
+    ]
+
+    queue: list[tuple[int, int]] = []
+
+    def is_background(
+        color: tuple[int, int, int],
+    ) -> bool:
+        red, green, blue = color
+
+        return max(
+            red,
+            green,
+            blue,
+        ) <= threshold
+
+    def seed(x: int, y: int) -> None:
+        if transparent[y][x]:
+            return
+
+        if not is_background(
+            pixels[y][x]
+        ):
+            return
+
+        transparent[y][x] = True
+        queue.append((x, y))
+
+    for x in range(width):
+        seed(x, 0)
+        seed(x, height - 1)
+
+    for y in range(height):
+        seed(0, y)
+        seed(width - 1, y)
+
+    read_index = 0
+
+    while read_index < len(queue):
+        x, y = queue[read_index]
+        read_index += 1
+
+        if x > 0:
+            seed(x - 1, y)
+
+        if x + 1 < width:
+            seed(x + 1, y)
+
+        if y > 0:
+            seed(x, y - 1)
+
+        if y + 1 < height:
+            seed(x, y + 1)
+
+    output = [
+        list(row)
+        for row in pixels
+    ]
+
+    count = 0
+
+    for y in range(height):
+        for x in range(width):
+            if transparent[y][x]:
+                output[y][x] = key
+                count += 1
+
+    return output, count
+
+
+def generate_doom_menu_logo(root: Path) -> bool:
+    output = root / "launcher" / "m_doom.bmp"
+
+    if output.exists():
+        output.unlink()
+
+    for label, relative in DOOM_MENU_LOGO_SOURCES:
+        iwad = root / relative
+
+        if not iwad.is_file():
+            continue
+
+        try:
+            wad = wadgfx.WadFile(iwad)
+            lump = wad.find_last("M_DOOM")
+
+            if lump is None:
+                continue
+
+            _palette_wad, palette = (
+                wadgfx.resolve_palette(
+                    [wad],
+                    0,
+                )
+            )
+
+            patch = wadgfx.decode_patch(
+                wad.lump_data(lump)
+            )
+
+            source_pixels = [
+                [
+                    palette[index]
+                    for index in row
+                ]
+                for row in patch_rows(patch)
+            ]
+
+            pixels, transparent_count = (
+                key_border_connected_dark_pixels(
+                    source_pixels,
+                    threshold=64,
+                    key=DOOM_MENU_LOGO_KEY,
+                )
+            )
+
+            write_bmp24(
+                output,
+                pixels,
+            )
+
+        except (
+            OSError,
+            ValueError,
+            wadgfx.WadError,
+        ) as exc:
+            warn(
+                "Launcher M_DOOM unavailable "
+                f"from {relative}: {exc}"
+            )
+            continue
+
+        print()
+        print("[OK] Launcher M_DOOM")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {iwad}")
+        print(
+            f"     Size    : "
+            f"{patch.width}x{patch.height}"
+        )
+        print(
+            f"     Keyed   : "
+            f"{transparent_count} border-connected dark pixels"
+        )
+        print(
+            "     Threshold: RGB max <= 64"
+        )
+        print(
+            "     Output  : "
+            f"{output.relative_to(root).as_posix()}"
+        )
+
+        return True
+
+    info(
+        "Launcher M_DOOM: skipped; "
+        "no supported IWAD provides it"
+    )
+
+    return False
+
+
+def generate_splash_cube(root: Path) -> bool:
+    source = root / "launcher" / "doomcube.bmp"
+    output = root / "launcher" / "doomcube_splash.bmp"
+
+    if output.exists():
+        output.unlink()
+
+    if not source.is_file():
+        info(
+            "Launcher splash cube: skipped; "
+            "launcher/doomcube.bmp is missing"
+        )
+        return False
+
+    try:
+        width, height, pixels = read_bmp24(
+            source
+        )
+
+        keyed, transparent_count = (
+            key_border_connected_dark_pixels(
+                pixels,
+                threshold=64,
+                key=DOOM_MENU_LOGO_KEY,
+            )
+        )
+
+        write_bmp24(
+            output,
+            keyed,
+        )
+
+    except (
+        OSError,
+        ValueError,
+    ) as exc:
+        warn(
+            f"Launcher splash cube unavailable: {exc}"
+        )
+        return False
+
+    print()
+    print("[OK] Launcher splash DoomCube cube")
+    print(
+        f"     Size    : {width}x{height}"
+    )
+    print(
+        f"     Keyed   : "
+        f"{transparent_count} border-connected dark pixels"
+    )
+    print(
+        "     Threshold: RGB max <= 64"
+    )
+    print(
+        "     Output  : "
+        f"{output.relative_to(root).as_posix()}"
+    )
+
+    return True
 
 
 def parse_args() -> argparse.Namespace:
