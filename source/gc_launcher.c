@@ -3528,11 +3528,11 @@ static const gc_game_entry_t *GC_LauncherGetGame(int index)
 
 
 
-#define GC_MEMCARD_ACTION_GLYPH_SIZE 36
+#define GC_MEMCARD_ACTION_GLYPH_SIZE 40
 #define GC_MEMCARD_ACTION_GLYPH_GAP   8
 #define GC_MEMCARD_ACTION_PAIR_GAP   28
-#define GC_MEMCARD_ACTION_GLYPH_Y   420
-#define GC_MEMCARD_ACTION_TEXT_Y    433
+#define GC_MEMCARD_ACTION_GLYPH_Y   414
+#define GC_MEMCARD_ACTION_TEXT_Y    430
 
 
 static const char *GC_DoomMemCardTitle(
@@ -3764,6 +3764,102 @@ static void GC_DoomMemCardDrawActions(
 }
 
 
+
+static bool GC_DoomMemCardRenderBackground(
+    SDL_Renderer *renderer,
+    SDL_Texture *texture)
+{
+    SDL_Rect src;
+    SDL_Rect dst =
+    {
+        0,
+        0,
+        GC_LAUNCHER_WIDTH,
+        480
+    };
+
+    int textureWidth;
+    int textureHeight;
+
+    if (renderer == NULL || texture == NULL)
+        return false;
+
+    if (SDL_QueryTexture(
+            texture,
+            NULL,
+            NULL,
+            &textureWidth,
+            &textureHeight) != 0)
+    {
+        return false;
+    }
+
+    if (textureWidth <= 0 || textureHeight <= 0)
+        return false;
+
+    src.x = 0;
+    src.y = 0;
+    src.w = textureWidth;
+    src.h = textureHeight;
+
+    /*
+     * Cover the 4:3 GameCube frame without distorting the source.
+     *
+     * The generated art is 320x200. Crop the longer axis around its
+     * center, then scale that crop uniformly to 640x480.
+     */
+    if (
+        (int64_t)textureWidth * 480
+        > (int64_t)textureHeight * GC_LAUNCHER_WIDTH
+    )
+    {
+        int cropWidth =
+            (textureHeight * GC_LAUNCHER_WIDTH + 240)
+            / 480;
+
+        if (cropWidth < 1)
+            cropWidth = 1;
+
+        if (cropWidth > textureWidth)
+            cropWidth = textureWidth;
+
+        src.x =
+            (textureWidth - cropWidth) / 2;
+
+        src.w =
+            cropWidth;
+    }
+    else if (
+        (int64_t)textureWidth * 480
+        < (int64_t)textureHeight * GC_LAUNCHER_WIDTH
+    )
+    {
+        int cropHeight =
+            (textureWidth * 480 + GC_LAUNCHER_WIDTH / 2)
+            / GC_LAUNCHER_WIDTH;
+
+        if (cropHeight < 1)
+            cropHeight = 1;
+
+        if (cropHeight > textureHeight)
+            cropHeight = textureHeight;
+
+        src.y =
+            (textureHeight - cropHeight) / 2;
+
+        src.h =
+            cropHeight;
+    }
+
+    return
+        SDL_RenderCopy(
+            renderer,
+            texture,
+            &src,
+            &dst) == 0;
+}
+
+
 static bool GC_DoomMemCardUIShow(
     void *userdata,
     CH_MemCardUIScreenKind kind,
@@ -3786,7 +3882,7 @@ static bool GC_DoomMemCardUIShow(
     const char *backgroundLabel;
 
     char line[96];
-    int y = 215;
+    int y = 225;
 
     if (
         renderer == NULL
@@ -3831,11 +3927,9 @@ static bool GC_DoomMemCardUIShow(
 
     if (background != NULL)
     {
-        if (SDL_RenderCopy(
+        if (!GC_DoomMemCardRenderBackground(
                 renderer,
-                background,
-                NULL,
-                &fullscreen) != 0)
+                background))
         {
             DC_WARN(
                 "DoomCube: memory-card background render failed: %s\n",
@@ -3874,15 +3968,15 @@ static bool GC_DoomMemCardUIShow(
 
     GC_DoomMemCardDrawCentered(
         renderer,
-        58,
+        52,
         GC_DoomMemCardTitle(kind),
-        3);
+        4);
 
     GC_DoomMemCardDrawCentered(
         renderer,
         145,
         info->detail,
-        2);
+        3);
 
     if (
         info->card_blocks
@@ -3900,9 +3994,9 @@ static bool GC_DoomMemCardUIShow(
             renderer,
             y,
             line,
-            2);
+            3);
 
-        y += 36;
+        y += 46;
     }
 
     if (
@@ -3921,9 +4015,9 @@ static bool GC_DoomMemCardUIShow(
             renderer,
             y,
             line,
-            2);
+            3);
 
-        y += 36;
+        y += 46;
     }
 
     if (
@@ -3942,9 +4036,9 @@ static bool GC_DoomMemCardUIShow(
             renderer,
             y,
             line,
-            2);
+            3);
 
-        y += 36;
+        y += 46;
     }
 
     if (
@@ -3963,7 +4057,7 @@ static bool GC_DoomMemCardUIShow(
             renderer,
             y,
             line,
-            2);
+            3);
     }
 
     GC_DoomMemCardDrawActions(

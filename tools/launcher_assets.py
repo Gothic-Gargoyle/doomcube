@@ -1261,16 +1261,37 @@ def generate_doom_memcard_art(root: Path) -> bool:
             for row in error_indices
         ]
 
-        tiled_wall = [
+        # One centered skull instead of a repeated wall grid.
+        #
+        # MWALL4_1 is square (128x128), while the GameCube frame is
+        # 4:3. Center-crop the source to 128x96, then nearest-neighbour
+        # scale that crop to 320x240. The runtime can therefore map it
+        # directly to 640x480 with no distortion and no second crop.
+        wall_crop_height = (
+            wall_patch.width * 240 // 320
+        )
+
+        wall_crop_y = (
+            wall_patch.height - wall_crop_height
+        ) // 2
+
+        covered_wall = [
             [
                 wall_pixels[
-                    y % wall_patch.height
+                    wall_crop_y
+                    + min(
+                        wall_crop_height - 1,
+                        y * wall_crop_height // 240,
+                    )
                 ][
-                    x % wall_patch.width
+                    min(
+                        wall_patch.width - 1,
+                        x * wall_patch.width // 320,
+                    )
                 ]
                 for x in range(320)
             ]
-            for y in range(200)
+            for y in range(240)
         ]
 
         output_dir.mkdir(
@@ -1280,7 +1301,7 @@ def generate_doom_memcard_art(root: Path) -> bool:
 
         write_bmp24(
             wall_output,
-            tiled_wall,
+            covered_wall,
         )
 
         write_bmp24(
@@ -1305,7 +1326,7 @@ def generate_doom_memcard_art(root: Path) -> bool:
     print(
         "     MWALL4_1   : "
         f"{wall_patch.width}x{wall_patch.height} "
-        "tiled -> 320x200"
+        "center cover -> 320x240"
     )
     print(
         "     PFUB2      : "
