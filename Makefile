@@ -395,7 +395,8 @@ CH_CFILES := \
 	ch_tx_memcard_backend.c \
 	ch_version.c \
 	ch_controller_glyph.c \
-	ch_controller_glyph_sdl.c
+	ch_controller_glyph_sdl.c \
+	ch_memcard_ui.c
 
 
 # Doom's disc staging directory is application-owned.

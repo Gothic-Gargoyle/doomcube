@@ -562,6 +562,7 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
     generate_splash_collage(root)
     generate_doom_menu_logo(root)
     generate_doom_menu_skull(root)
+    generate_doom_memcard_art(root)
     generate_splash_cube(root)
 
     return generated, skipped
@@ -1149,6 +1150,177 @@ def generate_doom_menu_logo(root: Path) -> bool:
     )
 
     return False
+
+
+def generate_doom_memcard_art(root: Path) -> bool:
+    # Generate DoomCube Memory Card backgrounds from the full DOOM IWAD.
+    iwad = root / "data/wad/doom.wad"
+
+    output_dir = (
+        root
+        / "launcher"
+        / "memcard"
+    )
+
+    wall_output = output_dir / "mwall4_1.bmp"
+    error_output = output_dir / "pfub2.bmp"
+
+    for output in (
+        wall_output,
+        error_output,
+    ):
+        if output.exists():
+            output.unlink()
+
+    if not iwad.is_file():
+        info(
+            "Memory-card Doom skin: skipped; "
+            "missing data/wad/doom.wad"
+        )
+        return False
+
+    try:
+        wad = wadgfx.WadFile(iwad)
+
+        _palette_wad, palette = (
+            wadgfx.resolve_palette(
+                [wad],
+                0,
+            )
+        )
+
+        wall_lump = wad.find_last("MWALL4_1")
+        error_lump = wad.find_last("PFUB2")
+
+        if wall_lump is None:
+            raise wadgfx.WadError(
+                "DOOM.WAD does not contain MWALL4_1"
+            )
+
+        if error_lump is None:
+            raise wadgfx.WadError(
+                "DOOM.WAD does not contain PFUB2"
+            )
+
+        wall_patch = wadgfx.decode_patch(
+            wad.lump_data(wall_lump)
+        )
+
+        error_patch = wadgfx.decode_patch(
+            wad.lump_data(error_lump)
+        )
+
+        if (
+            wall_patch.width != 128
+            or wall_patch.height != 128
+        ):
+            raise wadgfx.WadError(
+                "MWALL4_1 has unexpected dimensions "
+                f"{wall_patch.width}x{wall_patch.height}; "
+                "expected 128x128"
+            )
+
+        if (
+            error_patch.width != 320
+            or error_patch.height != 200
+        ):
+            raise wadgfx.WadError(
+                "PFUB2 has unexpected dimensions "
+                f"{error_patch.width}x{error_patch.height}; "
+                "expected 320x200"
+            )
+
+        wall_indices = patch_rows(wall_patch)
+        error_indices = patch_rows(error_patch)
+
+        if any(
+            index is None
+            for row in wall_indices
+            for index in row
+        ):
+            raise wadgfx.WadError(
+                "MWALL4_1 unexpectedly contains transparent pixels"
+            )
+
+        if any(
+            index is None
+            for row in error_indices
+            for index in row
+        ):
+            raise wadgfx.WadError(
+                "PFUB2 unexpectedly contains transparent pixels"
+            )
+
+        wall_pixels = [
+            [palette[index] for index in row]
+            for row in wall_indices
+        ]
+
+        error_pixels = [
+            [palette[index] for index in row]
+            for row in error_indices
+        ]
+
+        tiled_wall = [
+            [
+                wall_pixels[
+                    y % wall_patch.height
+                ][
+                    x % wall_patch.width
+                ]
+                for x in range(320)
+            ]
+            for y in range(200)
+        ]
+
+        output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        write_bmp24(
+            wall_output,
+            tiled_wall,
+        )
+
+        write_bmp24(
+            error_output,
+            error_pixels,
+        )
+
+    except (
+        OSError,
+        ValueError,
+        wadgfx.WadError,
+    ) as exc:
+        warn(
+            "Memory-card Doom skin unavailable: "
+            f"{exc}; generic presentation will be used"
+        )
+        return False
+
+    print()
+    print("[OK] DoomCube memory-card skin art")
+    print(f"     IWAD       : {iwad}")
+    print(
+        "     MWALL4_1   : "
+        f"{wall_patch.width}x{wall_patch.height} "
+        "tiled -> 320x200"
+    )
+    print(
+        "     PFUB2      : "
+        f"{error_patch.width}x{error_patch.height}"
+    )
+    print(
+        "     Normal BMP : "
+        f"{wall_output.relative_to(root).as_posix()}"
+    )
+    print(
+        "     Error BMP  : "
+        f"{error_output.relative_to(root).as_posix()}"
+    )
+
+    return True
 
 
 def generate_doom_menu_skull(root: Path) -> bool:

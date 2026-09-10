@@ -7,6 +7,7 @@
 #include "gc_launcher.h"
 
 #include <carryhandle/ch_controller_glyph_sdl.h>
+#include <carryhandle/ch_memcard_ui.h>
 #include "gc_memcard.h"
 #include "gc_regression.h"
 
@@ -34,6 +35,10 @@
 #define GC_DOOM_MENU_LOGO_PATH    "dvd:/launcher/m_doom.bmp"
 #define GC_DOOM_MENU_SKULL_PATH   "dvd:/launcher/m_skull1.bmp"
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
+#define GC_MEMCARD_NORMAL_BACKGROUND_PATH \
+    "dvd:/launcher/memcard/mwall4_1.bmp"
+#define GC_MEMCARD_ERROR_BACKGROUND_PATH \
+    "dvd:/launcher/memcard/pfub2.bmp"
 
 #define GC_DOOM_FONT_MAX_CODE     127
 #define GC_DOOM_FONT_EXPECTED_GLYPHS 64
@@ -3522,185 +3527,522 @@ static const gc_game_entry_t *GC_LauncherGetGame(int index)
 }
 
 
-static void GC_LauncherShowSaveFileCreated(
-    SDL_Renderer *renderer)
+
+#define GC_MEMCARD_ACTION_GLYPH_SIZE 36
+#define GC_MEMCARD_ACTION_GLYPH_GAP   8
+#define GC_MEMCARD_ACTION_PAIR_GAP   28
+#define GC_MEMCARD_ACTION_GLYPH_Y   420
+#define GC_MEMCARD_ACTION_TEXT_Y    433
+
+
+static const char *GC_DoomMemCardTitle(
+    CH_MemCardUIScreenKind kind)
 {
-    static const char *line1 =
-        "SAVE FILE CREATED";
+    switch (kind)
+    {
+        case CH_MEMCARD_UI_CHECKING:
+            return "CHECKING MEMORY CARD";
 
-    static const char *line2 =
-        "DOOMCUBE SAVING IS ENABLED";
+        case CH_MEMCARD_UI_READY:
+            return "MEMORY CARD READY";
 
-    static const char *line4 =
-        "PRESS A OR START TO CONTINUE";
+        case CH_MEMCARD_UI_NO_CARD:
+            return "NO MEMORY CARD";
 
-    char sizeLine[64];
+        case CH_MEMCARD_UI_CREATE_PROMPT:
+            return "CREATE SAVE FILE";
 
-    SDL_Rect panel;
+        case CH_MEMCARD_UI_CREATED:
+            return "SAVE FILE CREATED";
 
-    int width = 640;
-    int height = 480;
+        case CH_MEMCARD_UI_TOO_SMALL:
+            return "MEMORY CARD TOO SMALL";
 
-    int textWidth;
+        case CH_MEMCARD_UI_INSUFFICIENT_SPACE:
+            return "NOT ENOUGH SPACE";
 
-    int i;
+        case CH_MEMCARD_UI_DISABLED:
+            return "SAVING DISABLED";
 
-    if (!renderer)
+        case CH_MEMCARD_UI_ERROR:
+            return "MEMORY CARD ERROR";
+
+        default:
+            return "MEMORY CARD";
+    }
+}
+
+
+static bool GC_DoomMemCardUsesErrorArt(
+    CH_MemCardUIScreenKind kind)
+{
+    return
+        kind == CH_MEMCARD_UI_TOO_SMALL
+        || kind == CH_MEMCARD_UI_INSUFFICIENT_SPACE
+        || kind == CH_MEMCARD_UI_DISABLED
+        || kind == CH_MEMCARD_UI_ERROR;
+}
+
+
+static void GC_DoomMemCardDrawCentered(
+    SDL_Renderer *renderer,
+    int y,
+    const char *text,
+    int scale)
+{
+    int width;
+
+    if (
+        renderer == NULL
+        || text == NULL
+        || text[0] == '\0'
+    )
     {
         return;
     }
 
-    snprintf(
-        sizeLine,
-        sizeof(sizeLine),
-        "INITIAL SIZE %u BLOCKS",
-        (unsigned int)
-            GC_MemoryCardSaveFileInitialBlocks()
-    );
+    width =
+        GC_TextWidth(
+            text,
+            scale);
 
-    if (SDL_GetRendererOutputSize(
-            renderer,
-            &width,
-            &height) != 0)
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH - width) / 2,
+        y,
+        text,
+        scale);
+}
+
+
+static SDL_Texture *GC_DoomMemCardActionGlyph(
+    SDL_Renderer *renderer,
+    CH_ControllerGlyph glyph)
+{
+    switch (glyph)
     {
-        width = 640;
-        height = 480;
+        case CH_CONTROLLER_GLYPH_A:
+            return GC_LoadCarouselControllerGlyph(
+                renderer,
+                &gcCarouselAGlyph,
+                CH_CONTROLLER_GLYPH_A,
+                GC_MEMCARD_ACTION_GLYPH_SIZE,
+                "memory card A");
+
+        case CH_CONTROLLER_GLYPH_B:
+            return GC_LoadCarouselControllerGlyph(
+                renderer,
+                &gcCarouselBGlyph,
+                CH_CONTROLLER_GLYPH_B,
+                GC_MEMCARD_ACTION_GLYPH_SIZE,
+                "memory card B");
+
+        default:
+            return NULL;
+    }
+}
+
+
+static int GC_DoomMemCardActionWidth(
+    const CH_MemCardUIActionHint *hint)
+{
+    int width;
+
+    if (hint == NULL)
+        return 0;
+
+    width =
+        GC_TextWidth(
+            hint->label,
+            3);
+
+    if (hint->glyph != CH_CONTROLLER_GLYPH_NONE)
+    {
+        width +=
+            GC_MEMCARD_ACTION_GLYPH_SIZE
+            + GC_MEMCARD_ACTION_GLYPH_GAP;
     }
 
-    /*
-     * Make successful creation visually impossible to confuse
-     * with the purple question/warning screens.
-     */
+    return width;
+}
+
+
+static void GC_DoomMemCardDrawActions(
+    SDL_Renderer *renderer,
+    const CH_MemCardUIInfo *info)
+{
+    unsigned int count;
+    unsigned int i;
+    int totalWidth = 0;
+    int x;
+
+    if (
+        renderer == NULL
+        || info == NULL
+    )
+    {
+        return;
+    }
+
+    count =
+        info->action_hint_count;
+
+    if (count > CH_MEMCARD_UI_MAX_ACTION_HINTS)
+        count = CH_MEMCARD_UI_MAX_ACTION_HINTS;
+
+    if (count == 0)
+        return;
+
+    for (i = 0; i < count; ++i)
+    {
+        if (i != 0)
+            totalWidth += GC_MEMCARD_ACTION_PAIR_GAP;
+
+        totalWidth +=
+            GC_DoomMemCardActionWidth(
+                &info->action_hints[i]);
+    }
+
+    x =
+        (GC_LAUNCHER_WIDTH - totalWidth) / 2;
+
+    for (i = 0; i < count; ++i)
+    {
+        const CH_MemCardUIActionHint *hint =
+            &info->action_hints[i];
+
+        SDL_Texture *glyphTexture =
+            GC_DoomMemCardActionGlyph(
+                renderer,
+                hint->glyph);
+
+        if (i != 0)
+            x += GC_MEMCARD_ACTION_PAIR_GAP;
+
+        if (hint->glyph != CH_CONTROLLER_GLYPH_NONE)
+        {
+            if (glyphTexture != NULL)
+            {
+                GC_DrawCarouselControllerGlyph(
+                    renderer,
+                    glyphTexture,
+                    x,
+                    GC_MEMCARD_ACTION_GLYPH_Y,
+                    GC_MEMCARD_ACTION_GLYPH_SIZE);
+            }
+            else
+            {
+                const char *fallback =
+                    CH_ControllerGlyphName(
+                        hint->glyph);
+
+                GC_DrawText(
+                    renderer,
+                    x,
+                    GC_MEMCARD_ACTION_TEXT_Y,
+                    fallback,
+                    3);
+            }
+
+            x +=
+                GC_MEMCARD_ACTION_GLYPH_SIZE
+                + GC_MEMCARD_ACTION_GLYPH_GAP;
+        }
+
+        GC_DrawText(
+            renderer,
+            x,
+            GC_MEMCARD_ACTION_TEXT_Y,
+            hint->label,
+            3);
+
+        x +=
+            GC_TextWidth(
+                hint->label,
+                3);
+    }
+}
+
+
+static bool GC_DoomMemCardUIShow(
+    void *userdata,
+    CH_MemCardUIScreenKind kind,
+    const CH_MemCardUIInfo *info)
+{
+    SDL_Renderer *renderer =
+        (SDL_Renderer *)userdata;
+
+    SDL_Texture *background = NULL;
+
+    SDL_Rect fullscreen =
+    {
+        0,
+        0,
+        GC_LAUNCHER_WIDTH,
+        480
+    };
+
+    const char *backgroundPath;
+    const char *backgroundLabel;
+
+    char line[96];
+    int y = 215;
+
+    if (
+        renderer == NULL
+        || info == NULL
+    )
+    {
+        return false;
+    }
+
+    if (GC_DoomMemCardUsesErrorArt(kind))
+    {
+        backgroundPath =
+            GC_MEMCARD_ERROR_BACKGROUND_PATH;
+
+        backgroundLabel =
+            "PFUB2 memory card background";
+    }
+    else
+    {
+        backgroundPath =
+            GC_MEMCARD_NORMAL_BACKGROUND_PATH;
+
+        backgroundLabel =
+            "MWALL4_1 memory card background";
+    }
+
+    background =
+        GC_LoadLauncherBitmap(
+            renderer,
+            backgroundPath,
+            backgroundLabel);
+
     SDL_SetRenderDrawColor(
         renderer,
         0,
         0,
         0,
-        255
-    );
+        255);
 
     SDL_RenderClear(
-        renderer
-    );
+        renderer);
 
-    panel.x = 35;
-    panel.y = 55;
-    panel.w = width - 70;
-    panel.h = height - 110;
+    if (background != NULL)
+    {
+        if (SDL_RenderCopy(
+                renderer,
+                background,
+                NULL,
+                &fullscreen) != 0)
+        {
+            DC_WARN(
+                "DoomCube: memory-card background render failed: %s\n",
+                SDL_GetError());
+        }
 
-    /*
-     * Strong orange confirmation panel.
-     */
+        SDL_DestroyTexture(
+            background);
+    }
+
+    SDL_SetRenderDrawBlendMode(
+        renderer,
+        SDL_BLENDMODE_BLEND);
+
     SDL_SetRenderDrawColor(
         renderer,
-        235,
-        120,
-        20,
-        255
-    );
+        0,
+        0,
+        0,
+        128);
 
     SDL_RenderFillRect(
         renderer,
-        &panel
-    );
+        &fullscreen);
 
-    /*
-     * Black text gives strong contrast against orange.
-     */
+    SDL_SetRenderDrawBlendMode(
+        renderer,
+        SDL_BLENDMODE_NONE);
+
     SDL_SetRenderDrawColor(
         renderer,
-        0,
-        0,
-        0,
-        255
-    );
+        255,
+        255,
+        255,
+        255);
 
-    textWidth =
-        GC_TextWidth(
-            line1,
-            3
-        );
-
-    GC_DrawText(
+    GC_DoomMemCardDrawCentered(
         renderer,
-        (width - textWidth) / 2,
-        115,
-        line1,
-        3
-    );
+        58,
+        GC_DoomMemCardTitle(kind),
+        3);
 
-    textWidth =
-        GC_TextWidth(
-            line2,
-            2
-        );
-
-    GC_DrawText(
+    GC_DoomMemCardDrawCentered(
         renderer,
-        (width - textWidth) / 2,
-        200,
-        line2,
-        2
-    );
+        145,
+        info->detail,
+        2);
 
-    textWidth =
-        GC_TextWidth(
-            sizeLine,
-            2
-        );
+    if (
+        info->card_blocks
+        != CH_MEMCARD_UI_U32_UNKNOWN
+    )
+    {
+        snprintf(
+            line,
+            sizeof(line),
+            "CAPACITY %u BLOCKS",
+            (unsigned int)
+                info->card_blocks);
 
-    GC_DrawText(
+        GC_DoomMemCardDrawCentered(
+            renderer,
+            y,
+            line,
+            2);
+
+        y += 36;
+    }
+
+    if (
+        info->required_blocks
+        != CH_MEMCARD_UI_U32_UNKNOWN
+    )
+    {
+        snprintf(
+            line,
+            sizeof(line),
+            "REQUIRES %u BLOCKS",
+            (unsigned int)
+                info->required_blocks);
+
+        GC_DoomMemCardDrawCentered(
+            renderer,
+            y,
+            line,
+            2);
+
+        y += 36;
+    }
+
+    if (
+        info->initial_blocks
+        != CH_MEMCARD_UI_U32_UNKNOWN
+    )
+    {
+        snprintf(
+            line,
+            sizeof(line),
+            "STARTS AT %u BLOCKS",
+            (unsigned int)
+                info->initial_blocks);
+
+        GC_DoomMemCardDrawCentered(
+            renderer,
+            y,
+            line,
+            2);
+
+        y += 36;
+    }
+
+    if (
+        info->maximum_blocks
+        != CH_MEMCARD_UI_U32_UNKNOWN
+    )
+    {
+        snprintf(
+            line,
+            sizeof(line),
+            "CAN GROW TO %u BLOCKS",
+            (unsigned int)
+                info->maximum_blocks);
+
+        GC_DoomMemCardDrawCentered(
+            renderer,
+            y,
+            line,
+            2);
+    }
+
+    GC_DoomMemCardDrawActions(
         renderer,
-        (width - textWidth) / 2,
-        250,
-        sizeLine,
-        2
-    );
-
-    textWidth =
-        GC_TextWidth(
-            line4,
-            2
-        );
-
-    GC_DrawText(
-        renderer,
-        (width - textWidth) / 2,
-        345,
-        line4,
-        2
-    );
+        info);
 
     SDL_RenderPresent(
-        renderer
-    );
+        renderer);
+
+    DC_DEBUG(
+        "DoomCube: themed memory-card screen %s shown\n",
+        CH_MemCardUIScreenName(kind));
+
+    return true;
+}
+
+
+static CH_MemCardUI GC_DoomMemCardMakeUI(
+    SDL_Renderer *renderer)
+{
+    CH_MemCardUI ui;
+
+    ui.show =
+        GC_DoomMemCardUIShow;
+
+    ui.userdata =
+        renderer;
+
+    return ui;
+}
+
+
+static void GC_LauncherShowSaveFileCreated(
+    SDL_Renderer *renderer)
+{
+    CH_MemCardUI ui;
+    CH_MemCardUIInfo info;
+    int i;
+
+    if (renderer == NULL)
+        return;
+
+    ui =
+        GC_DoomMemCardMakeUI(
+            renderer);
+
+    CH_MemCardUIInfoInit(
+        &info);
+
+    info.slot = 0;
+    info.application_name = "DOOMCUBE";
+    info.detail =
+        "DOOMCUBE SAVING IS ENABLED";
+
+    info.initial_blocks =
+        GC_MemoryCardSaveFileInitialBlocks();
+
+    info.action_hint_count = 1;
+    info.action_hints[0].glyph =
+        CH_CONTROLLER_GLYPH_A;
+    info.action_hints[0].label =
+        "CONTINUE";
+
+    (void)CH_MemCardUIShow(
+        &ui,
+        CH_MEMCARD_UI_CREATED,
+        &info);
 
     SYS_Report(
-        "DoomCube: orange save-file-created screen shown: "
+        "DoomCube: themed save-file-created screen shown: "
         "initial=%u blocks\n",
         (unsigned int)
-            GC_MemoryCardSaveFileInitialBlocks()
-    );
+            GC_MemoryCardSaveFileInitialBlocks());
 
-    /*
-     * Consume transition state from the CREATE press.
-     *
-     * The orange screen should require a deliberate second
-     * A/START press rather than disappearing instantly.
-     */
-    for (i = 0;
-         i < 3;
-         ++i)
+    for (i = 0; i < 3; ++i)
     {
         PAD_ScanPads();
-
-        (void)PAD_ButtonsDown(
-            PAD_CHAN0
-        );
-
-        SDL_Delay(
-            16
-        );
+        (void)PAD_ButtonsDown(PAD_CHAN0);
+        SDL_Delay(16);
     }
 
     while (SYS_MainLoop())
@@ -3711,26 +4053,24 @@ static void GC_LauncherShowSaveFileCreated(
 
         down =
             PAD_ButtonsDown(
-                PAD_CHAN0
-            );
+                PAD_CHAN0);
 
-        if (down &
-            (
-                PAD_BUTTON_A |
-                PAD_BUTTON_START
-            ))
+        if (
+            down
+            & (
+                PAD_BUTTON_A
+                | PAD_BUTTON_START
+            )
+        )
         {
             break;
         }
 
-        SDL_Delay(
-            16
-        );
+        SDL_Delay(16);
     }
 
     SYS_Report(
-        "DoomCube: orange save-file-created screen dismissed\n"
-    );
+        "DoomCube: themed save-file-created screen dismissed\n");
 }
 
 
@@ -3738,216 +4078,58 @@ void GC_LauncherRunStoragePreflight(
     SDL_Renderer *renderer)
 {
     gc_memcard_status_t status;
-
-    SDL_Rect panel;
-
-    int width = 640;
-    int height = 480;
-
-    int textWidth;
-
+    CH_MemCardUI ui;
+    CH_MemCardUIInfo info;
     int i;
 
-    if (!renderer)
-    {
+    if (renderer == NULL)
         return;
-    }
 
     status =
         GC_MemoryCardGetStatus();
 
-    if (status !=
-            GC_MEMCARD_STATUS_TOO_SMALL &&
-        status !=
-            GC_MEMCARD_STATUS_NEEDS_CREATE)
+    if (
+        status != GC_MEMCARD_STATUS_TOO_SMALL
+        && status != GC_MEMCARD_STATUS_NEEDS_CREATE
+    )
     {
         return;
     }
 
-    if (SDL_GetRendererOutputSize(
-            renderer,
-            &width,
-            &height) != 0)
+    ui =
+        GC_DoomMemCardMakeUI(
+            renderer);
+
+    if (status == GC_MEMCARD_STATUS_TOO_SMALL)
     {
-        width = 640;
-        height = 480;
-    }
+        CH_MemCardUIInfoInit(
+            &info);
 
-    SDL_SetRenderDrawColor(
-        renderer,
-        0,
-        0,
-        0,
-        255
-    );
+        info.slot = 0;
+        info.application_name = "DOOMCUBE";
+        info.detail =
+            "MEMORY CARD 251 OR LARGER REQUIRED";
+        info.card_blocks = 59;
 
-    SDL_RenderClear(
-        renderer
-    );
+        info.action_hint_count = 1;
+        info.action_hints[0].glyph =
+            CH_CONTROLLER_GLYPH_A;
+        info.action_hints[0].label =
+            "CONTINUE";
 
-    panel.x = 35;
-    panel.y = 55;
-    panel.w = width - 70;
-    panel.h = height - 110;
-
-    SDL_SetRenderDrawColor(
-        renderer,
-        70,
-        45,
-        120,
-        255
-    );
-
-    SDL_RenderFillRect(
-        renderer,
-        &panel
-    );
-
-    SDL_SetRenderDrawColor(
-        renderer,
-        255,
-        255,
-        255,
-        255
-    );
-
-
-    if (status ==
-        GC_MEMCARD_STATUS_TOO_SMALL)
-    {
-        /*
-         * Card59 warning uses dedicated red panel.
-         *
-         * Purple is reserved for player choices and orange for
-         * successful state changes.
-         */
-        SDL_SetRenderDrawColor(
-            renderer,
-            150,
-            25,
-            25,
-            255
-        );
-
-        SDL_RenderFillRect(
-            renderer,
-            &panel
-        );
-
-        SDL_SetRenderDrawColor(
-            renderer,
-            255,
-            255,
-            255,
-            255
-        );
-
-        static const char *line1 =
-            "MEMORY CARD 59 IS TOO SMALL";
-
-        static const char *line2 =
-            "DOOMCUBE REQUIRES MEMORY CARD 251";
-
-        static const char *line3 =
-            "OR LARGER";
-
-        static const char *line4 =
-            "SAVING IS DISABLED";
-
-        static const char *line5 =
-            "PRESS A OR START TO CONTINUE";
-
-        textWidth =
-            GC_TextWidth(
-                line1,
-                3
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            100,
-            line1,
-            3
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line2,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            180,
-            line2,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line3,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            215,
-            line3,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line4,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            275,
-            line4,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line5,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            350,
-            line5,
-            2
-        );
-
-        SDL_RenderPresent(
-            renderer
-        );
+        (void)CH_MemCardUIShow(
+            &ui,
+            CH_MEMCARD_UI_TOO_SMALL,
+            &info);
 
         SYS_Report(
-            "DoomCube: pre-launch Memory Card 59 warning shown\n"
-        );
+            "DoomCube: themed Memory Card 59 warning shown\n");
 
-        for (i = 0;
-             i < 3;
-             ++i)
+        for (i = 0; i < 3; ++i)
         {
             PAD_ScanPads();
-
-            (void)PAD_ButtonsDown(
-                PAD_CHAN0
-            );
-
-            SDL_Delay(
-                16
-            );
+            (void)PAD_ButtonsDown(PAD_CHAN0);
+            SDL_Delay(16);
         }
 
         while (SYS_MainLoop())
@@ -3958,175 +4140,74 @@ void GC_LauncherRunStoragePreflight(
 
             down =
                 PAD_ButtonsDown(
-                    PAD_CHAN0
-                );
+                    PAD_CHAN0);
 
-            if (down &
-                (
-                    PAD_BUTTON_A |
-                    PAD_BUTTON_START
-                ))
+            if (
+                down
+                & (
+                    PAD_BUTTON_A
+                    | PAD_BUTTON_START
+                )
+            )
             {
                 break;
             }
 
-            SDL_Delay(
-                16
-            );
+            SDL_Delay(16);
         }
 
         SYS_Report(
-            "DoomCube: pre-launch Memory Card 59 warning dismissed\n"
-        );
+            "DoomCube: themed Memory Card 59 warning dismissed\n");
 
         return;
     }
 
-
-    if (status ==
-        GC_MEMCARD_STATUS_NEEDS_CREATE)
+    if (status == GC_MEMCARD_STATUS_NEEDS_CREATE)
     {
-        static const char *line1 =
+        CH_MemCardUIInfoInit(
+            &info);
+
+        info.slot = 0;
+        info.application_name = "DOOMCUBE";
+        info.detail =
             "NO DOOMCUBE SAVE FILE FOUND";
 
-        static const char *line2 =
-            "CREATE A SAVE FILE FOR DOOMCUBE";
+        info.initial_blocks =
+            GC_MemoryCardSaveFileInitialBlocks();
 
-        static const char *line5 =
-            "A  CREATE";
+        info.maximum_blocks =
+            GC_MemoryCardSaveFileMaxBlocks();
 
-        static const char *line6 =
-            "B  CONTINUE WITHOUT SAVING";
+        info.action_hint_count = 2;
 
-        char initialLine[64];
-        char maximumLine[64];
+        info.action_hints[0].glyph =
+            CH_CONTROLLER_GLYPH_A;
+        info.action_hints[0].label =
+            "CREATE";
 
-        snprintf(
-            initialLine,
-            sizeof(initialLine),
-            "STARTS AT %u BLOCKS",
-            (unsigned int)
-                GC_MemoryCardSaveFileInitialBlocks()
-        );
+        info.action_hints[1].glyph =
+            CH_CONTROLLER_GLYPH_B;
+        info.action_hints[1].label =
+            "WITHOUT SAVING";
 
-        snprintf(
-            maximumLine,
-            sizeof(maximumLine),
-            "CAN GROW UP TO %u BLOCKS",
-            (unsigned int)
-                GC_MemoryCardSaveFileMaxBlocks()
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line1,
-                3
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            85,
-            line1,
-            3
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line2,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            160,
-            line2,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                initialLine,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            215,
-            initialLine,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                maximumLine,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            250,
-            maximumLine,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line5,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            315,
-            line5,
-            2
-        );
-
-        textWidth =
-            GC_TextWidth(
-                line6,
-                2
-            );
-
-        GC_DrawText(
-            renderer,
-            (width - textWidth) / 2,
-            350,
-            line6,
-            2
-        );
-
-        SDL_RenderPresent(
-            renderer
-        );
+        (void)CH_MemCardUIShow(
+            &ui,
+            CH_MEMCARD_UI_CREATE_PROMPT,
+            &info);
 
         SYS_Report(
-            "DoomCube: pre-launch save-file creation prompt shown: "
+            "DoomCube: themed save-file creation prompt shown: "
             "initial=%u maximum=%u blocks\n",
             (unsigned int)
                 GC_MemoryCardSaveFileInitialBlocks(),
             (unsigned int)
-                GC_MemoryCardSaveFileMaxBlocks()
-        );
+                GC_MemoryCardSaveFileMaxBlocks());
 
-        for (i = 0;
-             i < 3;
-             ++i)
+        for (i = 0; i < 3; ++i)
         {
             PAD_ScanPads();
-
-            (void)PAD_ButtonsDown(
-                PAD_CHAN0
-            );
-
-            SDL_Delay(
-                16
-            );
+            (void)PAD_ButtonsDown(PAD_CHAN0);
+            SDL_Delay(16);
         }
 
         while (SYS_MainLoop())
@@ -4137,60 +4218,46 @@ void GC_LauncherRunStoragePreflight(
 
             down =
                 PAD_ButtonsDown(
-                    PAD_CHAN0
-                );
+                    PAD_CHAN0);
 
-            if (down &
-                PAD_BUTTON_A)
+            if (down & PAD_BUTTON_A)
             {
                 SYS_Report(
-                    "DoomCube: player selected CREATE save file\n"
-                );
+                    "DoomCube: player selected CREATE save file\n");
 
                 if (GC_MemoryCardCreateSaveFile())
                 {
                     SYS_Report(
                         "DoomCube: pre-launch DoomCube save-file "
-                        "creation succeeded\n"
-                    );
+                        "creation succeeded\n");
 
                     GC_LauncherShowSaveFileCreated(
-                        renderer
-                    );
+                        renderer);
 
                     return;
                 }
 
-                /*
-                 * Creation failed. Continue without saving rather than
-                 * trapping the player before the launcher.
-                 */
                 SYS_Report(
                     "DoomCube: pre-launch DoomCube save-file "
-                    "creation failed; saving disabled\n"
-                );
+                    "creation failed; saving disabled\n");
 
                 GC_MemoryCardShutdown();
 
                 return;
             }
 
-            if (down &
-                PAD_BUTTON_B)
+            if (down & PAD_BUTTON_B)
             {
                 SYS_Report(
                     "DoomCube: player declined DoomCube save-file "
-                    "creation; saving disabled for this session\n"
-                );
+                    "creation; saving disabled for this session\n");
 
                 GC_MemoryCardShutdown();
 
                 return;
             }
 
-            SDL_Delay(
-                16
-            );
+            SDL_Delay(16);
         }
     }
 }
