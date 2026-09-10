@@ -40,6 +40,15 @@
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
 #define GC_STUDIO_IDENT_PATH      "dvd:/launcher/sperge_brigade_studios.bmp"
 #define GC_STUDIO_IDENT_AUDIO_PATH "dvd:/launcher/audio/cybsit.wav"
+#define GC_LAUNCHER_TIMIDITY_CFG          "dvd:/data/timidity/timidity.cfg"
+#define GC_LAUNCHER_MUSIC_DOOM1_PATH      "dvd:/launcher/music/doom1.mid"
+#define GC_LAUNCHER_MUSIC_DOOM_PATH       "dvd:/launcher/music/doom.mid"
+#define GC_LAUNCHER_MUSIC_DOOM2_PATH      "dvd:/launcher/music/doom2.mid"
+#define GC_LAUNCHER_MUSIC_TNT_PATH        "dvd:/launcher/music/tnt.mid"
+#define GC_LAUNCHER_MUSIC_PLUTONIA_PATH   "dvd:/launcher/music/plutonia.mid"
+#define GC_LAUNCHER_MUSIC_SIGIL_PATH      "dvd:/launcher/music/sigil.mid"
+#define GC_LAUNCHER_MUSIC_SIGIL2_PATH     "dvd:/launcher/music/sigil2.mid"
+#define GC_LAUNCHER_MUSIC_CUSTOM_PATH     "dvd:/launcher/music/custom.mid"
 #define GC_STUDIO_IDENT_FADE_MS   750u
 #define GC_STUDIO_IDENT_HOLD_MS   2000u
 #define GC_STUDIO_IDENT_FRAME_MS  16u
@@ -3217,6 +3226,325 @@ static void GC_DrawSplash(
 }
 
 
+typedef struct GC_LauncherMusicState
+{
+    Mix_Music *music;
+    const char *currentPath;
+    bool ready;
+    bool mixInitCalled;
+    bool openedMixer;
+    bool initializedAudio;
+} GC_LauncherMusicState;
+
+
+static GC_LauncherMusicState gcLauncherMusic;
+
+
+static void GC_LauncherMusicStopCurrent(void)
+{
+    if (gcLauncherMusic.music == NULL)
+    {
+        gcLauncherMusic.currentPath = NULL;
+        return;
+    }
+
+    Mix_HaltMusic();
+
+    Mix_FreeMusic(
+        gcLauncherMusic.music);
+
+    gcLauncherMusic.music = NULL;
+    gcLauncherMusic.currentPath = NULL;
+}
+
+
+static void GC_LauncherMusicShutdown(void)
+{
+    GC_LauncherMusicStopCurrent();
+
+    if (gcLauncherMusic.openedMixer)
+    {
+        Mix_CloseAudio();
+        gcLauncherMusic.openedMixer = false;
+    }
+
+    if (gcLauncherMusic.initializedAudio)
+    {
+        SDL_QuitSubSystem(
+            SDL_INIT_AUDIO);
+
+        gcLauncherMusic.initializedAudio = false;
+    }
+
+    if (gcLauncherMusic.mixInitCalled)
+    {
+        Mix_Quit();
+        gcLauncherMusic.mixInitCalled = false;
+    }
+
+    if (gcLauncherMusic.ready)
+    {
+        DC_DEBUG(
+            "DoomCube: launcher music shutdown complete\n");
+    }
+
+    gcLauncherMusic.ready = false;
+}
+
+
+static bool GC_LauncherMusicEnsureReady(void)
+{
+    int frequency;
+    int channels;
+    Uint16 format;
+    int mixerRate;
+    const char *cfg;
+
+    if (gcLauncherMusic.ready)
+        return true;
+
+    Mix_Init(0);
+    gcLauncherMusic.mixInitCalled = true;
+
+    if ((SDL_WasInit(SDL_INIT_AUDIO)
+         & SDL_INIT_AUDIO) == 0)
+    {
+        if (SDL_InitSubSystem(
+                SDL_INIT_AUDIO) < 0)
+        {
+            DC_WARN(
+                "DoomCube: launcher music SDL audio init failed: %s\n",
+                SDL_GetError());
+
+            GC_LauncherMusicShutdown();
+            return false;
+        }
+
+        gcLauncherMusic.initializedAudio = true;
+    }
+
+    if (!Mix_QuerySpec(
+            &frequency,
+            &format,
+            &channels))
+    {
+        mixerRate =
+            snd_samplerate > 0
+            ? snd_samplerate
+            : 44100;
+
+        if (Mix_OpenAudio(
+                mixerRate,
+                AUDIO_S16SYS,
+                2,
+                1024) < 0)
+        {
+            DC_WARN(
+                "DoomCube: launcher music Mix_OpenAudio failed: %s\n",
+                Mix_GetError());
+
+            GC_LauncherMusicShutdown();
+            return false;
+        }
+
+        gcLauncherMusic.openedMixer = true;
+
+        DC_DEBUG(
+            "DoomCube: launcher music opened mixer at %d Hz\n",
+            mixerRate);
+    }
+    else
+    {
+        DC_DEBUG(
+            "DoomCube: launcher music using existing mixer "
+            "freq=%d channels=%d format=0x%x\n",
+            frequency,
+            channels,
+            (unsigned int)format);
+    }
+
+    if (!Mix_SetTimidityCfg(
+            GC_LAUNCHER_TIMIDITY_CFG))
+    {
+        DC_WARN(
+            "DoomCube: launcher music Mix_SetTimidityCfg failed: %s\n",
+            Mix_GetError());
+
+        GC_LauncherMusicShutdown();
+        return false;
+    }
+
+    cfg =
+        Mix_GetTimidityCfg();
+
+    DC_DEBUG(
+        "DoomCube: launcher music TiMidity config: %s\n",
+        cfg != NULL ? cfg : "(null)");
+
+    Mix_VolumeMusic(
+        MIX_MAX_VOLUME);
+
+    gcLauncherMusic.ready = true;
+
+    DC_INFO(
+        "DoomCube: launcher MIDI player ready\n");
+
+    return true;
+}
+
+
+static bool GC_LauncherMusicUsePath(
+    const char *path)
+{
+    Mix_Music *music;
+
+    if (path == NULL)
+        return false;
+
+    if (!GC_LauncherMusicEnsureReady())
+        return false;
+
+    if (gcLauncherMusic.music != NULL
+        && gcLauncherMusic.currentPath != NULL
+        && strcmp(
+            gcLauncherMusic.currentPath,
+            path) == 0)
+    {
+        if (Mix_PlayingMusic())
+        {
+            DC_TRACE(
+                "DoomCube: launcher music unchanged: %s\n",
+                path);
+
+            return true;
+        }
+
+        if (Mix_PlayMusic(
+                gcLauncherMusic.music,
+                -1) == 0)
+        {
+            DC_DEBUG(
+                "DoomCube: launcher music resumed/restarted: %s\n",
+                path);
+
+            return true;
+        }
+
+        DC_WARN(
+            "DoomCube: launcher music replay failed for %s: %s\n",
+            path,
+            Mix_GetError());
+
+        GC_LauncherMusicStopCurrent();
+    }
+    else
+    {
+        GC_LauncherMusicStopCurrent();
+    }
+
+    music =
+        Mix_LoadMUS(
+            path);
+
+    if (music == NULL)
+    {
+        DC_WARN(
+            "DoomCube: launcher music load failed for %s: %s\n",
+            path,
+            Mix_GetError());
+
+        return false;
+    }
+
+    if (Mix_PlayMusic(
+            music,
+            -1) < 0)
+    {
+        DC_WARN(
+            "DoomCube: launcher music playback failed for %s: %s\n",
+            path,
+            Mix_GetError());
+
+        Mix_FreeMusic(
+            music);
+
+        return false;
+    }
+
+    gcLauncherMusic.music = music;
+    gcLauncherMusic.currentPath = path;
+
+    DC_INFO(
+        "DoomCube: launcher music now playing %s\n",
+        path);
+
+    return true;
+}
+
+
+static bool GC_LauncherMusicUseIntermission(void)
+{
+    return GC_LauncherMusicUsePath(
+        GC_LAUNCHER_MUSIC_CUSTOM_PATH);
+}
+
+
+static const char *GC_LauncherMusicPathForGame(
+    int gameIndex)
+{
+    switch (gameIndex)
+    {
+        case 0:
+            return GC_LAUNCHER_MUSIC_DOOM1_PATH;
+
+        case 1:
+            return GC_LAUNCHER_MUSIC_DOOM_PATH;
+
+        case 2:
+            return GC_LAUNCHER_MUSIC_DOOM2_PATH;
+
+        case 3:
+            return GC_LAUNCHER_MUSIC_TNT_PATH;
+
+        case 4:
+            return GC_LAUNCHER_MUSIC_PLUTONIA_PATH;
+
+        case 5:
+            return GC_LAUNCHER_MUSIC_SIGIL_PATH;
+
+        case 6:
+            return GC_LAUNCHER_MUSIC_SIGIL2_PATH;
+
+        case GC_CUSTOM_GAME_INDEX:
+            return GC_LAUNCHER_MUSIC_CUSTOM_PATH;
+
+        default:
+            return NULL;
+    }
+}
+
+
+static bool GC_LauncherMusicUseGame(
+    int gameIndex)
+{
+    const char *path =
+        GC_LauncherMusicPathForGame(
+            gameIndex);
+
+    if (path == NULL)
+    {
+        DC_WARN(
+            "DoomCube: no launcher music mapping for game index %d\n",
+            gameIndex);
+
+        return false;
+    }
+
+    return GC_LauncherMusicUsePath(
+        path);
+}
+
+
 static bool GC_LauncherRunSplash(
     SDL_Renderer *renderer,
     SDL_Texture *logo)
@@ -3378,6 +3706,9 @@ static int GC_LauncherRun(
         renderer,
         selected);
 
+    (void)GC_LauncherMusicUseGame(
+        selected);
+
     /*
      * Flush stale controller transition state before entering
      * the carousel.
@@ -3465,6 +3796,9 @@ static int GC_LauncherRun(
                 GC_DrawLauncher(
                     renderer,
                     selected);
+
+                (void)GC_LauncherMusicUseGame(
+                    selected);
             }
         }
 
@@ -3490,6 +3824,9 @@ static int GC_LauncherRun(
 
                 GC_DrawLauncher(
                     renderer,
+                    selected);
+
+                (void)GC_LauncherMusicUseGame(
                     selected);
             }
         }
@@ -4948,6 +5285,8 @@ bool GC_LauncherSelectGame(
     logo =
         GC_LoadLauncherLogo(renderer);
 
+    (void)GC_LauncherMusicUseIntermission();
+
     if (!GC_LauncherRunSplash(
             renderer,
             logo))
@@ -4960,6 +5299,8 @@ bool GC_LauncherSelectGame(
         GC_LauncherControllerGlyphShutdown();
         GC_DoomFontShutdown();
         }
+
+        GC_LauncherMusicShutdown();
 
         return false;
     }
@@ -4976,6 +5317,8 @@ bool GC_LauncherSelectGame(
              * B from the game-selection screen returns to the
              * DoomCube root splash.  START re-enters selection.
              */
+            (void)GC_LauncherMusicUseIntermission();
+
             if (!GC_LauncherRunSplash(
                     renderer,
                     logo))
@@ -5057,6 +5400,8 @@ bool GC_LauncherSelectGame(
                     selection->pwadPath =
                         gcPwads[selectedPwad].path;
 
+                    GC_LauncherMusicShutdown();
+
                     GC_DrawLoadingOverlay(
                         renderer);
 
@@ -5102,6 +5447,8 @@ bool GC_LauncherSelectGame(
             game->pwadPath;
 
 
+        GC_LauncherMusicShutdown();
+
         GC_DrawLoadingOverlay(renderer);
 
         GC_MemoryCardSetGame(
@@ -5139,6 +5486,8 @@ bool GC_LauncherSelectGame(
         GC_LauncherControllerGlyphShutdown();
         GC_DoomFontShutdown();
     }
+
+    GC_LauncherMusicShutdown();
 
     return false;
 }
