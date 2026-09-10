@@ -121,10 +121,15 @@ CAMPAIGNS = (
 #
 # Launcher audio is derived only into the disposable disc-staging tree.
 #
-# Music stays in its original WAD lump representation here. The GameCube
-# launcher can later apply the same MUS/MIDI handling used by DoomCube's
-# already-proven music backend instead of maintaining a second converter
-# in the player-facing Python packer.
+# Launcher music is always staged as standard MIDI.
+#
+# The launcher runs before Doom's normal engine music initialization.
+# Doom's runtime mus2mid path uses memio, whose allocation belongs to
+# the engine zone allocator, so doing the conversion here keeps early
+# launcher presentation completely independent of Doom runtime memory.
+#
+# Already-MIDI WAD lumps are copied unchanged; MUS lumps are converted
+# deterministically using the same event mapping as Doom's mus2mid.
 #
 LAUNCHER_CAMPAIGN_MUSIC_LUMPS = {
     "doom1": "D_E1M1",
@@ -567,6 +572,298 @@ def launcher_music_format(data: bytes) -> str | None:
     return None
 
 
+MUS_CONTROLLER_MAP = (
+    0x00,
+    0x20,
+    0x01,
+    0x07,
+    0x0A,
+    0x0B,
+    0x5B,
+    0x5D,
+    0x40,
+    0x43,
+    0x78,
+    0x7B,
+    0x7E,
+    0x7F,
+    0x79,
+)
+
+
+def midi_variable_length(value: int) -> bytes:
+    if value < 0:
+        raise ValueError("negative MIDI delta time")
+
+    encoded = [value & 0x7F]
+    value >>= 7
+
+    while value:
+        encoded.append(
+            (value & 0x7F) | 0x80
+        )
+        value >>= 7
+
+    encoded.reverse()
+    return bytes(encoded)
+
+
+def convert_mus_to_midi(data: bytes) -> bytes:
+    if len(data) < 16 or data[:4] != b"MUS\x1a":
+        raise wadgfx.WadError(
+            "music lump is not a valid MUS stream"
+        )
+
+    score_length, score_start = struct.unpack_from(
+        "<HH",
+        data,
+        4,
+    )
+
+    if score_start < 16:
+        raise wadgfx.WadError(
+            "MUS score starts inside header"
+        )
+
+    score_end = score_start + score_length
+
+    if score_end > len(data):
+        raise wadgfx.WadError(
+            "MUS score extends outside lump"
+        )
+
+    cursor = score_start
+    track = bytearray()
+    queued_time = 0
+
+    channel_map = [-1] * 16
+    channel_map[15] = 9
+    next_midi_channel = 0
+    channel_velocity = [127] * 16
+
+    def read_byte() -> int:
+        nonlocal cursor
+
+        if cursor >= score_end:
+            raise wadgfx.WadError(
+                "unexpected end of MUS score"
+            )
+
+        result = data[cursor]
+        cursor += 1
+        return result
+
+    def map_channel(mus_channel: int) -> int:
+        nonlocal next_midi_channel
+
+        mapped = channel_map[mus_channel]
+
+        if mapped >= 0:
+            return mapped
+
+        while (
+            next_midi_channel == 9
+            or next_midi_channel in channel_map
+        ):
+            next_midi_channel += 1
+
+        if next_midi_channel >= 16:
+            raise wadgfx.WadError(
+                "MUS uses too many MIDI channels"
+            )
+
+        mapped = next_midi_channel
+        channel_map[mus_channel] = mapped
+        next_midi_channel += 1
+        return mapped
+
+    def write_event(payload: bytes) -> None:
+        nonlocal queued_time
+
+        track.extend(
+            midi_variable_length(
+                queued_time
+            )
+        )
+        queued_time = 0
+        track.extend(payload)
+
+    score_finished = False
+
+    while cursor < score_end and not score_finished:
+        descriptor = read_byte()
+        mus_channel = descriptor & 0x0F
+        event_type = descriptor & 0x70
+        last_in_group = bool(descriptor & 0x80)
+
+        midi_channel = map_channel(
+            mus_channel
+        )
+
+        if event_type == 0x00:
+            key = read_byte() & 0x7F
+            write_event(
+                bytes((
+                    0x80 | midi_channel,
+                    key,
+                    0,
+                ))
+            )
+
+        elif event_type == 0x10:
+            key = read_byte()
+
+            if key & 0x80:
+                velocity = read_byte() & 0x7F
+                channel_velocity[midi_channel] = velocity
+
+            key &= 0x7F
+
+            write_event(
+                bytes((
+                    0x90 | midi_channel,
+                    key,
+                    channel_velocity[midi_channel],
+                ))
+            )
+
+        elif event_type == 0x20:
+            wheel = read_byte() << 6
+
+            write_event(
+                bytes((
+                    0xE0 | midi_channel,
+                    wheel & 0x7F,
+                    (wheel >> 7) & 0x7F,
+                ))
+            )
+
+        elif event_type == 0x30:
+            controller = read_byte()
+
+            if (
+                controller < 10
+                or controller >= len(MUS_CONTROLLER_MAP)
+            ):
+                raise wadgfx.WadError(
+                    f"invalid MUS system event {controller}"
+                )
+
+            write_event(
+                bytes((
+                    0xB0 | midi_channel,
+                    MUS_CONTROLLER_MAP[controller],
+                    0,
+                ))
+            )
+
+        elif event_type == 0x40:
+            controller = read_byte()
+            value = read_byte()
+
+            if controller >= len(MUS_CONTROLLER_MAP):
+                raise wadgfx.WadError(
+                    f"invalid MUS controller {controller}"
+                )
+
+            if controller == 0:
+                write_event(
+                    bytes((
+                        0xC0 | midi_channel,
+                        value & 0x7F,
+                    ))
+                )
+            else:
+                if value & 0x80:
+                    value = 0x7F
+
+                write_event(
+                    bytes((
+                        0xB0 | midi_channel,
+                        MUS_CONTROLLER_MAP[controller],
+                        value,
+                    ))
+                )
+
+        elif event_type == 0x60:
+            score_finished = True
+
+        else:
+            raise wadgfx.WadError(
+                f"unknown MUS event type 0x{event_type:02x}"
+            )
+
+        if score_finished:
+            break
+
+        if last_in_group:
+            delay = 0
+
+            while True:
+                value = read_byte()
+                delay = (
+                    delay * 128
+                    + (value & 0x7F)
+                )
+
+                if not (value & 0x80):
+                    break
+
+            queued_time += delay
+
+    if not score_finished:
+        raise wadgfx.WadError(
+            "MUS score ended without score-end event"
+        )
+
+    track.extend(
+        midi_variable_length(
+            queued_time
+        )
+    )
+    track.extend(b"\xff\x2f\x00")
+
+    midi_header = (
+        b"MThd"
+        + struct.pack(
+            ">IHHH",
+            6,
+            0,
+            1,
+            70,
+        )
+    )
+
+    return (
+        midi_header
+        + b"MTrk"
+        + struct.pack(
+            ">I",
+            len(track),
+        )
+        + bytes(track)
+    )
+
+
+def launcher_music_to_midi(
+    data: bytes,
+) -> tuple[str, bytes]:
+    source_format = launcher_music_format(data)
+
+    if source_format == "MIDI":
+        return source_format, data
+
+    if source_format == "MUS":
+        return (
+            source_format,
+            convert_mus_to_midi(data),
+        )
+
+    raise wadgfx.WadError(
+        "music lump is neither MUS nor MIDI"
+    )
+
+
 def resolve_raw_lump(
     wad_paths: list[Path],
     lump_name: str,
@@ -593,7 +890,7 @@ def generate_campaign_music(
     output_dir: Path,
     campaign: Campaign,
 ) -> bool:
-    output = output_dir / f"{campaign.key}.lmp"
+    output = output_dir / f"{campaign.key}.mid"
 
     if output.exists():
         output.unlink()
@@ -629,14 +926,13 @@ def generate_campaign_music(
             lump_name,
         )
 
-        music_format = launcher_music_format(data)
+        source_format, midi_data = launcher_music_to_midi(
+            data
+        )
 
-        if music_format is None:
-            raise wadgfx.WadError(
-                f"{lump_name} is neither MUS nor MIDI"
-            )
-
-        output.write_bytes(data)
+        output.write_bytes(
+            midi_data
+        )
 
     except (
         OSError,
@@ -655,8 +951,9 @@ def generate_campaign_music(
     print(f"[OK] Launcher music {campaign.label}")
     print(f"     Lump    : {lump_name}")
     print(f"     Source  : {source_wad.path}")
-    print(f"     Format  : {music_format}")
-    print(f"     Bytes   : {len(data)}")
+    print(f"     Source  : {source_format}")
+    print(f"     Input   : {len(data)} bytes")
+    print(f"     MIDI    : {len(midi_data)} bytes")
     print(
         "     Output  : "
         f"{output.relative_to(root).as_posix()}"
@@ -669,7 +966,7 @@ def generate_custom_intermission_music(
     root: Path,
     output_dir: Path,
 ) -> bool:
-    output = output_dir / "custom.lmp"
+    output = output_dir / "custom.mid"
 
     if output.exists():
         output.unlink()
@@ -690,14 +987,13 @@ def generate_custom_intermission_music(
                 continue
 
             data = wad.lump_data(lump)
-            music_format = launcher_music_format(data)
+            source_format, midi_data = launcher_music_to_midi(
+                data
+            )
 
-            if music_format is None:
-                raise wadgfx.WadError(
-                    f"{lump_name} is neither MUS nor MIDI"
-                )
-
-            output.write_bytes(data)
+            output.write_bytes(
+                midi_data
+            )
 
         except (
             OSError,
@@ -715,8 +1011,9 @@ def generate_custom_intermission_music(
         print(f"     Source  : {label}")
         print(f"     IWAD    : {source}")
         print(f"     Lump    : {lump_name}")
-        print(f"     Format  : {music_format}")
-        print(f"     Bytes   : {len(data)}")
+        print(f"     Source  : {source_format}")
+        print(f"     Input   : {len(data)} bytes")
+        print(f"     MIDI    : {len(midi_data)} bytes")
         print(
             "     Output  : "
             f"{output.relative_to(root).as_posix()}"
