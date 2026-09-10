@@ -2792,49 +2792,21 @@ static int GC_LauncherRunCustomPwad(
 static void GC_DrawLoadingOverlay(SDL_Renderer *renderer)
 {
     const char *text = "LOADING";
+    const int textScale =
+        GC_LAUNCHER_FONT_SCALE + 2;
     int textWidth;
-    SDL_Rect box =
-    {
-        190,
-        205,
-        260,
-        70
-    };
-
-    /*
-     * Draw an opaque box over the existing launcher screen.
-     * Avoid alpha/blending tricks here so the GameCube SDL renderer
-     * has as little work to do as possible.
-     */
-    SDL_SetRenderDrawColor(
-        renderer,
-        255,
-        155,
-        0,
-        255);
-
-    SDL_RenderFillRect(
-        renderer,
-        &box);
-
-    SDL_SetRenderDrawColor(
-        renderer,
-        255,
-        255,
-        255,
-        255);
 
     textWidth =
         GC_TextWidth(
             text,
-            GC_LAUNCHER_FONT_SCALE);
+            textScale);
 
     GC_DrawText(
         renderer,
         (GC_LAUNCHER_WIDTH - textWidth) / 2,
         228,
         text,
-        GC_LAUNCHER_FONT_SCALE);
+        textScale);
 
     SDL_RenderPresent(renderer);
 }
