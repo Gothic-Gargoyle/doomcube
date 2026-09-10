@@ -49,6 +49,7 @@
 #define GC_LAUNCHER_MUSIC_SIGIL_PATH      "dvd:/launcher/music/sigil.mid"
 #define GC_LAUNCHER_MUSIC_SIGIL2_PATH     "dvd:/launcher/music/sigil2.mid"
 #define GC_LAUNCHER_MUSIC_CUSTOM_PATH     "dvd:/launcher/music/custom.mid"
+#define GC_LAUNCHER_MENU_CHOOSE_AUDIO_PATH "dvd:/launcher/audio/menu_choose.wav"
 #define GC_STUDIO_IDENT_FADE_MS   750u
 #define GC_STUDIO_IDENT_HOLD_MS   2000u
 #define GC_STUDIO_IDENT_FRAME_MS  16u
@@ -2358,6 +2359,9 @@ static void GC_DrawCustomBaseLauncher(
     SDL_RenderPresent(renderer);
 }
 
+static void GC_LauncherMenuChoosePlay(void);
+
+
 static int GC_LauncherRunCustomBase(
     SDL_Renderer *renderer)
 {
@@ -2457,6 +2461,8 @@ static int GC_LauncherRunCustomBase(
             DC_DEBUG(
                 "DoomCube: CUSTOM base selected %s\\n",
                 gcCustomBases[selected].name);
+
+            GC_LauncherMenuChoosePlay();
 
             return selected;
         }
@@ -2780,6 +2786,8 @@ static int GC_LauncherRunCustomPwad(
             DC_DEBUG(
                 "DoomCube: CUSTOM PWAD selected %s\n",
                 gcPwads[selected].path);
+
+            GC_LauncherMenuChoosePlay();
 
             return selected;
         }
@@ -3230,8 +3238,12 @@ static void GC_LauncherMusicStopCurrent(void)
 }
 
 
+static void GC_LauncherMenuChooseShutdown(bool waitForPlayback);
+
 static void GC_LauncherMusicShutdown(void)
 {
+    GC_LauncherMenuChooseShutdown(true);
+
     GC_LauncherMusicStopCurrent();
 
     if (gcLauncherMusic.openedMixer)
@@ -3515,6 +3527,122 @@ static bool GC_LauncherMusicUseGame(
     return GC_LauncherMusicUsePath(
         path);
 }
+static Mix_Chunk *gcLauncherMenuChooseChunk;
+static int gcLauncherMenuChooseChannel = -1;
+static bool gcLauncherMenuChooseLoadAttempted;
+
+
+static bool GC_LauncherMenuChooseEnsureLoaded(void)
+{
+    if (gcLauncherMenuChooseChunk != NULL)
+        return true;
+
+    if (gcLauncherMenuChooseLoadAttempted)
+        return false;
+
+    gcLauncherMenuChooseLoadAttempted = true;
+
+    if (!GC_LauncherMusicEnsureReady())
+        return false;
+
+    gcLauncherMenuChooseChunk =
+        Mix_LoadWAV(
+            GC_LAUNCHER_MENU_CHOOSE_AUDIO_PATH);
+
+    if (gcLauncherMenuChooseChunk == NULL)
+    {
+        DC_WARN(
+            "DoomCube: launcher menu confirm sound unavailable: %s\n",
+            Mix_GetError());
+
+        return false;
+    }
+
+    DC_TRACE(
+        "DoomCube: launcher menu confirm sound loaded from %s\n",
+        GC_LAUNCHER_MENU_CHOOSE_AUDIO_PATH);
+
+    return true;
+}
+
+
+static void GC_LauncherMenuChoosePlay(void)
+{
+    int channel;
+
+    if (!GC_LauncherMenuChooseEnsureLoaded())
+        return;
+
+    if (gcLauncherMenuChooseChannel >= 0
+        && Mix_Playing(gcLauncherMenuChooseChannel))
+    {
+        Mix_HaltChannel(
+            gcLauncherMenuChooseChannel);
+    }
+
+    channel =
+        Mix_PlayChannel(
+            -1,
+            gcLauncherMenuChooseChunk,
+            0);
+
+    if (channel < 0)
+    {
+        DC_WARN(
+            "DoomCube: launcher menu confirm sound failed: %s\n",
+            Mix_GetError());
+
+        gcLauncherMenuChooseChannel = -1;
+        return;
+    }
+
+    gcLauncherMenuChooseChannel = channel;
+
+    DC_TRACE(
+        "DoomCube: launcher DSPISTOL confirm started on mixer channel %d\n",
+        channel);
+}
+
+
+static void GC_LauncherMenuChooseShutdown(bool waitForPlayback)
+{
+    if (gcLauncherMenuChooseChannel >= 0)
+    {
+        if (waitForPlayback)
+        {
+            int waits;
+
+            for (waits = 0;
+                 waits < 80
+                 && Mix_Playing(gcLauncherMenuChooseChannel);
+                 ++waits)
+            {
+                SDL_Delay(8);
+            }
+        }
+
+        if (Mix_Playing(gcLauncherMenuChooseChannel))
+        {
+            Mix_HaltChannel(
+                gcLauncherMenuChooseChannel);
+        }
+
+        gcLauncherMenuChooseChannel = -1;
+    }
+
+    if (gcLauncherMenuChooseChunk != NULL)
+    {
+        Mix_FreeChunk(
+            gcLauncherMenuChooseChunk);
+
+        gcLauncherMenuChooseChunk = NULL;
+    }
+
+    gcLauncherMenuChooseLoadAttempted = false;
+}
+
+
+
 
 
 static bool GC_LauncherRunSplash(
@@ -3826,6 +3954,8 @@ static int GC_LauncherRun(
             DC_DEBUG(
                 "DoomCube: carousel selected %s\n",
                 gcGames[selected].name);
+
+            GC_LauncherMenuChoosePlay();
 
             return selected;
         }
