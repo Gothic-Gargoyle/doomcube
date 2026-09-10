@@ -11,6 +11,10 @@ typedef struct
     const char *pwadPath;
 } gc_launch_selection_t;
 
+void GC_LauncherRunStudioIdent(
+    SDL_Renderer *renderer
+);
+
 void GC_LauncherShowMemoryCardChecking(
     SDL_Renderer *renderer
 );

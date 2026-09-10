@@ -35,6 +35,11 @@
 #define GC_DOOM_MENU_LOGO_PATH    "dvd:/launcher/m_doom.bmp"
 #define GC_DOOM_MENU_SKULL_PATH   "dvd:/launcher/m_skull1.bmp"
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
+#define GC_STUDIO_IDENT_PATH      "dvd:/launcher/sperge_brigade_studios.bmp"
+#define GC_STUDIO_IDENT_FADE_MS   750u
+#define GC_STUDIO_IDENT_HOLD_MS   2000u
+#define GC_STUDIO_IDENT_FRAME_MS  16u
+#define GC_STUDIO_IDENT_HEIGHT    360
 #define GC_MEMCARD_NORMAL_BACKGROUND_PATH \
     "dvd:/launcher/memcard/mwall4_1.bmp"
 #define GC_MEMCARD_ERROR_BACKGROUND_PATH \
@@ -4087,6 +4092,186 @@ static CH_MemCardUI GC_DoomMemCardMakeUI(
         renderer;
 
     return ui;
+}
+
+
+static void GC_DrawStudioIdentFrame(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo,
+    const SDL_Rect *destination,
+    Uint8 alpha)
+{
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(
+        renderer);
+
+    SDL_SetTextureAlphaMod(
+        logo,
+        alpha);
+
+    SDL_RenderCopy(
+        renderer,
+        logo,
+        NULL,
+        destination);
+
+    SDL_RenderPresent(
+        renderer);
+}
+
+
+static void GC_RunStudioIdentFade(
+    SDL_Renderer *renderer,
+    SDL_Texture *logo,
+    const SDL_Rect *destination,
+    bool fadeIn)
+{
+    Uint32 start;
+
+    start = SDL_GetTicks();
+
+    for (;;)
+    {
+        Uint32 elapsed =
+            SDL_GetTicks() - start;
+
+        Uint8 alpha;
+
+        if (elapsed >= GC_STUDIO_IDENT_FADE_MS)
+            break;
+
+        if (fadeIn)
+        {
+            alpha =
+                (Uint8)(
+                    elapsed * 255u
+                    / GC_STUDIO_IDENT_FADE_MS);
+        }
+        else
+        {
+            alpha =
+                (Uint8)(
+                    255u
+                    - elapsed * 255u
+                    / GC_STUDIO_IDENT_FADE_MS);
+        }
+
+        GC_DrawStudioIdentFrame(
+            renderer,
+            logo,
+            destination,
+            alpha);
+
+        SDL_Delay(
+            GC_STUDIO_IDENT_FRAME_MS);
+    }
+
+    GC_DrawStudioIdentFrame(
+        renderer,
+        logo,
+        destination,
+        fadeIn ? 255 : 0);
+}
+
+
+void GC_LauncherRunStudioIdent(
+    SDL_Renderer *renderer)
+{
+    SDL_Texture *logo;
+    SDL_Rect destination;
+    int width;
+    int height;
+
+    if (renderer == NULL)
+        return;
+
+    logo =
+        GC_LoadLauncherBitmap(
+            renderer,
+            GC_STUDIO_IDENT_PATH,
+            "Sperge Brigade Studios ident");
+
+    if (logo == NULL)
+        return;
+
+    if (SDL_QueryTexture(
+            logo,
+            NULL,
+            NULL,
+            &width,
+            &height) != 0)
+    {
+        DC_WARN(
+            "DoomCube: studio ident texture query failed: %s\n",
+            SDL_GetError());
+
+        SDL_DestroyTexture(logo);
+        return;
+    }
+
+    if (SDL_SetTextureBlendMode(
+            logo,
+            SDL_BLENDMODE_BLEND) != 0)
+    {
+        DC_WARN(
+            "DoomCube: studio ident blend mode failed: %s\n",
+            SDL_GetError());
+    }
+
+    destination.h =
+        GC_STUDIO_IDENT_HEIGHT;
+
+    destination.w =
+        width * destination.h / height;
+
+    destination.x =
+        (GC_LAUNCHER_WIDTH - destination.w) / 2;
+
+    destination.y =
+        (480 - destination.h) / 2;
+
+    DC_DEBUG(
+        "DoomCube: studio ident starting "
+        "(fade=%ums hold=%ums fade=%ums)\n",
+        (unsigned int)GC_STUDIO_IDENT_FADE_MS,
+        (unsigned int)GC_STUDIO_IDENT_HOLD_MS,
+        (unsigned int)GC_STUDIO_IDENT_FADE_MS);
+
+    GC_RunStudioIdentFade(
+        renderer,
+        logo,
+        &destination,
+        true);
+
+    SDL_Delay(
+        GC_STUDIO_IDENT_HOLD_MS);
+
+    GC_RunStudioIdentFade(
+        renderer,
+        logo,
+        &destination,
+        false);
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
+
+    SDL_DestroyTexture(logo);
+
+    DC_DEBUG(
+        "DoomCube: studio ident complete\n");
 }
 
 

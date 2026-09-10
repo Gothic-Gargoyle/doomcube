@@ -707,6 +707,9 @@ static bool GC_PlatformInit(void)
         return false;
     }
 
+    GC_LauncherRunStudioIdent(
+        renderer);
+
     GC_LauncherShowMemoryCardChecking(
         renderer);
 
