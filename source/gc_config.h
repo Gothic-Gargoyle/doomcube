@@ -25,9 +25,15 @@ bool GC_ConfigLoad(
 
 
 /*
- * Read-only launcher/configuration view of the existing global config blob.
- * These helpers do not bind Doom variables and never write the Memory Card.
+ * Launcher-safe view of the existing global config blob.
+ *
+ * Snapshot edits happen only in RAM.  Saving persists the raw snapshot
+ * through the existing global DoomCube configuration path; none of these
+ * helpers bind or apply Doom variables.
  */
+void GC_ConfigSnapshotInit(
+    gc_config_snapshot_t *snapshot);
+
 bool GC_ConfigSnapshotLoad(
     gc_config_snapshot_t *snapshot);
 
@@ -35,5 +41,13 @@ bool GC_ConfigSnapshotFindInt(
     const gc_config_snapshot_t *snapshot,
     const char *name,
     int *valueOut);
+
+bool GC_ConfigSnapshotSetInt(
+    gc_config_snapshot_t *snapshot,
+    const char *name,
+    int value);
+
+bool GC_ConfigSnapshotSave(
+    const gc_config_snapshot_t *snapshot);
 
 #endif

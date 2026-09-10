@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -144,7 +145,8 @@ bool GC_ConfigSnapshotLoad(
         return false;
     }
 
-    snapshot->size = 0;
+    GC_ConfigSnapshotInit(
+        snapshot);
 
     if (!GC_ConfigLoad(
             snapshot->data,
@@ -271,4 +273,314 @@ bool GC_ConfigSnapshotFindInt(
     }
 
     return found;
+}
+
+
+void GC_ConfigSnapshotInit(
+    gc_config_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return;
+    }
+
+    snapshot->size = 0;
+}
+
+
+static bool GC_ConfigSnapshotNameValid(
+    const char *name,
+    size_t *lengthOut)
+{
+    size_t length;
+
+    if (name == NULL ||
+        *name == '\0' ||
+        lengthOut == NULL)
+    {
+        return false;
+    }
+
+    length = 0;
+
+    while (name[length] != '\0')
+    {
+        unsigned char ch =
+            (unsigned char)name[length];
+
+        /*
+         * Config variable names are one printable, whitespace-free token.
+         * Reject whitespace/control bytes so a caller cannot inject another
+         * config line through the key name.
+         */
+        if (ch <= 0x20u ||
+            ch >= 0x7fu)
+        {
+            return false;
+        }
+
+        ++length;
+
+        if (length >= GC_CONFIG_SNAPSHOT_CAPACITY)
+        {
+            return false;
+        }
+    }
+
+    *lengthOut =
+        length;
+
+    return true;
+}
+
+
+static bool GC_ConfigSnapshotLineHasName(
+    const gc_config_snapshot_t *snapshot,
+    size_t lineStart,
+    size_t lineContentEnd,
+    const char *name,
+    size_t nameLength)
+{
+    if (snapshot == NULL ||
+        lineContentEnd <= lineStart ||
+        lineContentEnd - lineStart <= nameLength)
+    {
+        return false;
+    }
+
+    if (memcmp(
+            snapshot->data + lineStart,
+            name,
+            nameLength) != 0)
+    {
+        return false;
+    }
+
+    /*
+     * Match the GameCube config parser: it separates a name from its value
+     * at the first literal space.  A tab-separated lookalike therefore
+     * remains untouched rather than being rewritten as a recognized key.
+     */
+    return
+        snapshot->data[lineStart + nameLength] == ' ';
+}
+
+
+bool GC_ConfigSnapshotSetInt(
+    gc_config_snapshot_t *snapshot,
+    const char *name,
+    int value)
+{
+    unsigned char *updated;
+    char valueText[32];
+
+    size_t nameLength;
+    size_t valueLength;
+    size_t cursor;
+    size_t outputSize;
+
+    int formatted;
+
+    if (snapshot == NULL ||
+        snapshot->size > sizeof(snapshot->data) ||
+        !GC_ConfigSnapshotNameValid(
+            name,
+            &nameLength))
+    {
+        return false;
+    }
+
+    formatted =
+        snprintf(
+            valueText,
+            sizeof(valueText),
+            "%d",
+            value);
+
+    if (formatted <= 0 ||
+        (size_t)formatted >= sizeof(valueText))
+    {
+        return false;
+    }
+
+    valueLength =
+        (size_t)formatted;
+
+    updated =
+        malloc(
+            sizeof(snapshot->data));
+
+    if (updated == NULL)
+    {
+        return false;
+    }
+
+    cursor = 0;
+    outputSize = 0;
+
+    while (cursor < snapshot->size)
+    {
+        size_t lineStart =
+            cursor;
+
+        size_t lineContentEnd;
+        size_t lineEnd;
+        size_t matchContentEnd;
+        size_t lineSize;
+
+        while (cursor < snapshot->size &&
+               snapshot->data[cursor] != '\n')
+        {
+            ++cursor;
+        }
+
+        lineContentEnd =
+            cursor;
+
+        if (cursor < snapshot->size &&
+            snapshot->data[cursor] == '\n')
+        {
+            ++cursor;
+        }
+
+        lineEnd =
+            cursor;
+
+        matchContentEnd =
+            lineContentEnd;
+
+        if (matchContentEnd > lineStart &&
+            snapshot->data[matchContentEnd - 1] == '\r')
+        {
+            --matchContentEnd;
+        }
+
+        if (GC_ConfigSnapshotLineHasName(
+                snapshot,
+                lineStart,
+                matchContentEnd,
+                name,
+                nameLength))
+        {
+            /*
+             * Drop every parser-visible occurrence of the key.  The one
+             * canonical entry appended below becomes the sole effective
+             * launcher-owned value while every unrelated line stays intact.
+             */
+            continue;
+        }
+
+        lineSize =
+            lineEnd - lineStart;
+
+        if (lineSize >
+            sizeof(snapshot->data) - outputSize)
+        {
+            free(updated);
+            return false;
+        }
+
+        memcpy(
+            updated + outputSize,
+            snapshot->data + lineStart,
+            lineSize);
+
+        outputSize +=
+            lineSize;
+    }
+
+    /*
+     * If the preserved final line had no newline, add only the delimiter
+     * needed before the new canonical entry.  The preserved line's original
+     * bytes themselves remain unchanged.
+     */
+    if (outputSize > 0 &&
+        updated[outputSize - 1] != '\n')
+    {
+        if (outputSize >= sizeof(snapshot->data))
+        {
+            free(updated);
+            return false;
+        }
+
+        updated[outputSize++] =
+            '\n';
+    }
+
+    if (nameLength >
+        sizeof(snapshot->data) - outputSize)
+    {
+        free(updated);
+        return false;
+    }
+
+    memcpy(
+        updated + outputSize,
+        name,
+        nameLength);
+
+    outputSize +=
+        nameLength;
+
+    if (outputSize >= sizeof(snapshot->data))
+    {
+        free(updated);
+        return false;
+    }
+
+    updated[outputSize++] =
+        ' ';
+
+    if (valueLength >
+        sizeof(snapshot->data) - outputSize)
+    {
+        free(updated);
+        return false;
+    }
+
+    memcpy(
+        updated + outputSize,
+        valueText,
+        valueLength);
+
+    outputSize +=
+        valueLength;
+
+    if (outputSize >= sizeof(snapshot->data))
+    {
+        free(updated);
+        return false;
+    }
+
+    updated[outputSize++] =
+        '\n';
+
+    memcpy(
+        snapshot->data,
+        updated,
+        outputSize);
+
+    snapshot->size =
+        outputSize;
+
+    free(updated);
+
+    return true;
+}
+
+
+bool GC_ConfigSnapshotSave(
+    const gc_config_snapshot_t *snapshot)
+{
+    if (snapshot == NULL ||
+        snapshot->size == 0 ||
+        snapshot->size > sizeof(snapshot->data))
+    {
+        return false;
+    }
+
+    return
+        GC_ConfigSave(
+            snapshot->data,
+            snapshot->size);
 }
