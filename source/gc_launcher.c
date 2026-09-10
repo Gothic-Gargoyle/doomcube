@@ -5,6 +5,7 @@
 #include "gc_debug.h"
 #include "i_sound.h"
 
+#include "gc_config.h"
 #include "gc_launcher.h"
 #include <SDL2/SDL_mixer.h>
 
@@ -28,6 +29,59 @@
 #define GC_LAUNCHER_LINE_HEIGHT  32
 #define GC_LAUNCHER_WIDTH        640
 #define GC_LAUNCHER_DEADZONE     24
+
+
+static void GC_LauncherProbeGlobalConfig(void)
+{
+    static gc_config_snapshot_t snapshot;
+
+    static const char *const integerKeys[] =
+    {
+        "gc_turn_sensitivity",
+        "gc_rumble_enabled",
+        "gc_fire",
+        "gc_use",
+        "gc_run",
+        "sfx_volume",
+        "music_volume",
+        "show_messages",
+        "screenblocks",
+        "detaillevel"
+    };
+
+    size_t i;
+
+    if (!GC_ConfigSnapshotLoad(
+            &snapshot))
+    {
+        DC_INFO(
+            "DoomCube: launcher global config snapshot unavailable\n");
+
+        return;
+    }
+
+    DC_INFO(
+        "DoomCube: launcher global config snapshot loaded (%u bytes)\n",
+        (unsigned int)snapshot.size);
+
+    for (i = 0;
+         i < sizeof(integerKeys) / sizeof(integerKeys[0]);
+         ++i)
+    {
+        int value;
+
+        if (GC_ConfigSnapshotFindInt(
+                &snapshot,
+                integerKeys[i],
+                &value))
+        {
+            DC_INFO(
+                "DoomCube: launcher config %s=%d\n",
+                integerKeys[i],
+                value);
+        }
+    }
+}
 
 #define GC_LAUNCHER_LOGO_PATH    "dvd:/launcher/doomcube.bmp"
 #define GC_LAUNCHER_LOGO_Y       5
@@ -5199,6 +5253,13 @@ bool GC_LauncherSelectGame(
 
     selection->iwadPath = NULL;
     selection->pwadPath = NULL;
+
+    /*
+     * Observe the WAD-independent global configuration before Doom starts.
+     * Doom will bind and apply this same payload later through its normal
+     * configuration lifecycle.
+     */
+    GC_LauncherProbeGlobalConfig();
 
     GC_LauncherScanPwads();
 
