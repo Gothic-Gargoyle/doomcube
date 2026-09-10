@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import struct
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -114,6 +115,48 @@ CAMPAIGNS = (
         iwad="data/wad/doom.wad",
         pwad="data/pwad/doom/SIGIL_II_V1_0.WAD",
     ),
+)
+
+
+#
+# Launcher audio is derived only into the disposable disc-staging tree.
+#
+# Music stays in its original WAD lump representation here. The GameCube
+# launcher can later apply the same MUS/MIDI handling used by DoomCube's
+# already-proven music backend instead of maintaining a second converter
+# in the player-facing Python packer.
+#
+LAUNCHER_CAMPAIGN_MUSIC_LUMPS = {
+    "doom1": "D_E1M1",
+    "doom": "D_E1M1",
+    "doom2": "D_RUNNIN",
+    "tnt": "D_RUNNIN",
+    "plutonia": "D_RUNNIN",
+    "sigil": "D_E5M1",
+    "sigil2": "D_E6M1",
+}
+
+
+#
+# Prefer the ordinary full DOOM family for shared launcher presentation
+# when several IWADs are packed. CUSTOM is a launcher-level entry rather
+# than a campaign, so give it one deterministic intermission track.
+#
+LAUNCHER_CUSTOM_INTERMISSION_SOURCES = (
+    ("DOOM", "data/wad/doom.wad", "D_INTER"),
+    ("DOOM II", "data/wad/doom2.wad", "D_DM2INT"),
+    ("TNT: EVILUTION", "data/wad/tnt.wad", "D_DM2INT"),
+    ("PLUTONIA", "data/wad/plutonia.wad", "D_DM2INT"),
+    ("DOOM SHAREWARE", "data/wad/doom1.wad", "D_INTER"),
+)
+
+
+LAUNCHER_CYBSIT_SOURCES = (
+    ("DOOM", "data/wad/doom.wad"),
+    ("DOOM II", "data/wad/doom2.wad"),
+    ("TNT: EVILUTION", "data/wad/tnt.wad"),
+    ("PLUTONIA", "data/wad/plutonia.wad"),
+    ("DOOM SHAREWARE", "data/wad/doom1.wad"),
 )
 
 
@@ -514,6 +557,359 @@ def generate_font(root: Path) -> bool:
     return True
 
 
+def launcher_music_format(data: bytes) -> str | None:
+    if len(data) >= 4 and data[:4] == b"MUS\x1a":
+        return "MUS"
+
+    if len(data) >= 4 and data[:4] == b"MThd":
+        return "MIDI"
+
+    return None
+
+
+def resolve_raw_lump(
+    wad_paths: list[Path],
+    lump_name: str,
+):
+    loaded = [
+        wadgfx.WadFile(path)
+        for path in wad_paths
+    ]
+
+    for wad in reversed(loaded):
+        lump = wad.find_last(lump_name)
+
+        if lump is not None:
+            return wad, lump, wad.lump_data(lump)
+
+    raise wadgfx.WadError(
+        f"lump {lump_name!r} not found in "
+        + ", ".join(str(path) for path in wad_paths)
+    )
+
+
+def generate_campaign_music(
+    root: Path,
+    output_dir: Path,
+    campaign: Campaign,
+) -> bool:
+    output = output_dir / f"{campaign.key}.lmp"
+
+    if output.exists():
+        output.unlink()
+
+    lump_name = LAUNCHER_CAMPAIGN_MUSIC_LUMPS[campaign.key]
+
+    iwad = root / campaign.iwad
+
+    if not iwad.is_file():
+        info(
+            f"Launcher music {campaign.label}: skipped; "
+            f"missing {campaign.iwad}"
+        )
+        return False
+
+    wad_paths = [iwad]
+
+    if campaign.pwad is not None:
+        pwad = root / campaign.pwad
+
+        if not pwad.is_file():
+            info(
+                f"Launcher music {campaign.label}: skipped; "
+                f"missing {campaign.pwad}"
+            )
+            return False
+
+        wad_paths.append(pwad)
+
+    try:
+        source_wad, _lump, data = resolve_raw_lump(
+            wad_paths,
+            lump_name,
+        )
+
+        music_format = launcher_music_format(data)
+
+        if music_format is None:
+            raise wadgfx.WadError(
+                f"{lump_name} is neither MUS nor MIDI"
+            )
+
+        output.write_bytes(data)
+
+    except (
+        OSError,
+        ValueError,
+        wadgfx.WadError,
+    ) as exc:
+        if output.exists():
+            output.unlink()
+
+        warn(
+            f"Launcher music {campaign.label} unavailable: {exc}"
+        )
+        return False
+
+    print()
+    print(f"[OK] Launcher music {campaign.label}")
+    print(f"     Lump    : {lump_name}")
+    print(f"     Source  : {source_wad.path}")
+    print(f"     Format  : {music_format}")
+    print(f"     Bytes   : {len(data)}")
+    print(
+        "     Output  : "
+        f"{output.relative_to(root).as_posix()}"
+    )
+
+    return True
+
+
+def generate_custom_intermission_music(
+    root: Path,
+    output_dir: Path,
+) -> bool:
+    output = output_dir / "custom.lmp"
+
+    if output.exists():
+        output.unlink()
+
+    for label, relative, lump_name in (
+        LAUNCHER_CUSTOM_INTERMISSION_SOURCES
+    ):
+        source = root / relative
+
+        if not source.is_file():
+            continue
+
+        try:
+            wad = wadgfx.WadFile(source)
+            lump = wad.find_last(lump_name)
+
+            if lump is None:
+                continue
+
+            data = wad.lump_data(lump)
+            music_format = launcher_music_format(data)
+
+            if music_format is None:
+                raise wadgfx.WadError(
+                    f"{lump_name} is neither MUS nor MIDI"
+                )
+
+            output.write_bytes(data)
+
+        except (
+            OSError,
+            ValueError,
+            wadgfx.WadError,
+        ) as exc:
+            warn(
+                f"Launcher CUSTOM intermission unavailable "
+                f"from {relative}: {exc}"
+            )
+            continue
+
+        print()
+        print("[OK] Launcher music CUSTOM")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {source}")
+        print(f"     Lump    : {lump_name}")
+        print(f"     Format  : {music_format}")
+        print(f"     Bytes   : {len(data)}")
+        print(
+            "     Output  : "
+            f"{output.relative_to(root).as_posix()}"
+        )
+
+        return True
+
+    info(
+        "Launcher music CUSTOM: skipped; "
+        "no supported IWAD provides an intermission track"
+    )
+
+    return False
+
+
+def decode_dmx_sound(data: bytes) -> tuple[int, bytes]:
+    if len(data) < 8:
+        raise wadgfx.WadError(
+            "DMX sound lump is shorter than its 8-byte header"
+        )
+
+    if data[0:2] != b"\x03\x00":
+        raise wadgfx.WadError(
+            "DMX sound lump does not have type 3 header"
+        )
+
+    sample_rate, declared_length = struct.unpack_from(
+        "<HI",
+        data,
+        2,
+    )
+
+    if sample_rate <= 0:
+        raise wadgfx.WadError(
+            "DMX sound lump has invalid sample rate"
+        )
+
+    if (
+        declared_length > len(data) - 8
+        or declared_length <= 48
+    ):
+        raise wadgfx.WadError(
+            "DMX sound lump has invalid declared sample length"
+        )
+
+    #
+    # Match Chocolate Doom's DMX compatibility path exactly:
+    #
+    #     data   += 16
+    #     length -= 32
+    #
+    # This intentionally preserves the same trimming behavior used by
+    # DoomCube's normal SFX loader.
+    #
+    pcm_start = 16
+    pcm_length = declared_length - 32
+    pcm_end = pcm_start + pcm_length
+
+    if pcm_end > len(data):
+        raise wadgfx.WadError(
+            "trimmed DMX PCM range extends outside lump"
+        )
+
+    return sample_rate, data[pcm_start:pcm_end]
+
+
+def generate_cybsit_wav(
+    root: Path,
+    output_dir: Path,
+) -> bool:
+    output = output_dir / "cybsit.wav"
+
+    if output.exists():
+        output.unlink()
+
+    for label, relative in LAUNCHER_CYBSIT_SOURCES:
+        source = root / relative
+
+        if not source.is_file():
+            continue
+
+        try:
+            wad = wadgfx.WadFile(source)
+            lump = wad.find_last("DSCYBSIT")
+
+            if lump is None:
+                continue
+
+            sample_rate, pcm = decode_dmx_sound(
+                wad.lump_data(lump)
+            )
+
+            with wave.open(str(output), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(1)
+                wav.setframerate(sample_rate)
+                wav.writeframes(pcm)
+
+        except (
+            OSError,
+            ValueError,
+            wave.Error,
+            wadgfx.WadError,
+        ) as exc:
+            if output.exists():
+                output.unlink()
+
+            warn(
+                f"Launcher DSCYBSIT unavailable "
+                f"from {relative}: {exc}"
+            )
+            continue
+
+        print()
+        print("[OK] Launcher Cyberdemon ident sound")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {source}")
+        print("     Lump    : DSCYBSIT")
+        print(f"     Rate    : {sample_rate} Hz")
+        print(f"     PCM     : {len(pcm)} bytes")
+        print(
+            "     Output  : "
+            f"{output.relative_to(root).as_posix()}"
+        )
+
+        return True
+
+    info(
+        "Launcher Cyberdemon ident sound: skipped; "
+        "no supported IWAD provides DSCYBSIT"
+    )
+
+    return False
+
+
+def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
+    audio_dir = root / "launcher" / "audio"
+    music_dir = root / "launcher" / "music"
+
+    audio_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    music_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    generated = 0
+
+    for campaign in CAMPAIGNS:
+        if generate_campaign_music(
+            root,
+            music_dir,
+            campaign,
+        ):
+            generated += 1
+
+    custom_generated = generate_custom_intermission_music(
+        root,
+        music_dir,
+    )
+
+    if custom_generated:
+        generated += 1
+
+    roar_generated = generate_cybsit_wav(
+        root,
+        audio_dir,
+    )
+
+    expected = len(CAMPAIGNS) + 1
+
+    print()
+    print(
+        "Launcher music: "
+        f"{generated} generated, "
+        f"{expected - generated} skipped"
+    )
+
+    print(
+        "Launcher ident audio: "
+        + (
+            "generated"
+            if roar_generated
+            else "not generated"
+        )
+    )
+
+    return generated, expected - generated, roar_generated
+
+
 def generate_launcher_assets(root: Path) -> tuple[int, int]:
     output_dir = (
         root
@@ -564,6 +960,7 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
     generate_doom_menu_skull(root)
     generate_doom_memcard_art(root)
     generate_splash_cube(root)
+    generate_launcher_audio(root)
 
     return generated, skipped
 
