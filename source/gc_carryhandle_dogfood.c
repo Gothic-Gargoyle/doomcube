@@ -346,7 +346,7 @@ static void logDogfoodZlibFailure(
     int zResult)
 {
     DC_WARN(
-        "DoomCube: CarryHandle dogfood %s zlib failed: %d "
+        "DoomCube: CarryHandle save %s zlib failed: %d "
         "fixed_used=%lu fixed_peak=%lu fixed_capacity=%lu "
         "failed_request=%lu allocator_failed=%d\n",
         operation ? operation : "UNKNOWN",
@@ -430,7 +430,7 @@ void GC_CHDogfoodSetLaunchIdentity(
         iwadPath[0] == '\0')
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood launch identity missing IWAD\n"
+            "DoomCube: CarryHandle save launch identity missing IWAD\n"
         );
 
         return;
@@ -450,7 +450,7 @@ void GC_CHDogfoodSetLaunchIdentity(
             sizeof(dogfoodIwadPath))
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood IWAD path too long\n"
+            "DoomCube: CarryHandle save IWAD path too long\n"
         );
 
         return;
@@ -470,7 +470,7 @@ void GC_CHDogfoodSetLaunchIdentity(
             sizeof(dogfoodPwadPath))
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood PWAD path too long\n"
+            "DoomCube: CarryHandle save PWAD path too long\n"
         );
 
         return;
@@ -491,7 +491,7 @@ void GC_CHDogfoodSetLaunchIdentity(
             sizeof(dogfoodScope))
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood scope too long\n"
+            "DoomCube: CarryHandle save scope too long\n"
         );
 
         return;
@@ -506,7 +506,7 @@ void GC_CHDogfoodSetLaunchIdentity(
 
 
     DC_INFO(
-        "DoomCube: CarryHandle dogfood identity: "
+        "DoomCube: CarryHandle save identity: "
         "IWAD=%s PWAD=%s\n",
         dogfoodIwadPath,
         dogfoodPwadPath[0]
@@ -536,7 +536,7 @@ void GC_CHDogfoodPrimeSaveCache(void)
 
 
     DC_INFO(
-        "DoomCube: CarryHandle dogfood priming slot 0 cache\n"
+        "DoomCube: CarryHandle save priming slot 0 cache\n"
     );
 
 
@@ -557,7 +557,7 @@ void GC_CHDogfoodPrimeSaveCache(void)
         invalidateDogfoodSaveCache();
 
         DC_DEBUG(
-            "DoomCube: CarryHandle dogfood slot 0 cache not primed\n"
+            "DoomCube: CarryHandle save slot 0 cache not primed\n"
         );
 
         return;
@@ -576,7 +576,7 @@ void GC_CHDogfoodPrimeSaveCache(void)
 
 
     DC_INFO(
-        "DoomCube: CarryHandle dogfood slot 0 cache READY "
+        "DoomCube: CarryHandle save slot 0 cache READY "
         "(%lu bytes)\n",
         (unsigned long)dogfoodSaveCacheSize
     );
@@ -599,7 +599,7 @@ static bool restoreLegacyCard(void)
     if (!initialized)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood could not remount "
+            "DoomCube: CarryHandle save could not remount "
             "legacy Memory Card backend\n"
         );
 
@@ -620,7 +620,7 @@ static bool restoreLegacyCard(void)
      * identity in memory.
      */
     DC_DEBUG(
-        "DoomCube: CarryHandle dogfood returned CARD A "
+        "DoomCube: CarryHandle save returned CARD A "
         "to preflight backend without identity rebuild\n"
     );
 
@@ -669,7 +669,7 @@ static bool openDogfoodSave(
         CH_APPLICATION_SAVE_RESULT_OK)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood Open failed: "
+            "DoomCube: CarryHandle save Open failed: "
             "result=%d CARD=%ld TX=%d\n",
             (int)result,
             (long)save->card_result,
@@ -680,7 +680,7 @@ static bool openDogfoodSave(
         if (!restoreLegacyCard())
         {
             DC_WARN(
-                "DoomCube: CarryHandle dogfood legacy restore "
+                "DoomCube: CarryHandle save legacy restore "
                 "also failed\n"
             );
         }
@@ -691,7 +691,7 @@ static bool openDogfoodSave(
 
 
     DC_DEBUG(
-        "DoomCube: CarryHandle dogfood %s %s "
+        "DoomCube: CarryHandle save %s %s "
         "(%lu sectors)\n",
         dogfoodDescriptor.filename,
         CH_ApplicationSaveWasCreated(save)
@@ -727,7 +727,7 @@ static bool closeDogfoodSave(
         CH_APPLICATION_SAVE_RESULT_OK)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood Close failed: %d\n",
+            "DoomCube: CarryHandle save Close failed: %d\n",
             (int)closeResult
         );
     }
@@ -1117,7 +1117,7 @@ actualSize)
             bufferSize)
         {
             DC_WARN(
-                "DoomCube: CarryHandle dogfood slot 0 cache "
+                "DoomCube: CarryHandle save slot 0 cache "
                 "exceeds caller buffer\n"
             );
 
@@ -1137,7 +1137,7 @@ actualSize)
 
 
         DC_DEBUG(
-            "DoomCube: CarryHandle dogfood slot 0 "
+            "DoomCube: CarryHandle save slot 0 "
             "GET CACHE PASS (%lu bytes)\n",
             (unsigned long)dogfoodSaveCacheSize
         );
@@ -1219,7 +1219,7 @@ actualSize)
                 compressedSize == 0u)
             {
                 DC_WARN(
-                    "DoomCube: CarryHandle dogfood slot 0 "
+                    "DoomCube: CarryHandle save slot 0 "
                     "compressed frame invalid "
                     "raw=%lu compressed=%lu stored=%lu\n",
                     (unsigned long)rawSize,
@@ -1313,7 +1313,7 @@ actualSize)
                         expectedCrc)
                     {
                         DC_WARN(
-                            "DoomCube: CarryHandle dogfood slot 0 "
+                            "DoomCube: CarryHandle save slot 0 "
                             "CRC mismatch expected=%08lx actual=%08lx\n",
                             (unsigned long)expectedCrc,
                             (unsigned long)actualCrc
@@ -1328,7 +1328,7 @@ actualSize)
                             true;
 
                         DC_INFO(
-                            "DoomCube: CarryHandle dogfood slot 0 "
+                            "DoomCube: CarryHandle save slot 0 "
                             "GET PASS raw=%lu compressed=%lu "
                             "fixed_zlib_peak=%lu\n",
                             (unsigned long)rawSize,
@@ -1356,7 +1356,7 @@ actualSize)
                     GC_CH_DOGFOOD_SAVE_MAX)
             {
                 DC_WARN(
-                    "DoomCube: CarryHandle dogfood slot 0 "
+                    "DoomCube: CarryHandle save slot 0 "
                     "legacy raw object too large (%lu bytes)\n",
                     (unsigned long)storedSize
                 );
@@ -1376,7 +1376,7 @@ actualSize)
                     true;
 
                 DC_INFO(
-                    "DoomCube: CarryHandle dogfood slot 0 "
+                    "DoomCube: CarryHandle save slot 0 "
                     "GET PASS legacy raw=%lu\n",
                     (unsigned long)storedSize
                 );
@@ -1387,13 +1387,13 @@ actualSize)
              CH_PERSIST_RESULT_NOT_FOUND)
     {
         DC_DEBUG(
-            "DoomCube: CarryHandle dogfood slot 0 empty\n"
+            "DoomCube: CarryHandle save slot 0 empty\n"
         );
     }
     else
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 "
+            "DoomCube: CarryHandle save slot 0 "
             "GET failed: %d\n",
             (int)result
         );
@@ -1414,7 +1414,7 @@ actualSize)
                 *actualSize))
         {
             DC_WARN(
-                "DoomCube: CarryHandle dogfood slot 0 "
+                "DoomCube: CarryHandle save slot 0 "
                 "cache update failed after GET\n"
             );
 
@@ -1475,7 +1475,7 @@ bool GC_CHDogfoodWriteSave(
         (size_t)ULONG_MAX)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 "
+            "DoomCube: CarryHandle save slot 0 "
             "too large for zlib\n"
         );
 
@@ -1497,7 +1497,7 @@ bool GC_CHDogfoodWriteSave(
         compressedCapacity)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood fixed compressed buffer "
+            "DoomCube: CarryHandle save fixed compressed buffer "
             "too small: need=%lu have=%lu\n",
             (unsigned long)compressedBound,
             (unsigned long)compressedCapacity
@@ -1601,7 +1601,7 @@ bool GC_CHDogfoodWriteSave(
         UINT32_MAX)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 "
+            "DoomCube: CarryHandle save slot 0 "
             "compressed payload exceeds framing limits\n"
         );
 
@@ -1658,7 +1658,7 @@ bool GC_CHDogfoodWriteSave(
 
 
     DC_INFO(
-        "DoomCube: CarryHandle dogfood slot 0 DEFLATE "
+        "DoomCube: CarryHandle save slot 0 DEFLATE "
         "raw=%lu compressed=%lu object=%lu fixed_zlib_peak=%lu\n",
         (unsigned long)size,
         (unsigned long)compressedSize,
@@ -1697,7 +1697,7 @@ bool GC_CHDogfoodWriteSave(
         CH_PERSIST_RESULT_OK)
     {
         DC_INFO(
-            "DoomCube: CarryHandle dogfood slot 0 PUT PASS "
+            "DoomCube: CarryHandle save slot 0 PUT PASS "
             "raw=%lu stored=%lu\n",
             (unsigned long)size,
             (unsigned long)storedSize
@@ -1706,7 +1706,7 @@ bool GC_CHDogfoodWriteSave(
     else
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 PUT "
+            "DoomCube: CarryHandle save slot 0 PUT "
             "failed: %d\n",
             (int)result
         );
@@ -1732,14 +1732,14 @@ bool GC_CHDogfoodWriteSave(
                 size))
         {
             DC_WARN(
-                "DoomCube: CarryHandle dogfood slot 0 "
+                "DoomCube: CarryHandle save slot 0 "
                 "cache update failed after PUT\n"
             );
         }
         else
         {
             DC_DEBUG(
-                "DoomCube: CarryHandle dogfood slot 0 "
+                "DoomCube: CarryHandle save slot 0 "
                 "cache updated after PUT (%lu bytes)\n",
                 (unsigned long)size
             );

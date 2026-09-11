@@ -1738,7 +1738,7 @@ void GC_MemoryCardSetLaunchIdentity(
     );
 
     DC_INFO(
-        "DoomCube: v3 identity key: "
+        "DoomCube: save identity key: "
         "iwad=%08x/%u pwad=%08x/%u has_pwad=%u\n",
         (unsigned int)currentV3Identity.iwad.crc32,
         (unsigned int)currentV3Identity.iwad.size,
