@@ -4200,6 +4200,101 @@ static bool GC_LauncherOptionsApplyMusicVolume(
 }
 
 
+static int GC_LauncherOptionsMessagesValue(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 1;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(config, "show_messages", &loaded))
+        value = loaded ? 1 : 0;
+
+    return value;
+}
+
+
+static bool GC_LauncherOptionsStageMessagesValue(
+    GC_LauncherOptionsConfig *config,
+    int enabled)
+{
+    return GC_LauncherOptionsConfigSetInt(
+        config, "show_messages", enabled ? 1 : 0);
+}
+
+
+static int GC_LauncherOptionsScreenBlocks(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 10;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(config, "screenblocks", &loaded))
+        value = loaded;
+
+    if (value < 3) value = 3;
+    else if (value > 11) value = 11;
+    return value;
+}
+
+
+static bool GC_LauncherOptionsStageScreenBlocks(
+    GC_LauncherOptionsConfig *config,
+    int value)
+{
+    if (value < 3) value = 3;
+    else if (value > 11) value = 11;
+    return GC_LauncherOptionsConfigSetInt(config, "screenblocks", value);
+}
+
+
+static int GC_LauncherOptionsDetailLevel(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 0;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(config, "detaillevel", &loaded))
+        value = loaded ? 1 : 0;
+
+    return value;
+}
+
+
+static bool GC_LauncherOptionsStageDetailLevel(
+    GC_LauncherOptionsConfig *config,
+    int value)
+{
+    return GC_LauncherOptionsConfigSetInt(
+        config, "detaillevel", value ? 1 : 0);
+}
+
+
+static int GC_LauncherOptionsTurnSensitivity(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 100;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(config, "gc_turn_sensitivity", &loaded))
+        value = loaded;
+
+    if (value < 25) value = 25;
+    else if (value > 200) value = 200;
+    return value;
+}
+
+
+static bool GC_LauncherOptionsStageTurnSensitivity(
+    GC_LauncherOptionsConfig *config,
+    int value)
+{
+    if (value < 25) value = 25;
+    else if (value > 200) value = 200;
+    return GC_LauncherOptionsConfigSetInt(
+        config, "gc_turn_sensitivity", value);
+}
+
+
 static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
 {
     SDL_Texture *texture=GC_LoadDoomMenuSkull(renderer);
@@ -4218,58 +4313,31 @@ static void GC_DrawOptionsLauncher(
     int selectedRow,
     int rumbleEnabled,
     int sfxVolume,
-    int musicVolume)
+    int musicVolume,
+    int messagesEnabled,
+    int screenBlocks,
+    int detailLevel,
+    int turnSensitivity)
 {
     SDL_Texture *background;
     SDL_Texture *bGlyph;
-    SDL_Rect fullscreen =
-        { 0, 0, GC_LAUNCHER_WIDTH, 480 };
-    const char *rumbleValue =
-        rumbleEnabled ? "ON" : "OFF";
-    char sfxValue[16];
-    char musicValue[16];
-    int titleWidth;
-    int valueWidth;
-    int backWidth;
-    int backX;
-    int skullY;
+    SDL_Rect fullscreen={0,0,GC_LAUNCHER_WIDTH,480};
+    const char *rumbleValue=rumbleEnabled ? "ON" : "OFF";
+    const char *messagesValue=messagesEnabled ? "ON" : "OFF";
+    const char *detailValue=detailLevel ? "LOW" : "HIGH";
+    char sfxValue[16],musicValue[16],screenValue[16],turnValue[16];
+    int titleWidth,valueWidth,backWidth,backX;
+    int rowY=112+selectedRow*42;
+    int skullY=rowY-14;
 
-    switch (selectedRow)
-    {
-        case 1:
-            skullY = 246;
-            break;
-
-        case 2:
-            skullY = 296;
-            break;
-
-        default:
-            skullY = 196;
-            break;
-    }
-
-    snprintf(
-        sfxValue,
-        sizeof(sfxValue),
-        "%d",
-        sfxVolume);
-
-    snprintf(
-        musicValue,
-        sizeof(musicValue),
-        "%d",
-        musicVolume);
+    snprintf(sfxValue,sizeof(sfxValue),"%d",sfxVolume);
+    snprintf(musicValue,sizeof(musicValue),"%d",musicVolume);
+    snprintf(screenValue,sizeof(screenValue),"%d",screenBlocks);
+    snprintf(turnValue,sizeof(turnValue),"%d%%",turnSensitivity);
 
     SDL_SetRenderDrawColor(renderer,0,0,0,255);
     SDL_RenderClear(renderer);
-
-    background =
-        GC_LoadLauncherBitmap(
-            renderer,
-            GC_OPTIONS_BACKGROUND_PATH,
-            "OPTIONS INTERPIC");
-
+    background=GC_LoadLauncherBitmap(renderer,GC_OPTIONS_BACKGROUND_PATH,"OPTIONS INTERPIC");
     if (background != NULL)
     {
         (void)SDL_RenderCopy(renderer,background,NULL,&fullscreen);
@@ -4277,21 +4345,36 @@ static void GC_DrawOptionsLauncher(
     }
 
     titleWidth=GC_TextWidth("OPTIONS",4);
-    GC_DrawText(renderer,(GC_LAUNCHER_WIDTH-titleWidth)/2,70,"OPTIONS",4);
-
+    GC_DrawText(renderer,(GC_LAUNCHER_WIDTH-titleWidth)/2,44,"OPTIONS",4);
     GC_DrawOptionsSkull(renderer,142,skullY);
 
-    GC_DrawText(renderer,190,210,"RUMBLE",3);
+    GC_DrawText(renderer,190,112,"RUMBLE",3);
     valueWidth=GC_TextWidth(rumbleValue,3);
-    GC_DrawText(renderer,450-valueWidth,210,rumbleValue,3);
+    GC_DrawText(renderer,470-valueWidth,112,rumbleValue,3);
 
-    GC_DrawText(renderer,190,260,"SFX VOLUME",3);
+    GC_DrawText(renderer,190,154,"SFX VOLUME",3);
     valueWidth=GC_TextWidth(sfxValue,3);
-    GC_DrawText(renderer,450-valueWidth,260,sfxValue,3);
+    GC_DrawText(renderer,470-valueWidth,154,sfxValue,3);
 
-    GC_DrawText(renderer,190,310,"MUSIC VOLUME",3);
+    GC_DrawText(renderer,190,196,"MUSIC VOLUME",3);
     valueWidth=GC_TextWidth(musicValue,3);
-    GC_DrawText(renderer,450-valueWidth,310,musicValue,3);
+    GC_DrawText(renderer,470-valueWidth,196,musicValue,3);
+
+    GC_DrawText(renderer,190,238,"MESSAGES",3);
+    valueWidth=GC_TextWidth(messagesValue,3);
+    GC_DrawText(renderer,470-valueWidth,238,messagesValue,3);
+
+    GC_DrawText(renderer,190,280,"SCREEN SIZE",3);
+    valueWidth=GC_TextWidth(screenValue,3);
+    GC_DrawText(renderer,470-valueWidth,280,screenValue,3);
+
+    GC_DrawText(renderer,190,322,"DETAIL",3);
+    valueWidth=GC_TextWidth(detailValue,3);
+    GC_DrawText(renderer,470-valueWidth,322,detailValue,3);
+
+    GC_DrawText(renderer,190,364,"TURN SENS.",3);
+    valueWidth=GC_TextWidth(turnValue,3);
+    GC_DrawText(renderer,470-valueWidth,364,turnValue,3);
 
     bGlyph=GC_LoadCarouselControllerGlyph(renderer,&gcCarouselBGlyph,CH_CONTROLLER_GLYPH_B,GC_CAROUSEL_ACTION_GLYPH_SIZE,"OPTIONS B");
     backWidth=GC_TextWidth("BACK",3);
@@ -4302,58 +4385,39 @@ static void GC_DrawOptionsLauncher(
     SDL_RenderPresent(renderer);
 }
 
+
 static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 {
     GC_LauncherOptionsConfig config;
-    int selectedRow = 0;
-    int rumbleEnabled;
-    int sfxVolume;
-    int musicVolume;
+    int selectedRow=0;
+    int rumbleEnabled,sfxVolume,musicVolume,messagesEnabled;
+    int screenBlocks,detailLevel,turnSensitivity;
 
-    /*
-     * One Memory Card config read per OPTIONS visit.
-     *
-     * Every row reads and edits this same in-RAM snapshot.
-     */
-    GC_LauncherOptionsConfigInit(
-        &config);
-
-    rumbleEnabled =
-        GC_LauncherOptionsRumbleValue(
-            &config);
-
-    sfxVolume =
-        GC_LauncherOptionsSfxVolume(
-            &config);
-
-    musicVolume =
-        GC_LauncherOptionsMusicVolume(
-            &config);
+    GC_LauncherOptionsConfigInit(&config);
+    rumbleEnabled=GC_LauncherOptionsRumbleValue(&config);
+    sfxVolume=GC_LauncherOptionsSfxVolume(&config);
+    musicVolume=GC_LauncherOptionsMusicVolume(&config);
+    messagesEnabled=GC_LauncherOptionsMessagesValue(&config);
+    screenBlocks=GC_LauncherOptionsScreenBlocks(&config);
+    detailLevel=GC_LauncherOptionsDetailLevel(&config);
+    turnSensitivity=GC_LauncherOptionsTurnSensitivity(&config);
 
     (void)GC_LauncherMusicUseIntermission();
+    (void)GC_LauncherOptionsApplyMusicVolume(musicVolume);
 
-    /*
-     * Apply the stored/current-session music setting to the already-running
-     * launcher music without restarting it.
-     */
-    (void)GC_LauncherOptionsApplyMusicVolume(
-        musicVolume);
+#define REDRAW_OPTIONS() \
+    GC_DrawOptionsLauncher(renderer,selectedRow,rumbleEnabled,sfxVolume,musicVolume, \
+        messagesEnabled,screenBlocks,detailLevel,turnSensitivity)
 
-    GC_DrawOptionsLauncher(
-        renderer,
-        selectedRow,
-        rumbleEnabled,
-        sfxVolume,
-        musicVolume);
+    REDRAW_OPTIONS();
 
     DC_INFO(
-        "DoomCube: OPTIONS opened; rumble=%d "
-        "sfx_volume=%d music_volume=%d\n",
-        rumbleEnabled,
-        sfxVolume,
-        musicVolume);
+        "DoomCube: OPTIONS opened; rumble=%d sfx_volume=%d music_volume=%d "
+        "show_messages=%d screenblocks=%d detaillevel=%d gc_turn_sensitivity=%d\n",
+        rumbleEnabled,sfxVolume,musicVolume,messagesEnabled,
+        screenBlocks,detailLevel,turnSensitivity);
 
-    for (int i = 0; i < 3; ++i)
+    for (int i=0;i<3;++i)
     {
         PAD_ScanPads();
         (void)PAD_ButtonsDown(0);
@@ -4363,188 +4427,122 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
     while (SYS_MainLoop())
     {
         u16 down;
-
         PAD_ScanPads();
-
-        down =
-            PAD_ButtonsDown(0);
+        down=PAD_ButtonsDown(0);
 
         if (down & PAD_BUTTON_B)
         {
-            bool flushed =
-                GC_LauncherOptionsConfigFlush(
-                    &config);
-
+            bool flushed=GC_LauncherOptionsConfigFlush(&config);
             DC_INFO(
-                "DoomCube: OPTIONS returning to carousel "
-                "(flush=%d dirty=%d)\n",
-                flushed ? 1 : 0,
-                config.dirty ? 1 : 0);
-
+                "DoomCube: OPTIONS returning to carousel (flush=%d dirty=%d)\n",
+                flushed ? 1 : 0,config.dirty ? 1 : 0);
             return 0;
         }
 
         if (down & PAD_BUTTON_UP)
         {
-            if (selectedRow > 0)
-                --selectedRow;
-
-            GC_DrawOptionsLauncher(
-                renderer,
-                selectedRow,
-                rumbleEnabled,
-                sfxVolume,
-                musicVolume);
+            if (selectedRow > 0) --selectedRow;
+            REDRAW_OPTIONS();
         }
 
         if (down & PAD_BUTTON_DOWN)
         {
-            if (selectedRow < 2)
-                ++selectedRow;
-
-            GC_DrawOptionsLauncher(
-                renderer,
-                selectedRow,
-                rumbleEnabled,
-                sfxVolume,
-                musicVolume);
+            if (selectedRow < 6) ++selectedRow;
+            REDRAW_OPTIONS();
         }
 
-        if ((down & PAD_BUTTON_A) &&
-            selectedRow == 0)
+        if ((down & PAD_BUTTON_A) && selectedRow == 0)
         {
             bool staged;
-
-            rumbleEnabled =
-                rumbleEnabled ? 0 : 1;
-
-            GC_RumbleSetSessionOverride(
-                rumbleEnabled != 0);
-
-            GC_DrawOptionsLauncher(
-                renderer,
-                selectedRow,
-                rumbleEnabled,
-                sfxVolume,
-                musicVolume);
-
-            if (rumbleEnabled)
-            {
-                GC_RumblePulseTicks(
-                    4);
-            }
-
-            staged =
-                GC_LauncherOptionsStageRumbleValue(
-                    &config,
-                    rumbleEnabled);
-
-            DC_INFO(
-                "DoomCube: OPTIONS rumble changed to %d "
-                "(session=1 staged=%d)\n",
-                rumbleEnabled,
-                staged ? 1 : 0);
+            rumbleEnabled=rumbleEnabled ? 0 : 1;
+            GC_RumbleSetSessionOverride(rumbleEnabled != 0);
+            REDRAW_OPTIONS();
+            if (rumbleEnabled) GC_RumblePulseTicks(4);
+            staged=GC_LauncherOptionsStageRumbleValue(&config,rumbleEnabled);
+            DC_INFO("DoomCube: OPTIONS rumble changed to %d (session=1 staged=%d)\n",rumbleEnabled,staged ? 1 : 0);
         }
 
-        if (selectedRow == 1 &&
-            (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        if (selectedRow == 1 && (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
         {
-            int oldVolume =
-                sfxVolume;
-
-            bool staged;
-
-            if ((down & PAD_BUTTON_LEFT) &&
-                sfxVolume > 0)
+            int old=sfxVolume; bool staged;
+            if ((down & PAD_BUTTON_LEFT) && sfxVolume > 0) --sfxVolume;
+            if ((down & PAD_BUTTON_RIGHT) && sfxVolume < 15) ++sfxVolume;
+            if (sfxVolume != old)
             {
-                --sfxVolume;
-            }
-
-            if ((down & PAD_BUTTON_RIGHT) &&
-                sfxVolume < 15)
-            {
-                ++sfxVolume;
-            }
-
-            if (sfxVolume != oldVolume)
-            {
-                staged =
-                    GC_LauncherOptionsStageSfxVolume(
-                        &config,
-                        sfxVolume);
-
-                GC_DrawOptionsLauncher(
-                    renderer,
-                    selectedRow,
-                    rumbleEnabled,
-                    sfxVolume,
-                    musicVolume);
-
-                DC_INFO(
-                    "DoomCube: OPTIONS sfx_volume changed to %d "
-                    "(session=1 staged=%d)\n",
-                    sfxVolume,
-                    staged ? 1 : 0);
+                staged=GC_LauncherOptionsStageSfxVolume(&config,sfxVolume);
+                REDRAW_OPTIONS();
+                DC_INFO("DoomCube: OPTIONS sfx_volume changed to %d (session=1 staged=%d)\n",sfxVolume,staged ? 1 : 0);
             }
         }
 
-        if (selectedRow == 2 &&
-            (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        if (selectedRow == 2 && (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
         {
-            int oldVolume =
-                musicVolume;
+            int old=musicVolume; bool staged;
+            if ((down & PAD_BUTTON_LEFT) && musicVolume > 0) --musicVolume;
+            if ((down & PAD_BUTTON_RIGHT) && musicVolume < 15) ++musicVolume;
+            if (musicVolume != old)
+            {
+                (void)GC_LauncherOptionsApplyMusicVolume(musicVolume);
+                staged=GC_LauncherOptionsStageMusicVolume(&config,musicVolume);
+                REDRAW_OPTIONS();
+                DC_INFO("DoomCube: OPTIONS music_volume changed to %d (session=1 staged=%d)\n",musicVolume,staged ? 1 : 0);
+            }
+        }
 
+        if ((down & PAD_BUTTON_A) && selectedRow == 3)
+        {
             bool staged;
+            messagesEnabled=messagesEnabled ? 0 : 1;
+            staged=GC_LauncherOptionsStageMessagesValue(&config,messagesEnabled);
+            REDRAW_OPTIONS();
+            DC_INFO("DoomCube: OPTIONS show_messages changed to %d (session=1 staged=%d)\n",messagesEnabled,staged ? 1 : 0);
+        }
 
-            if ((down & PAD_BUTTON_LEFT) &&
-                musicVolume > 0)
+        if (selectedRow == 4 && (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        {
+            int old=screenBlocks; bool staged;
+            if ((down & PAD_BUTTON_LEFT) && screenBlocks > 3) --screenBlocks;
+            if ((down & PAD_BUTTON_RIGHT) && screenBlocks < 11) ++screenBlocks;
+            if (screenBlocks != old)
             {
-                --musicVolume;
+                staged=GC_LauncherOptionsStageScreenBlocks(&config,screenBlocks);
+                REDRAW_OPTIONS();
+                DC_INFO("DoomCube: OPTIONS screenblocks changed to %d (session=1 staged=%d)\n",screenBlocks,staged ? 1 : 0);
             }
+        }
 
-            if ((down & PAD_BUTTON_RIGHT) &&
-                musicVolume < 15)
+        if ((down & PAD_BUTTON_A) && selectedRow == 5)
+        {
+            bool staged;
+            detailLevel=detailLevel ? 0 : 1;
+            staged=GC_LauncherOptionsStageDetailLevel(&config,detailLevel);
+            REDRAW_OPTIONS();
+            DC_INFO("DoomCube: OPTIONS detaillevel changed to %d (session=1 staged=%d)\n",detailLevel,staged ? 1 : 0);
+        }
+
+        if (selectedRow == 6 && (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        {
+            int old=turnSensitivity; bool staged;
+            if (down & PAD_BUTTON_LEFT) turnSensitivity-=5;
+            if (down & PAD_BUTTON_RIGHT) turnSensitivity+=5;
+            if (turnSensitivity < 25) turnSensitivity=25;
+            else if (turnSensitivity > 200) turnSensitivity=200;
+            if (turnSensitivity != old)
             {
-                ++musicVolume;
-            }
-
-            if (musicVolume != oldVolume)
-            {
-                /*
-                 * Preview first: this should be audibly immediate and must not
-                 * depend on whether Memory Card persistence succeeds.
-                 */
-                (void)GC_LauncherOptionsApplyMusicVolume(
-                    musicVolume);
-
-                staged =
-                    GC_LauncherOptionsStageMusicVolume(
-                        &config,
-                        musicVolume);
-
-                GC_DrawOptionsLauncher(
-                    renderer,
-                    selectedRow,
-                    rumbleEnabled,
-                    sfxVolume,
-                    musicVolume);
-
-                DC_INFO(
-                    "DoomCube: OPTIONS music_volume changed to %d "
-                    "(session=1 staged=%d)\n",
-                    musicVolume,
-                    staged ? 1 : 0);
+                staged=GC_LauncherOptionsStageTurnSensitivity(&config,turnSensitivity);
+                REDRAW_OPTIONS();
+                DC_INFO("DoomCube: OPTIONS gc_turn_sensitivity changed to %d (session=1 staged=%d)\n",turnSensitivity,staged ? 1 : 0);
             }
         }
 
         SDL_Delay(16);
     }
 
-    (void)GC_LauncherOptionsConfigFlush(
-        &config);
-
+    (void)GC_LauncherOptionsConfigFlush(&config);
+#undef REDRAW_OPTIONS
     return -1;
 }
+
 
 static Mix_Chunk *gcLauncherMenuChooseChunk;
 static int gcLauncherMenuChooseChannel = -1;
