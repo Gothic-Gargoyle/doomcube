@@ -244,3 +244,7 @@ endorsed by id Software, Bethesda, ZeniMax or Nintendo.
 
 See the repository's licensing information and the notices accompanying
 bundled third-party components for their respective terms.
+
+## Known Issues
+
+* **SIGIL II:** after extended play or repeated music transitions, a later MIDI track may fail to start in SDL2_mixer/TiMidity. DoomCube fails that music load safely instead of crashing; gameplay continues without music. Deeper music-memory work is deferred to a later release.
