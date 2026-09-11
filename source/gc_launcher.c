@@ -3288,31 +3288,67 @@ typedef struct GC_LauncherMusicState
 static GC_LauncherMusicState gcLauncherMusic;
 
 
+
+typedef struct GC_LauncherMusicCacheEntry
+{
+    const char *path;
+    Mix_Music *music;
+} GC_LauncherMusicCacheEntry;
+
+
+static GC_LauncherMusicCacheEntry gcLauncherMusicCache[] =
+{
+    { GC_LAUNCHER_MUSIC_DOOM1_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_DOOM_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_DOOM2_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_TNT_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_PLUTONIA_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_SIGIL_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_SIGIL2_PATH, NULL },
+    { GC_LAUNCHER_MUSIC_CUSTOM_PATH, NULL }
+};
+
+#define GC_LAUNCHER_MUSIC_CACHE_COUNT \
+    ((int)(sizeof(gcLauncherMusicCache) / sizeof(gcLauncherMusicCache[0])))
+
+
+
+
 static void GC_LauncherMusicStopCurrent(void)
 {
-    if (gcLauncherMusic.music == NULL)
+    if (gcLauncherMusic.music != NULL)
     {
-        gcLauncherMusic.currentPath = NULL;
-        return;
+        Mix_HaltMusic();
     }
-
-    Mix_HaltMusic();
-
-    Mix_FreeMusic(
-        gcLauncherMusic.music);
 
     gcLauncherMusic.music = NULL;
     gcLauncherMusic.currentPath = NULL;
 }
 
 
+
 static void GC_LauncherMenuChooseShutdown(bool waitForPlayback);
 
 static void GC_LauncherMusicShutdown(void)
 {
+    int i;
+
     GC_LauncherMenuChooseShutdown(true);
 
     GC_LauncherMusicStopCurrent();
+
+    for (i = 0;
+         i < GC_LAUNCHER_MUSIC_CACHE_COUNT;
+         ++i)
+    {
+        if (gcLauncherMusicCache[i].music != NULL)
+        {
+            Mix_FreeMusic(
+                gcLauncherMusicCache[i].music);
+
+            gcLauncherMusicCache[i].music = NULL;
+        }
+    }
 
     if (gcLauncherMusic.openedMixer)
     {
@@ -3342,6 +3378,7 @@ static void GC_LauncherMusicShutdown(void)
 
     gcLauncherMusic.ready = false;
 }
+
 
 
 static bool GC_LauncherMusicEnsureReady(void)
@@ -3445,16 +3482,94 @@ static bool GC_LauncherMusicEnsureReady(void)
 }
 
 
+static GC_LauncherMusicCacheEntry *GC_LauncherMusicFindCache(
+    const char *path)
+{
+    int i;
+
+    if (path == NULL)
+    {
+        return NULL;
+    }
+
+    for (i = 0;
+         i < GC_LAUNCHER_MUSIC_CACHE_COUNT;
+         ++i)
+    {
+        if (strcmp(
+                gcLauncherMusicCache[i].path,
+                path) == 0)
+        {
+            return
+                &gcLauncherMusicCache[i];
+        }
+    }
+
+    return NULL;
+}
+
+
+static Mix_Music *GC_LauncherMusicLoadCached(
+    const char *path)
+{
+    GC_LauncherMusicCacheEntry *entry;
+
+    entry =
+        GC_LauncherMusicFindCache(
+            path);
+
+    if (entry == NULL)
+    {
+        DC_WARN(
+            "DoomCube: launcher music has no cache slot for %s\n",
+            path != NULL ? path : "(null)");
+
+        return NULL;
+    }
+
+    if (entry->music != NULL)
+    {
+        return
+            entry->music;
+    }
+
+    entry->music =
+        Mix_LoadMUS(
+            path);
+
+    if (entry->music == NULL)
+    {
+        DC_WARN(
+            "DoomCube: launcher music load failed for %s: %s\n",
+            path,
+            Mix_GetError());
+
+        return NULL;
+    }
+
+    DC_DEBUG(
+        "DoomCube: launcher music cached %s\n",
+        path);
+
+    return
+        entry->music;
+}
+
+
 static bool GC_LauncherMusicUsePath(
     const char *path)
 {
     Mix_Music *music;
 
     if (path == NULL)
+    {
         return false;
+    }
 
     if (!GC_LauncherMusicEnsureReady())
+    {
         return false;
+    }
 
     if (gcLauncherMusic.music != NULL
         && gcLauncherMusic.currentPath != NULL
@@ -3495,16 +3610,11 @@ static bool GC_LauncherMusicUsePath(
     }
 
     music =
-        Mix_LoadMUS(
+        GC_LauncherMusicLoadCached(
             path);
 
     if (music == NULL)
     {
-        DC_WARN(
-            "DoomCube: launcher music load failed for %s: %s\n",
-            path,
-            Mix_GetError());
-
         return false;
     }
 
@@ -3516,9 +3626,6 @@ static bool GC_LauncherMusicUsePath(
             "DoomCube: launcher music playback failed for %s: %s\n",
             path,
             Mix_GetError());
-
-        Mix_FreeMusic(
-            music);
 
         return false;
     }
@@ -3532,6 +3639,7 @@ static bool GC_LauncherMusicUsePath(
 
     return true;
 }
+
 
 
 static bool GC_LauncherMusicUseIntermission(void)
@@ -3594,6 +3702,79 @@ static bool GC_LauncherMusicUseGame(
 
     return GC_LauncherMusicUsePath(
         path);
+}
+
+
+static void GC_LauncherMusicPreloadAvailable(void)
+{
+    int gameIndex;
+    int loaded = 0;
+    int alreadyLoaded = 0;
+    int failed = 0;
+
+    if (!GC_LauncherMusicEnsureReady())
+    {
+        DC_WARN(
+            "DoomCube: launcher music preload skipped: MIDI player unavailable\n");
+
+        return;
+    }
+
+    for (gameIndex = 0;
+         gameIndex < GC_MAX_GAMES;
+         ++gameIndex)
+    {
+        const char *path;
+        GC_LauncherMusicCacheEntry *entry;
+
+        if (gameIndex != GC_CUSTOM_GAME_INDEX
+            && !gcGames[gameIndex].available)
+        {
+            continue;
+        }
+
+        path =
+            GC_LauncherMusicPathForGame(
+                gameIndex);
+
+        if (path == NULL)
+        {
+            continue;
+        }
+
+        entry =
+            GC_LauncherMusicFindCache(
+                path);
+
+        if (entry == NULL)
+        {
+            ++failed;
+            continue;
+        }
+
+        if (entry->music != NULL)
+        {
+            ++alreadyLoaded;
+            continue;
+        }
+
+        if (GC_LauncherMusicLoadCached(
+                path) != NULL)
+        {
+            ++loaded;
+        }
+        else
+        {
+            ++failed;
+        }
+    }
+
+    DC_INFO(
+        "DoomCube: launcher music preload complete "
+        "loaded=%d already=%d failed=%d\n",
+        loaded,
+        alreadyLoaded,
+        failed);
 }
 
 
@@ -5549,6 +5730,29 @@ bool GC_LauncherSelectGame(
     logo =
         GC_LoadLauncherLogo(renderer);
 
+    /*
+     * Populate the launcher MIDI cache synchronously behind an explicit
+     * loading screen BEFORE exposing PRESS START.
+     */
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(
+        renderer);
+
+    GC_DrawLoadingOverlay(
+        renderer);
+
+    GC_LauncherMusicPreloadAvailable();
+
+    /*
+     * custom.mid is cached now, so title/intermission music starts
+     * without another Mix_LoadMUS stall.
+     */
     (void)GC_LauncherMusicUseIntermission();
 
     if (!GC_LauncherRunSplash(
