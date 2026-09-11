@@ -11,6 +11,8 @@
 #include <SDL2/SDL_mixer.h>
 
 #include <carryhandle/ch_controller_glyph_sdl.h>
+
+#include "gc_controls.h"
 #include <carryhandle/ch_memcard_ui.h>
 #include <carryhandle/ch_splash.h>
 #include "gc_memcard.h"
@@ -150,7 +152,8 @@ static void GC_LauncherProbeGlobalConfig(void)
 #define GC_MAX_GAMES 8
 #define GC_CUSTOM_GAME_INDEX 7
 #define GC_OPTIONS_ENTRY_INDEX GC_MAX_GAMES
-#define GC_LAUNCHER_ENTRY_COUNT (GC_MAX_GAMES + 1)
+#define GC_CONTROLS_ENTRY_INDEX (GC_MAX_GAMES + 1)
+#define GC_LAUNCHER_ENTRY_COUNT (GC_MAX_GAMES + 2)
 #define GC_OPTIONS_BACKGROUND_PATH "dvd:/launcher/options/interpic.bmp"
 
 #define GC_PWAD_MANIFEST_PATH "dvd:/data/pwad/doomcube.lst"
@@ -1896,20 +1899,28 @@ static void GC_DrawCarouselControllerGlyph(
 
 static bool GC_LauncherEntryAvailable(int index)
 {
-    if (index == GC_OPTIONS_ENTRY_INDEX) return true;
+    if (index == GC_OPTIONS_ENTRY_INDEX ||
+        index == GC_CONTROLS_ENTRY_INDEX)
+    {
+        return true;
+    }
     return index >= 0 && index < GC_MAX_GAMES && gcGames[index].available;
 }
 
 static const char *GC_LauncherEntryName(int index)
 {
     if (index == GC_OPTIONS_ENTRY_INDEX) return "OPTIONS";
+    if (index == GC_CONTROLS_ENTRY_INDEX) return "CONTROLS";
     if (index < 0 || index >= GC_MAX_GAMES) return "";
     return gcGames[index].name;
 }
 
 static const char *GC_LauncherEntryArtPath(int index)
 {
-    if (index == GC_OPTIONS_ENTRY_INDEX) return GC_OPTIONS_BACKGROUND_PATH;
+    if (index == GC_OPTIONS_ENTRY_INDEX)
+        return GC_OPTIONS_BACKGROUND_PATH;
+    if (index == GC_CONTROLS_ENTRY_INDEX)
+        return GC_OPTIONS_BACKGROUND_PATH;
     if (index < 0 || index >= GC_MAX_GAMES) return NULL;
     return gcGames[index].artPath;
 }
@@ -3837,7 +3848,8 @@ static void GC_LauncherMusicPreloadAvailable(void)
 
 static bool GC_LauncherMusicUseEntry(int entryIndex)
 {
-    if (entryIndex == GC_OPTIONS_ENTRY_INDEX)
+    if (entryIndex == GC_OPTIONS_ENTRY_INDEX ||
+        entryIndex == GC_CONTROLS_ENTRY_INDEX)
         return GC_LauncherMusicUseIntermission();
     return GC_LauncherMusicUseGame(entryIndex);
 }
@@ -4540,6 +4552,699 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 
     (void)GC_LauncherOptionsConfigFlush(&config);
 #undef REDRAW_OPTIONS
+    return -1;
+}
+
+
+
+#define GC_LAUNCHER_CONTROLS_ROW_COUNT 11
+#define GC_LAUNCHER_CONTROLS_GLYPH_SIZE 28
+#define GC_LAUNCHER_CONTROLS_AUTOMAP_GLYPH_SIZE 22
+#define GC_LAUNCHER_CONTROLS_ROW_Y 64
+#define GC_LAUNCHER_CONTROLS_ROW_STEP 24
+
+
+typedef struct GC_LauncherControlsRow
+{
+    gc_action_t action;
+    const char *label;
+    const char *configKey;
+} GC_LauncherControlsRow;
+
+
+static const GC_LauncherControlsRow
+    gcLauncherControlsRows[GC_LAUNCHER_CONTROLS_ROW_COUNT] =
+{
+    { GC_ACTION_MOVE_UP,      "MOVE FORWARD",    "gc_move_up" },
+    { GC_ACTION_MOVE_DOWN,    "MOVE BACKWARD",   "gc_move_down" },
+    { GC_ACTION_MOVE_LEFT,    "TURN LEFT",       "gc_move_left" },
+    { GC_ACTION_MOVE_RIGHT,   "TURN RIGHT",      "gc_move_right" },
+    { GC_ACTION_STRAFE_LEFT,  "STRAFE LEFT",     "gc_strafe_left" },
+    { GC_ACTION_STRAFE_RIGHT, "STRAFE RIGHT",    "gc_strafe_right" },
+    { GC_ACTION_FIRE,         "FIRE",            "gc_fire" },
+    { GC_ACTION_USE,          "USE / ACTIVATE",  "gc_use" },
+    { GC_ACTION_RUN,          "RUN",             "gc_run" },
+    { GC_ACTION_NEXT_WEAPON,  "NEXT WEAPON",     "gc_next_weapon" },
+    { GC_ACTION_PREV_WEAPON,  "PREVIOUS WEAPON", "gc_prev_weapon" }
+};
+
+
+static SDL_Texture *
+    gcLauncherControlsGlyphCache[CH_CONTROLLER_GLYPH_COUNT];
+
+
+static CH_ControllerGlyph GC_LauncherControlsGlyphForInput(
+    gc_input_t input)
+{
+    switch (input)
+    {
+        case GC_INPUT_A:
+            return CH_CONTROLLER_GLYPH_A;
+        case GC_INPUT_B:
+            return CH_CONTROLLER_GLYPH_B;
+        case GC_INPUT_X:
+            return CH_CONTROLLER_GLYPH_X;
+        case GC_INPUT_Y:
+            return CH_CONTROLLER_GLYPH_Y;
+        case GC_INPUT_L:
+            return CH_CONTROLLER_GLYPH_L_DIGITAL;
+        case GC_INPUT_R:
+            return CH_CONTROLLER_GLYPH_R_DIGITAL;
+        case GC_INPUT_DPAD_UP:
+            return CH_CONTROLLER_GLYPH_DPAD_UP;
+        case GC_INPUT_DPAD_DOWN:
+            return CH_CONTROLLER_GLYPH_DPAD_DOWN;
+        case GC_INPUT_DPAD_LEFT:
+            return CH_CONTROLLER_GLYPH_DPAD_LEFT;
+        case GC_INPUT_DPAD_RIGHT:
+            return CH_CONTROLLER_GLYPH_DPAD_RIGHT;
+        case GC_INPUT_STICK_UP:
+            return CH_CONTROLLER_GLYPH_STICK_UP;
+        case GC_INPUT_STICK_DOWN:
+            return CH_CONTROLLER_GLYPH_STICK_DOWN;
+        case GC_INPUT_STICK_LEFT:
+            return CH_CONTROLLER_GLYPH_STICK_LEFT;
+        case GC_INPUT_STICK_RIGHT:
+            return CH_CONTROLLER_GLYPH_STICK_RIGHT;
+        case GC_INPUT_CSTICK_UP:
+            return CH_CONTROLLER_GLYPH_CSTICK_UP;
+        case GC_INPUT_CSTICK_DOWN:
+            return CH_CONTROLLER_GLYPH_CSTICK_DOWN;
+        case GC_INPUT_CSTICK_LEFT:
+            return CH_CONTROLLER_GLYPH_CSTICK_LEFT;
+        case GC_INPUT_CSTICK_RIGHT:
+            return CH_CONTROLLER_GLYPH_CSTICK_RIGHT;
+        case GC_INPUT_NONE:
+        case GC_INPUT_COUNT:
+        default:
+            return CH_CONTROLLER_GLYPH_NONE;
+    }
+}
+
+
+static SDL_Texture *GC_LauncherControlsGlyphTexture(
+    SDL_Renderer *renderer,
+    CH_ControllerGlyph glyph)
+{
+    SDL_Texture **slot;
+
+    if (renderer == NULL ||
+        glyph <= CH_CONTROLLER_GLYPH_NONE ||
+        glyph >= CH_CONTROLLER_GLYPH_COUNT)
+    {
+        return NULL;
+    }
+
+    slot = &gcLauncherControlsGlyphCache[glyph];
+
+    if (*slot == NULL)
+    {
+        *slot =
+            CH_ControllerGlyphSDLLoadTexture(
+                renderer,
+                "dvd:/",
+                glyph,
+                GC_LAUNCHER_CONTROLS_GLYPH_SIZE);
+
+        if (*slot == NULL)
+        {
+            DC_WARN(
+                "DoomCube: CONTROLS could not load glyph %s: %s\n",
+                CH_ControllerGlyphName(glyph),
+                SDL_GetError());
+        }
+    }
+
+    return *slot;
+}
+
+
+static void GC_DrawLauncherControlsGlyphSized(
+    SDL_Renderer *renderer,
+    CH_ControllerGlyph glyph,
+    int x,
+    int y,
+    int size)
+{
+    SDL_Texture *texture;
+    SDL_Rect dst = { x, y, size, size };
+
+    texture = GC_LauncherControlsGlyphTexture(renderer, glyph);
+
+    if (texture != NULL)
+        (void)SDL_RenderCopy(renderer, texture, NULL, &dst);
+}
+
+
+static void GC_DrawLauncherControlsGlyph(
+    SDL_Renderer *renderer,
+    CH_ControllerGlyph glyph,
+    int x,
+    int y)
+{
+    GC_DrawLauncherControlsGlyphSized(
+        renderer,
+        glyph,
+        x,
+        y,
+        GC_LAUNCHER_CONTROLS_GLYPH_SIZE);
+}
+
+
+static void GC_DrawLauncherControlsCursor(
+    SDL_Renderer *renderer,
+    int x,
+    int y)
+{
+    SDL_Texture *texture=GC_LoadDoomMenuSkull(renderer);
+    int w,h;
+    SDL_Rect dst;
+
+    if (texture == NULL) return;
+    if (SDL_QueryTexture(texture,NULL,NULL,&w,&h) != 0) return;
+
+    /* Dense CONTROLS page: use M_SKULL1 at native size, not OPTIONS 2x. */
+    dst.x=x; dst.y=y; dst.w=w; dst.h=h;
+    SDL_SetTextureColorMod(texture,255,255,255);
+    SDL_SetTextureAlphaMod(texture,255);
+    (void)SDL_RenderCopy(renderer,texture,NULL,&dst);
+}
+
+
+static void GC_LauncherControlsSyncFromConfig(
+    GC_LauncherOptionsConfig *config)
+{
+    int i;
+
+    for (i = 0; i < GC_LAUNCHER_CONTROLS_ROW_COUNT; ++i)
+    {
+        int value;
+
+        if (GC_LauncherOptionsConfigFindInt(
+                config,
+                gcLauncherControlsRows[i].configKey,
+                &value) &&
+            value >= GC_INPUT_NONE &&
+            value < GC_INPUT_COUNT)
+        {
+            GC_ControlsSetBinding(
+                gcLauncherControlsRows[i].action,
+                (gc_input_t)value);
+        }
+    }
+}
+
+
+static bool GC_LauncherControlsStageBinding(
+    GC_LauncherOptionsConfig *config,
+    int row)
+{
+    gc_input_t input;
+
+    if (row < 0 || row >= GC_LAUNCHER_CONTROLS_ROW_COUNT)
+        return false;
+
+    input =
+        GC_ControlsGetBinding(
+            gcLauncherControlsRows[row].action);
+
+    return
+        GC_LauncherOptionsConfigSetInt(
+            config,
+            gcLauncherControlsRows[row].configKey,
+            (int)input);
+}
+
+
+static void GC_DrawLauncherControlsBinding(
+    SDL_Renderer *renderer,
+    gc_input_t input,
+    int x,
+    int y)
+{
+    CH_ControllerGlyph glyph =
+        GC_LauncherControlsGlyphForInput(input);
+
+    if (glyph == CH_CONTROLLER_GLYPH_NONE)
+    {
+        GC_DrawText(renderer, x, y + 2, "NONE", 2);
+        return;
+    }
+
+    GC_DrawLauncherControlsGlyph(renderer, glyph, x, y);
+}
+
+
+static void GC_DrawLauncherControlsFixedRow(
+    SDL_Renderer *renderer,
+    const char *label,
+    CH_ControllerGlyph glyph,
+    int y)
+{
+    GC_DrawText(
+        renderer,
+        386,
+        y,
+        label,
+        2);
+
+    GC_DrawLauncherControlsGlyph(
+        renderer,
+        glyph,
+        588,
+        y - 5);
+}
+
+
+static void GC_DrawLauncherControlsAutomapRow(
+    SDL_Renderer *renderer,
+    const char *label,
+    CH_ControllerGlyph glyph,
+    int y)
+{
+    GC_DrawText(
+        renderer,
+        386,
+        y,
+        label,
+        2);
+
+    GC_DrawLauncherControlsGlyphSized(
+        renderer,
+        glyph,
+        592,
+        y - 3,
+        GC_LAUNCHER_CONTROLS_AUTOMAP_GLYPH_SIZE);
+}
+
+
+static void GC_DrawLauncherControls(
+    SDL_Renderer *renderer,
+    int selectedRow)
+{
+    SDL_Texture *background;
+    SDL_Texture *hintGlyph;
+    SDL_Rect fullscreen =
+        { 0, 0, GC_LAUNCHER_WIDTH, 480 };
+    SDL_Rect fixedBox =
+        { 370, 58, 254, 346 };
+    int titleWidth;
+    int fixedTitleWidth;
+    int mapTitleWidth;
+    int hintWidth;
+    int hintX;
+    int i;
+    bool capturing =
+        GC_ControlsIsCapturing();
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(
+        renderer);
+
+    background =
+        GC_LoadLauncherBitmap(
+            renderer,
+            GC_OPTIONS_BACKGROUND_PATH,
+            "CONTROLS INTERPIC");
+
+    if (background != NULL)
+    {
+        (void)SDL_RenderCopy(
+            renderer,
+            background,
+            NULL,
+            &fullscreen);
+
+        SDL_DestroyTexture(
+            background);
+    }
+
+    titleWidth =
+        GC_TextWidth(
+            "CONTROLS",
+            4);
+
+    GC_DrawText(
+        renderer,
+        (GC_LAUNCHER_WIDTH - titleWidth) / 2,
+        18,
+        "CONTROLS",
+        4);
+
+    for (i = 0;
+         i < GC_LAUNCHER_CONTROLS_ROW_COUNT;
+         ++i)
+    {
+        int rowY =
+            GC_LAUNCHER_CONTROLS_ROW_Y +
+            i * GC_LAUNCHER_CONTROLS_ROW_STEP;
+
+        GC_DrawText(
+            renderer,
+            74,
+            rowY,
+            gcLauncherControlsRows[i].label,
+            3);
+
+        if (!(capturing &&
+              i == selectedRow))
+        {
+            GC_DrawLauncherControlsBinding(
+                renderer,
+                GC_ControlsGetBinding(
+                    gcLauncherControlsRows[i].action),
+                330,
+                rowY - 3);
+        }
+    }
+
+    GC_DrawLauncherControlsCursor(
+        renderer,
+        42,
+        GC_LAUNCHER_CONTROLS_ROW_Y +
+            selectedRow *
+                GC_LAUNCHER_CONTROLS_ROW_STEP);
+
+    if (capturing)
+    {
+        int captureWidth =
+            GC_TextWidth(
+                "PRESS NEW CONTROL",
+                2);
+
+        GC_DrawText(
+            renderer,
+            (370 - captureWidth) / 2,
+            350,
+            "PRESS NEW CONTROL",
+            2);
+    }
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        80,
+        80,
+        80,
+        220);
+
+    (void)SDL_RenderDrawRect(
+        renderer,
+        &fixedBox);
+
+    fixedTitleWidth =
+        GC_TextWidth(
+            "FIXED CONTROLS",
+            2);
+
+    GC_DrawText(
+        renderer,
+        fixedBox.x +
+            (fixedBox.w - fixedTitleWidth) / 2,
+        68,
+        "FIXED CONTROLS",
+        2);
+
+    GC_DrawLauncherControlsFixedRow(
+        renderer,
+        "MENU CONFIRM",
+        CH_CONTROLLER_GLYPH_A,
+        96);
+
+    GC_DrawLauncherControlsFixedRow(
+        renderer,
+        "MENU BACK",
+        CH_CONTROLLER_GLYPH_B,
+        126);
+
+    GC_DrawLauncherControlsFixedRow(
+        renderer,
+        "AUTOMAP MODIFIER",
+        CH_CONTROLLER_GLYPH_Z,
+        156);
+
+    (void)SDL_RenderDrawLine(
+        renderer,
+        fixedBox.x + 10,
+        184,
+        fixedBox.x + fixedBox.w - 10,
+        184);
+
+    mapTitleWidth =
+        GC_TextWidth(
+            "AUTOMAP - HOLD Z",
+            2);
+
+    GC_DrawText(
+        renderer,
+        fixedBox.x +
+            (fixedBox.w - mapTitleWidth) / 2,
+        194,
+        "AUTOMAP - HOLD Z",
+        2);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "PAN MAP",
+        CH_CONTROLLER_GLYPH_CSTICK_ALL,
+        222);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "ZOOM IN",
+        CH_CONTROLLER_GLYPH_DPAD_UP,
+        244);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "ZOOM OUT",
+        CH_CONTROLLER_GLYPH_DPAD_DOWN,
+        266);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "MAX ZOOM",
+        CH_CONTROLLER_GLYPH_DPAD_LEFT,
+        288);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "FOLLOW PLAYER",
+        CH_CONTROLLER_GLYPH_DPAD_RIGHT,
+        310);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "PLACE MARK",
+        CH_CONTROLLER_GLYPH_A,
+        332);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "CLEAR MARK",
+        CH_CONTROLLER_GLYPH_B,
+        354);
+
+    GC_DrawLauncherControlsAutomapRow(
+        renderer,
+        "TOGGLE GRID",
+        CH_CONTROLLER_GLYPH_X,
+        376);
+
+    if (capturing)
+    {
+        hintGlyph =
+            GC_LauncherControlsGlyphTexture(
+                renderer,
+                CH_CONTROLLER_GLYPH_START);
+
+        hintWidth =
+            GC_TextWidth(
+                "CANCEL",
+                3);
+    }
+    else
+    {
+        hintGlyph =
+            GC_LauncherControlsGlyphTexture(
+                renderer,
+                CH_CONTROLLER_GLYPH_B);
+
+        hintWidth =
+            GC_TextWidth(
+                "BACK",
+                3);
+    }
+
+    hintX =
+        (GC_LAUNCHER_WIDTH -
+         GC_LAUNCHER_CONTROLS_GLYPH_SIZE -
+         8 -
+         hintWidth) / 2;
+
+    if (hintGlyph != NULL)
+    {
+        SDL_Rect hintDst =
+        {
+            hintX,
+            430,
+            GC_LAUNCHER_CONTROLS_GLYPH_SIZE,
+            GC_LAUNCHER_CONTROLS_GLYPH_SIZE
+        };
+
+        (void)SDL_RenderCopy(
+            renderer,
+            hintGlyph,
+            NULL,
+            &hintDst);
+    }
+
+    GC_DrawText(
+        renderer,
+        hintX +
+            GC_LAUNCHER_CONTROLS_GLYPH_SIZE +
+            8,
+        436,
+        capturing ? "CANCEL" : "BACK",
+        3);
+
+    SDL_RenderPresent(
+        renderer);
+}
+
+
+static int GC_LauncherRunControls(
+    SDL_Renderer *renderer)
+{
+    GC_LauncherOptionsConfig config;
+    int selectedRow = 0;
+
+    GC_LauncherOptionsConfigInit(&config);
+    GC_LauncherControlsSyncFromConfig(&config);
+
+    (void)GC_LauncherMusicUseIntermission();
+
+    GC_DrawLauncherControls(renderer, selectedRow);
+
+    DC_INFO(
+        "DoomCube: CONTROLS opened; remappable=%d "
+        "fixed_menu=2 fixed_automap=1\n",
+        GC_LAUNCHER_CONTROLS_ROW_COUNT);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
+
+    while (SYS_MainLoop())
+    {
+        u16 down;
+
+        PAD_ScanPads();
+        down = PAD_ButtonsDown(0);
+
+        if (GC_ControlsIsCapturing())
+        {
+            /*
+             * START is fixed and not part of gc_input_t, so it can cancel
+             * capture without stealing any bindable gameplay control.
+             */
+            if (down & PAD_BUTTON_START)
+            {
+                GC_ControlsCancelCapture();
+                GC_DrawLauncherControls(renderer, selectedRow);
+
+                DC_INFO(
+                    "DoomCube: CONTROLS capture cancelled "
+                    "with fixed START\n");
+
+                SDL_Delay(16);
+                continue;
+            }
+
+            GC_ControlsPoll();
+
+            if (!GC_ControlsIsCapturing())
+            {
+                gc_input_t input =
+                    GC_ControlsGetBinding(
+                        gcLauncherControlsRows[selectedRow].action);
+
+                bool staged =
+                    GC_LauncherControlsStageBinding(
+                        &config,
+                        selectedRow);
+
+                GC_DrawLauncherControls(renderer, selectedRow);
+
+                DC_INFO(
+                    "DoomCube: CONTROLS captured %s=%d (%s) "
+                    "(session=1 staged=%d)\n",
+                    gcLauncherControlsRows[selectedRow].configKey,
+                    (int)input,
+                    GC_ControlsInputName(input),
+                    staged ? 1 : 0);
+            }
+
+            SDL_Delay(16);
+            continue;
+        }
+
+        if (down & PAD_BUTTON_B)
+        {
+            bool flushed =
+                GC_LauncherOptionsConfigFlush(&config);
+
+            DC_INFO(
+                "DoomCube: CONTROLS returning to carousel "
+                "(flush=%d dirty=%d)\n",
+                flushed ? 1 : 0,
+                config.dirty ? 1 : 0);
+
+            return 0;
+        }
+
+        if (down & PAD_BUTTON_UP)
+        {
+            if (selectedRow > 0)
+                --selectedRow;
+
+            GC_DrawLauncherControls(renderer, selectedRow);
+        }
+
+        if (down & PAD_BUTTON_DOWN)
+        {
+            if (selectedRow < GC_LAUNCHER_CONTROLS_ROW_COUNT - 1)
+                ++selectedRow;
+
+            GC_DrawLauncherControls(renderer, selectedRow);
+        }
+
+        if (down & PAD_BUTTON_A)
+        {
+            GC_ControlsBeginCapture(
+                gcLauncherControlsRows[selectedRow].action);
+
+            GC_DrawLauncherControls(renderer, selectedRow);
+
+            DC_INFO(
+                "DoomCube: CONTROLS capture started for %s\n",
+                gcLauncherControlsRows[selectedRow].configKey);
+        }
+
+        SDL_Delay(16);
+    }
+
+    GC_ControlsCancelCapture();
+    (void)GC_LauncherOptionsConfigFlush(&config);
+
     return -1;
 }
 
@@ -6611,6 +7316,12 @@ bool GC_LauncherSelectGame(
         if (selectedGame == GC_OPTIONS_ENTRY_INDEX)
         {
             (void)GC_LauncherRunOptions(renderer);
+            continue;
+        }
+
+        if (selectedGame == GC_CONTROLS_ENTRY_INDEX)
+        {
+            (void)GC_LauncherRunControls(renderer);
             continue;
         }
 

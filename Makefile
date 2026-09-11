@@ -471,17 +471,8 @@ $(DOOMCUBE_DISC_STAGE):
 	@mkdir -p "$(ISO_DIR)/data/deh"
 	@mkdir -p "$(ISO_DIR)/data/timidity"
 	@mkdir -p "$(ISO_DIR)/launcher"
-	@mkdir -p "$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/Start Pause.svg" \
-		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/Start Pause.svg"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Left.svg" \
-		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Left.svg"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Right.svg" \
-		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/D-Pad Right.svg"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/A.svg" \
-		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/A.svg"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/zacksly/buttons/B.svg" \
-		"$(ISO_DIR)/assets/controller/gamecube/zacksly/buttons/B.svg"
+	@mkdir -p "$(ISO_DIR)/assets/controller/gamecube/toomai/bmp"
+	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/toomai/bmp/"*.bmp "$(ISO_DIR)/assets/controller/gamecube/toomai/bmp/"
 
 	@cp "$(DOOMCUBE_ROOT)/data/launcher/doomcube.bmp" \
 		"$(ISO_DIR)/launcher/doomcube.bmp"
