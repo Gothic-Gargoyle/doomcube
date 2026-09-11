@@ -1273,6 +1273,11 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         audio_dir,
     )
 
+    menu_choose_generated = generate_menu_choose_wav(
+        root,
+        audio_dir,
+    )
+
     expected = 1
 
     print()
@@ -1287,6 +1292,15 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         + (
             "generated"
             if roar_generated
+            else "not generated"
+        )
+    )
+
+    print(
+        "Launcher menu confirm audio: "
+        + (
+            "generated"
+            if menu_choose_generated
             else "not generated"
         )
     )

@@ -54,8 +54,18 @@ QUICK START
 
 3. Optional additional content:
 
-     PWADs/   custom WADs
-     DEH/     DeHackEd / BEX patches
+     Put PWADs under the folder for the IWAD they extend:
+
+     PWADs/doom/       DOOM / The Ultimate DOOM PWADs
+     PWADs/doom2/      DOOM II PWADs
+     PWADs/tnt/        TNT - Evilution PWADs
+     PWADs/plutonia/   Plutonia Experiment PWADs
+
+     SIGIL and SIGIL II belong in:
+
+     PWADs/doom/
+
+     DEH/              DeHackEd / BEX patches
 
 4. Build the native GameCube image:
 

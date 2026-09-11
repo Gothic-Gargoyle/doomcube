@@ -245,9 +245,18 @@ def stage_bundle(
 
     runtime = stage / "runtime"
 
+    static_stager = (
+        packer.parent.parent
+        / "stage_static_runtime.py"
+    ).resolve()
+
     directories = (
         stage / "WADs",
         stage / "PWADs",
+        stage / "PWADs/doom",
+        stage / "PWADs/doom2",
+        stage / "PWADs/tnt",
+        stage / "PWADs/plutonia",
         stage / "DEH",
         runtime / "assets/presentation",
         runtime / "tools/native-gcm",
@@ -324,6 +333,32 @@ def stage_bundle(
         launcher,
         runtime / "launcher/doomcube.bmp",
     )
+
+    require_file(
+        "DoomCube static runtime stager",
+        static_stager,
+    )
+
+    static_root = runtime / "static"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(static_stager),
+            "--root",
+            str(static_root),
+        ],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        die(
+            "DoomCube static runtime staging failed "
+            f"with exit status {result.returncode}."
+        )
+
+    info("Static DoomCube runtime staged for player bundle")
 
     copy_timidity(
         timidity,

@@ -713,6 +713,42 @@ def write_pwad_manifest(pwad_dir: Path) -> None:
     )
 
 
+def stage_static_runtime(
+    runtime: Runtime,
+    staging: Path,
+) -> None:
+    # Release mode consumes the immutable static tree embedded in the ZIP.
+    # Source mode invokes the same helper used by make iso.
+    if runtime.mode == "release":
+        static_root = runtime.root / "runtime" / "static"
+        if not static_root.is_dir():
+            die(f"Release runtime is missing static assets: {static_root}")
+        shutil.copytree(static_root, staging, dirs_exist_ok=True)
+        info("Staged bundled DoomCube static runtime assets")
+        return
+
+    static_stager = runtime.root / "tools" / "stage_static_runtime.py"
+    if not static_stager.is_file():
+        die(f"Source tree is missing static stager: {static_stager}")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(static_stager),
+            "--root",
+            str(staging),
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        die(
+            "DoomCube static runtime staging failed "
+            f"with exit status {result.returncode}."
+        )
+    info("Staged source-tree DoomCube static runtime assets")
+
+
 def generate_launcher_assets(
     runtime: Runtime,
     staging: Path,
@@ -755,6 +791,11 @@ def stage_disc(
     pwad_dir.mkdir(parents=True, exist_ok=True)
     deh_dir.mkdir(parents=True, exist_ok=True)
     launcher_dir.mkdir(parents=True, exist_ok=True)
+
+    stage_static_runtime(
+        runtime,
+        staging,
+    )
 
     for canonical, source in found_wads.items():
         shutil.copy2(

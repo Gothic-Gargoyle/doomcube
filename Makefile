@@ -470,17 +470,8 @@ $(DOOMCUBE_DISC_STAGE):
 	@mkdir -p "$(ISO_DIR)/data/pwad"
 	@mkdir -p "$(ISO_DIR)/data/deh"
 	@mkdir -p "$(ISO_DIR)/data/timidity"
-	@mkdir -p "$(ISO_DIR)/launcher"
-	@mkdir -p "$(ISO_DIR)/assets/controller/gamecube/toomai/bmp"
-	@cp "$(CARRYHANDLE_DIR)/assets/controller/gamecube/toomai/bmp/"*.bmp "$(ISO_DIR)/assets/controller/gamecube/toomai/bmp/"
-
-	@cp "$(DOOMCUBE_ROOT)/data/launcher/doomcube.bmp" \
-		"$(ISO_DIR)/launcher/doomcube.bmp"
-
-	@cp "$(DOOMCUBE_ROOT)/data/launcher/sperge_brigade_studios.bmp" \
-		"$(ISO_DIR)/launcher/sperge_brigade_studios.bmp"
-	@cp "$(DOOMCUBE_ROOT)/deps/carryhandle/assets/branding/powered_by_carryhandle.bmp" \
-		"$(ISO_DIR)/launcher/carryhandle_powered_by.bmp"
+	@python3 -B "$(DOOMCUBE_ROOT)/tools/stage_static_runtime.py" \
+		--root "$(ISO_DIR)"
 
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
 		if [ -f "$(DOOMCUBE_ROOT)/data/wad/$$wad" ]; then \
