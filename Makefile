@@ -488,6 +488,8 @@ $(DOOMCUBE_DISC_STAGE):
 
 	@cp "$(DOOMCUBE_ROOT)/data/launcher/sperge_brigade_studios.bmp" \
 		"$(ISO_DIR)/launcher/sperge_brigade_studios.bmp"
+	@cp "$(DOOMCUBE_ROOT)/deps/carryhandle/assets/branding/powered_by_carryhandle.bmp" \
+		"$(ISO_DIR)/launcher/carryhandle_powered_by.bmp"
 
 	@for wad in doom1.wad doom.wad doom2.wad tnt.wad plutonia.wad; do \
 		if [ -f "$(DOOMCUBE_ROOT)/data/wad/$$wad" ]; then \

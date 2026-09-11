@@ -710,6 +710,9 @@ static bool GC_PlatformInit(void)
     GC_LauncherRunStudioIdent(
         renderer);
 
+    GC_LauncherRunCarryHandleIdent(
+        renderer);
+
     GC_LauncherShowMemoryCardChecking(
         renderer);
 

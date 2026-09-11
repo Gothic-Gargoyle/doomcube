@@ -15,6 +15,10 @@ void GC_LauncherRunStudioIdent(
     SDL_Renderer *renderer
 );
 
+void GC_LauncherRunCarryHandleIdent(
+    SDL_Renderer *renderer
+);
+
 void GC_LauncherShowMemoryCardChecking(
     SDL_Renderer *renderer
 );

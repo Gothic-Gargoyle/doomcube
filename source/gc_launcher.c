@@ -94,6 +94,9 @@ static void GC_LauncherProbeGlobalConfig(void)
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
 #define GC_STUDIO_IDENT_PATH      "dvd:/launcher/sperge_brigade_studios.bmp"
 #define GC_STUDIO_IDENT_AUDIO_PATH "dvd:/launcher/audio/cybsit.wav"
+#define GC_CARRYHANDLE_IDENT_PATH "dvd:/launcher/carryhandle_powered_by.bmp"
+#define GC_CARRYHANDLE_IDENT_FADE_MS 500u
+#define GC_CARRYHANDLE_IDENT_HOLD_MS 1250u
 #define GC_LAUNCHER_TIMIDITY_CFG          "dvd:/data/timidity/timidity.cfg"
 #define GC_LAUNCHER_MUSIC_DOOM1_PATH      "dvd:/launcher/music/doom1.mid"
 #define GC_LAUNCHER_MUSIC_DOOM_PATH       "dvd:/launcher/music/doom.mid"
@@ -5217,6 +5220,131 @@ void GC_LauncherRunStudioIdent(
 
     DC_DEBUG(
         "DoomCube: studio ident complete\n");
+}
+
+
+void GC_LauncherRunCarryHandleIdent(
+    SDL_Renderer *renderer)
+{
+    SDL_Texture *logo;
+    GC_StudioIdentPresentation presentation;
+    CH_SplashScreen screens[1];
+    CH_SplashSequence sequence;
+    int width;
+    int height;
+
+    if (renderer == NULL)
+        return;
+
+    logo =
+        GC_LoadLauncherBitmap(
+            renderer,
+            GC_CARRYHANDLE_IDENT_PATH,
+            "Powered by CarryHandle ident");
+
+    if (logo == NULL)
+        return;
+
+    if (SDL_QueryTexture(
+            logo,
+            NULL,
+            NULL,
+            &width,
+            &height) != 0)
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle ident texture query failed: %s\n",
+            SDL_GetError());
+
+        SDL_DestroyTexture(
+            logo);
+
+        return;
+    }
+
+    if (SDL_SetTextureBlendMode(
+            logo,
+            SDL_BLENDMODE_BLEND) != 0)
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle ident blend mode failed: %s\n",
+            SDL_GetError());
+    }
+
+    presentation.texture =
+        logo;
+
+    presentation.destination.h =
+        480;
+
+    presentation.destination.w =
+        width * presentation.destination.h / height;
+
+    presentation.destination.x =
+        (GC_LAUNCHER_WIDTH
+         - presentation.destination.w)
+        / 2;
+
+    presentation.destination.y =
+        (480
+         - presentation.destination.h)
+        / 2;
+
+    screens[0].screen_data =
+        &presentation;
+
+    screens[0].fade_in_ms =
+        GC_CARRYHANDLE_IDENT_FADE_MS;
+
+    screens[0].hold_ms =
+        GC_CARRYHANDLE_IDENT_HOLD_MS;
+
+    screens[0].fade_out_ms =
+        GC_CARRYHANDLE_IDENT_FADE_MS;
+
+    sequence.frame =
+        GC_DrawStudioIdentFrame;
+
+    sequence.userdata =
+        renderer;
+
+    sequence.frame_interval_ms =
+        GC_STUDIO_IDENT_FRAME_MS;
+
+    DC_DEBUG(
+        "DoomCube: Powered by CarryHandle ident starting "
+        "(fade=%ums hold=%ums fade=%ums)\n",
+        (unsigned int)screens[0].fade_in_ms,
+        (unsigned int)screens[0].hold_ms,
+        (unsigned int)screens[0].fade_out_ms);
+
+    if (!CH_SplashSequenceRun(
+            &sequence,
+            screens,
+            1u))
+    {
+        DC_WARN(
+            "DoomCube: Powered by CarryHandle ident sequence failed\n");
+    }
+
+    SDL_SetRenderDrawColor(
+        renderer,
+        0,
+        0,
+        0,
+        255);
+
+    SDL_RenderClear(
+        renderer);
+
+    SDL_RenderPresent(
+        renderer);
+
+    SDL_DestroyTexture(
+        logo);
+
+    DC_DEBUG(
+        "DoomCube: Powered by CarryHandle ident complete\n");
 }
 
 
