@@ -166,6 +166,193 @@ static bool updateDogfoodSaveCache(
 #define GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE 20u
 
 
+/*
+ * DOOMCUBE_FIXED_ZLIB_V23
+ *
+ * The CARD representation stays compressed, but saving/loading may not depend
+ * on the fragmented gameplay heap.
+ *
+ * The largest vanilla Doom serialized save is 180224 bytes. zlib's worst-case
+ * stored output for an input this small is only slightly larger than input;
+ * 2048 bytes of fixed slop is deliberately generous and is checked against
+ * compressBound() before every PUT.
+ *
+ * zlib itself normally allocates its deflate/inflate state from malloc().
+ *
+ * DoomCube uses deflate memLevel 6 below, so the fixed workspace can be much
+ * smaller than zlib's default memLevel 8 footprint. Deflate and inflate
+ * operations are serialized, so one 192 KiB arena is reused by both
+ * directions.
+ */
+#define GC_CH_DOGFOOD_STORED_SLOP       2048u
+#define GC_CH_DOGFOOD_STORED_MAX \
+    (GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE + \
+     GC_CH_DOGFOOD_SAVE_MAX + \
+     GC_CH_DOGFOOD_STORED_SLOP)
+
+#define GC_CH_DOGFOOD_ZLIB_ARENA_SIZE   (192u * 1024u)
+#define GC_CH_DOGFOOD_ZLIB_ALIGNMENT     32u
+
+static unsigned char dogfoodStoredBuffer[
+    GC_CH_DOGFOOD_STORED_MAX
+] __attribute__((aligned(32)));
+
+static unsigned char dogfoodZlibArena[
+    GC_CH_DOGFOOD_ZLIB_ARENA_SIZE
+] __attribute__((aligned(32)));
+
+static size_t dogfoodZlibUsed;
+static size_t dogfoodZlibPeak;
+static size_t dogfoodZlibFailedRequest;
+static bool dogfoodZlibAllocationFailed;
+
+
+static void resetDogfoodZlibArena(void)
+{
+    dogfoodZlibUsed =
+        0u;
+
+    dogfoodZlibPeak =
+        0u;
+
+    dogfoodZlibFailedRequest =
+        0u;
+
+    dogfoodZlibAllocationFailed =
+        false;
+}
+
+
+static voidpf dogfoodZAlloc(
+    voidpf opaque,
+    uInt items,
+    uInt size)
+{
+    size_t bytes;
+    size_t aligned;
+    size_t end;
+
+    (void)opaque;
+
+
+    bytes =
+        (size_t)items *
+        (size_t)size;
+
+    if (items != 0u &&
+        bytes / (size_t)items !=
+            (size_t)size)
+    {
+        dogfoodZlibAllocationFailed =
+            true;
+
+        dogfoodZlibFailedRequest =
+            SIZE_MAX;
+
+        return Z_NULL;
+    }
+
+
+    if (bytes == 0u)
+    {
+        bytes =
+            1u;
+    }
+
+
+    if (dogfoodZlibUsed >
+        SIZE_MAX -
+            (GC_CH_DOGFOOD_ZLIB_ALIGNMENT - 1u))
+    {
+        dogfoodZlibAllocationFailed =
+            true;
+
+        dogfoodZlibFailedRequest =
+            bytes;
+
+        return Z_NULL;
+    }
+
+
+    aligned =
+        (dogfoodZlibUsed +
+         (GC_CH_DOGFOOD_ZLIB_ALIGNMENT - 1u)) &
+        ~(size_t)(
+            GC_CH_DOGFOOD_ZLIB_ALIGNMENT - 1u
+        );
+
+
+    if (aligned >
+            sizeof(dogfoodZlibArena) ||
+        bytes >
+            sizeof(dogfoodZlibArena) -
+                aligned)
+    {
+        dogfoodZlibAllocationFailed =
+            true;
+
+        dogfoodZlibFailedRequest =
+            bytes;
+
+        return Z_NULL;
+    }
+
+
+    end =
+        aligned +
+        bytes;
+
+    dogfoodZlibUsed =
+        end;
+
+    if (dogfoodZlibPeak <
+        dogfoodZlibUsed)
+    {
+        dogfoodZlibPeak =
+            dogfoodZlibUsed;
+    }
+
+
+    return
+        (voidpf)(
+            dogfoodZlibArena +
+            aligned
+        );
+}
+
+
+static void dogfoodZFree(
+    voidpf opaque,
+    voidpf address)
+{
+    /*
+     * One bump arena is reset wholesale after deflateEnd()/inflateEnd().
+     * Individual frees are intentionally no-ops.
+     */
+    (void)opaque;
+    (void)address;
+}
+
+
+static void logDogfoodZlibFailure(
+    const char *operation,
+    int zResult)
+{
+    DC_WARN(
+        "DoomCube: CarryHandle dogfood %s zlib failed: %d "
+        "fixed_used=%lu fixed_peak=%lu fixed_capacity=%lu "
+        "failed_request=%lu allocator_failed=%d\n",
+        operation ? operation : "UNKNOWN",
+        zResult,
+        (unsigned long)dogfoodZlibUsed,
+        (unsigned long)dogfoodZlibPeak,
+        (unsigned long)sizeof(dogfoodZlibArena),
+        (unsigned long)dogfoodZlibFailedRequest,
+        dogfoodZlibAllocationFailed ? 1 : 0
+    );
+}
+
+
 static uint32_t readBe32(
     const unsigned char *p)
 {
@@ -560,10 +747,6 @@ bool GC_CHDogfoodReadSave(
 
     CH_PersistResult result;
 
-    unsigned char *stored =
-        NULL;
-
-    size_t storedCapacity;
     size_t storedSize =
         0u;
 
@@ -631,60 +814,17 @@ bool GC_CHDogfoodReadSave(
     }
 
 
-    /*
-     * The framed compressed object can be a few bytes larger than the raw
-     * payload in the worst case.  Give CH_Get enough room for either the
-     * current compressed representation or the old raw representation.
-     */
-    {
-        uLong bound =
-            compressBound(
-                (uLong)bufferSize
-            );
-
-        if ((uint64_t)bound +
-                GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE >
-            (uint64_t)SIZE_MAX)
-        {
-            DC_WARN(
-                "DoomCube: CarryHandle dogfood GET capacity overflow\n"
-            );
-
-            return false;
-        }
-
-        storedCapacity =
-            (size_t)bound +
-            GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE;
-    }
-
-
-    stored =
-        malloc(
-            storedCapacity
-        );
-
-    if (!stored)
-    {
-        DC_WARN(
-            "DoomCube: CarryHandle dogfood GET allocation failed\n"
-        );
-
-        return false;
-    }
-
-
     if (!openDogfoodSave(
             &save))
     {
-        free(
-            stored
-        );
-
         return false;
     }
 
 
+    /*
+     * Read the compressed/framed object into one permanent scratch buffer.
+     * No gameplay-heap allocation occurs here.
+     */
     result =
         CH_ApplicationSaveGet(
             &save,
@@ -692,8 +832,8 @@ bool GC_CHDogfoodReadSave(
             dogfoodScopeSize,
             dogfoodSaveKey,
             sizeof(dogfoodSaveKey),
-            stored,
-            storedCapacity,
+            dogfoodStoredBuffer,
+            sizeof(dogfoodStoredBuffer),
             &storedSize
         );
 
@@ -701,111 +841,149 @@ bool GC_CHDogfoodReadSave(
     if (result ==
         CH_PERSIST_RESULT_OK)
     {
-        /*
-         * New DoomCube framing.
-         */
         if (storedSize >=
                 GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE &&
             readBe32(
-                stored + 0u) ==
+                dogfoodStoredBuffer + 0u) ==
                 GC_CH_DOGFOOD_PAYLOAD_MAGIC &&
             readBe32(
-                stored + 4u) ==
+                dogfoodStoredBuffer + 4u) ==
                 GC_CH_DOGFOOD_PAYLOAD_VERSION)
         {
             uint32_t rawSize =
                 readBe32(
-                    stored + 8u
+                    dogfoodStoredBuffer + 8u
                 );
 
             uint32_t compressedSize =
                 readBe32(
-                    stored + 12u
+                    dogfoodStoredBuffer + 12u
                 );
 
             uint32_t expectedCrc =
                 readBe32(
-                    stored + 16u
+                    dogfoodStoredBuffer + 16u
                 );
 
-            uLongf outputSize =
-                (uLongf)bufferSize;
+            z_stream stream =
+                {0};
+
+            uLong actualCrc;
 
             int zResult;
+            int zEndResult =
+                Z_OK;
 
 
-            if ((size_t)rawSize >
+            if (rawSize == 0u ||
+                (size_t)rawSize >
                     bufferSize ||
+                (size_t)rawSize >
+                    GC_CH_DOGFOOD_SAVE_MAX ||
                 (size_t)compressedSize !=
                     storedSize -
-                    GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE)
+                    GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE ||
+                compressedSize == 0u)
             {
                 DC_WARN(
-                    "DoomCube: CarryHandle dogfood compressed "
-                    "slot 0 header invalid: raw=%lu compressed=%lu "
-                    "stored=%lu capacity=%lu\n",
+                    "DoomCube: CarryHandle dogfood slot 0 "
+                    "compressed frame invalid "
+                    "raw=%lu compressed=%lu stored=%lu\n",
                     (unsigned long)rawSize,
                     (unsigned long)compressedSize,
-                    (unsigned long)storedSize,
-                    (unsigned long)bufferSize
+                    (unsigned long)storedSize
                 );
             }
             else
             {
-                zResult =
-                    uncompress(
-                        (Bytef *)buffer,
-                        &outputSize,
-                        (const Bytef *)(
-                            stored +
-                            GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE
-                        ),
-                        (uLong)compressedSize
+                resetDogfoodZlibArena();
+
+                stream.zalloc =
+                    dogfoodZAlloc;
+
+                stream.zfree =
+                    dogfoodZFree;
+
+                stream.opaque =
+                    Z_NULL;
+
+                stream.next_in =
+                    (Bytef *)(
+                        dogfoodStoredBuffer +
+                        GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE
                     );
+
+                stream.avail_in =
+                    (uInt)compressedSize;
+
+                stream.next_out =
+                    (Bytef *)buffer;
+
+                stream.avail_out =
+                    (uInt)rawSize;
+
+
+                zResult =
+                    inflateInit(
+                        &stream
+                    );
+
+
+                if (zResult ==
+                    Z_OK)
+                {
+                    zResult =
+                        inflate(
+                            &stream,
+                            Z_FINISH
+                        );
+
+                    zEndResult =
+                        inflateEnd(
+                            &stream
+                        );
+                }
 
 
                 if (zResult !=
-                    Z_OK)
+                        Z_STREAM_END ||
+                    zEndResult !=
+                        Z_OK ||
+                    stream.total_out !=
+                        (uLong)rawSize ||
+                    stream.total_in !=
+                        (uLong)compressedSize)
                 {
-                    DC_WARN(
-                        "DoomCube: CarryHandle dogfood slot 0 "
-                        "inflate failed: %d\n",
+                    logDogfoodZlibFailure(
+                        "INFLATE",
                         zResult
-                    );
-                }
-                else if (outputSize !=
-                         (uLongf)rawSize)
-                {
-                    DC_WARN(
-                        "DoomCube: CarryHandle dogfood slot 0 "
-                        "inflate size mismatch: expected=%lu actual=%lu\n",
-                        (unsigned long)rawSize,
-                        (unsigned long)outputSize
                     );
                 }
                 else
                 {
-                    uLong rawCrc =
+                    actualCrc =
                         crc32(
                             0L,
                             Z_NULL,
                             0
                         );
 
-                    rawCrc =
+                    actualCrc =
                         crc32(
-                            rawCrc,
+                            actualCrc,
                             (const Bytef *)buffer,
-                            outputSize
+                            (uLong)rawSize
                         );
 
 
-                    if ((uint32_t)rawCrc !=
+                    if ((uint32_t)actualCrc !=
                         expectedCrc)
                     {
                         DC_WARN(
                             "DoomCube: CarryHandle dogfood slot 0 "
-                            "raw CRC mismatch\n"
+                            "CRC mismatch expected=%08lx actual=%08lx\n",
+                            (unsigned long)expectedCrc,
+                            (unsigned long)actualCrc
                         );
                     }
                     else
@@ -816,42 +994,45 @@ bool GC_CHDogfoodReadSave(
                         success =
                             true;
 
-
-                        if (!updateDogfoodSaveCache(
-                                buffer,
-                                (size_t)rawSize))
-                        {
-                            DC_WARN(
-                                "DoomCube: CarryHandle dogfood slot 0 "
-                                "cache update failed after GET\n"
-                            );
-                        }
-
-
                         DC_INFO(
                             "DoomCube: CarryHandle dogfood slot 0 "
-                            "GET PASS raw=%lu compressed=%lu\n",
+                            "GET PASS raw=%lu compressed=%lu "
+                            "fixed_zlib_peak=%lu\n",
                             (unsigned long)rawSize,
-                            (unsigned long)compressedSize
+                            (unsigned long)compressedSize,
+                            (unsigned long)dogfoodZlibPeak
                         );
                     }
                 }
+
+
+                resetDogfoodZlibArena();
             }
         }
         else
         {
             /*
-             * Compatibility with DOGFOOD 2/3 and LATENCY FIX 1.
-             *
-             * Those builds stored the raw .dsg directly under the same
-             * CarryHandle object key.
+             * Keep the historical raw-object fallback. It costs no extra
+             * memory and lets development cards made before DCF1 framing
+             * remain readable.
              */
-            if (storedSize <=
-                bufferSize)
+            if (storedSize == 0u ||
+                storedSize >
+                    bufferSize ||
+                storedSize >
+                    GC_CH_DOGFOOD_SAVE_MAX)
+            {
+                DC_WARN(
+                    "DoomCube: CarryHandle dogfood slot 0 "
+                    "legacy raw object too large (%lu bytes)\n",
+                    (unsigned long)storedSize
+                );
+            }
+            else
             {
                 memcpy(
                     buffer,
-                    stored,
+                    dogfoodStoredBuffer,
                     storedSize
                 );
 
@@ -861,29 +1042,10 @@ bool GC_CHDogfoodReadSave(
                 success =
                     true;
 
-
-                if (!updateDogfoodSaveCache(
-                        buffer,
-                        storedSize))
-                {
-                    DC_WARN(
-                        "DoomCube: CarryHandle dogfood slot 0 "
-                        "cache update failed after legacy GET\n"
-                    );
-                }
-
-
                 DC_INFO(
                     "DoomCube: CarryHandle dogfood slot 0 "
-                    "GET PASS legacy-raw=%lu bytes\n",
+                    "GET PASS legacy raw=%lu\n",
                     (unsigned long)storedSize
-                );
-            }
-            else
-            {
-                DC_WARN(
-                    "DoomCube: CarryHandle dogfood legacy raw "
-                    "slot 0 exceeds caller buffer\n"
                 );
             }
         }
@@ -892,15 +1054,14 @@ bool GC_CHDogfoodReadSave(
              CH_PERSIST_RESULT_NOT_FOUND)
     {
         DC_DEBUG(
-            "DoomCube: CarryHandle dogfood slot 0 "
-            "not present\n"
+            "DoomCube: CarryHandle dogfood slot 0 empty\n"
         );
     }
     else
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 GET "
-            "failed: %d\n",
+            "DoomCube: CarryHandle dogfood slot 0 "
+            "GET failed: %d\n",
             (int)result
         );
     }
@@ -912,16 +1073,28 @@ bool GC_CHDogfoodReadSave(
         );
 
 
-    free(
-        stored
-    );
+    if (success &&
+        closeOk)
+    {
+        if (!updateDogfoodSaveCache(
+                buffer,
+                *actualSize))
+        {
+            DC_WARN(
+                "DoomCube: CarryHandle dogfood slot 0 "
+                "cache update failed after GET\n"
+            );
+
+            success =
+                false;
+        }
+    }
 
 
     return
         success &&
         closeOk;
 }
-
 
 bool GC_CHDogfoodWriteSave(
     int slot,
@@ -933,17 +1106,19 @@ bool GC_CHDogfoodWriteSave(
 
     CH_PersistResult result;
 
-    unsigned char *stored =
-        NULL;
+    z_stream stream =
+        {0};
 
-    uLongf compressedCapacity;
-    uLongf compressedSize;
-
-    size_t storedSize;
-
+    uLong compressedBound;
+    uLong compressedSize;
     uLong rawCrc;
 
+    size_t compressedCapacity;
+    size_t storedSize;
+
     int zResult;
+    int zEndResult =
+        Z_OK;
 
     bool closeOk;
 
@@ -952,6 +1127,8 @@ bool GC_CHDogfoodWriteSave(
             GC_CH_DOGFOOD_SLOT ||
         !data ||
         size == 0u ||
+        size >
+            GC_CH_DOGFOOD_SAVE_MAX ||
         !dogfoodIdentityValid)
     {
         return false;
@@ -971,95 +1148,128 @@ bool GC_CHDogfoodWriteSave(
 
 
     compressedCapacity =
+        sizeof(dogfoodStoredBuffer) -
+        GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE;
+
+    compressedBound =
         compressBound(
             (uLong)size
         );
 
 
-    if ((uint64_t)compressedCapacity +
-            GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE >
-        (uint64_t)SIZE_MAX)
+    if ((size_t)compressedBound >
+        compressedCapacity)
     {
         DC_WARN(
-            "DoomCube: CarryHandle dogfood PUT capacity overflow\n"
+            "DoomCube: CarryHandle dogfood fixed compressed buffer "
+            "too small: need=%lu have=%lu\n",
+            (unsigned long)compressedBound,
+            (unsigned long)compressedCapacity
         );
 
         return false;
     }
-
-
-    storedSize =
-        GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE +
-        (size_t)compressedCapacity;
-
-
-    stored =
-        malloc(
-            storedSize
-        );
-
-    if (!stored)
-    {
-        DC_WARN(
-            "DoomCube: CarryHandle dogfood PUT allocation failed\n"
-        );
-
-        return false;
-    }
-
-
-    compressedSize =
-        compressedCapacity;
 
 
     /*
-     * Doom save data has historically compressed to a small fraction of
-     * its raw size. Z_BEST_SPEED keeps the PowerPC-side pause small while
-     * still avoiding several CARD sectors per transaction.
+     * Use the fixed zlib allocator. No malloc/calloc/free is reachable from
+     * this DoomCube compression operation.
+     */
+    resetDogfoodZlibArena();
+
+    stream.zalloc =
+        dogfoodZAlloc;
+
+    stream.zfree =
+        dogfoodZFree;
+
+    stream.opaque =
+        Z_NULL;
+
+    stream.next_in =
+        (Bytef *)data;
+
+    stream.avail_in =
+        (uInt)size;
+
+    stream.next_out =
+        (Bytef *)(
+            dogfoodStoredBuffer +
+            GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE
+        );
+
+    stream.avail_out =
+        (uInt)compressedCapacity;
+
+
+    /*
+     * memLevel 6 deliberately trades a small amount of compression ratio for
+     * substantially lower deterministic MEM1 use. The zlib stream remains
+     * ordinary DEFLATE and therefore fully compatible with existing DCF1
+     * readers.
      */
     zResult =
-        compress2(
-            (Bytef *)(
-                stored +
-                GC_CH_DOGFOOD_PAYLOAD_HEADER_SIZE
-            ),
-            &compressedSize,
-            (const Bytef *)data,
-            (uLong)size,
-            Z_BEST_SPEED
+        deflateInit2(
+            &stream,
+            Z_BEST_SPEED,
+            Z_DEFLATED,
+            MAX_WBITS,
+            6,
+            Z_DEFAULT_STRATEGY
         );
+
+
+    if (zResult ==
+        Z_OK)
+    {
+        zResult =
+            deflate(
+                &stream,
+                Z_FINISH
+            );
+
+        compressedSize =
+            stream.total_out;
+
+        zEndResult =
+            deflateEnd(
+                &stream
+            );
+    }
+    else
+    {
+        compressedSize =
+            0u;
+    }
 
 
     if (zResult !=
-        Z_OK)
+            Z_STREAM_END ||
+        zEndResult !=
+            Z_OK ||
+        stream.total_in !=
+            (uLong)size)
     {
-        DC_WARN(
-            "DoomCube: CarryHandle dogfood slot 0 "
-            "deflate failed: %d\n",
+        logDogfoodZlibFailure(
+            "DEFLATE",
             zResult
         );
 
-        free(
-            stored
-        );
+        resetDogfoodZlibArena();
 
         return false;
     }
 
 
-    if (size >
-            UINT32_MAX ||
-        compressedSize >
-            UINT32_MAX)
+    if (compressedSize >
+        UINT32_MAX)
     {
         DC_WARN(
             "DoomCube: CarryHandle dogfood slot 0 "
-            "payload exceeds framing limits\n"
+            "compressed payload exceeds framing limits\n"
         );
 
-        free(
-            stored
-        );
+        resetDogfoodZlibArena();
 
         return false;
     }
@@ -1081,27 +1291,27 @@ bool GC_CHDogfoodWriteSave(
 
 
     writeBe32(
-        stored + 0u,
+        dogfoodStoredBuffer + 0u,
         GC_CH_DOGFOOD_PAYLOAD_MAGIC
     );
 
     writeBe32(
-        stored + 4u,
+        dogfoodStoredBuffer + 4u,
         GC_CH_DOGFOOD_PAYLOAD_VERSION
     );
 
     writeBe32(
-        stored + 8u,
+        dogfoodStoredBuffer + 8u,
         (uint32_t)size
     );
 
     writeBe32(
-        stored + 12u,
+        dogfoodStoredBuffer + 12u,
         (uint32_t)compressedSize
     );
 
     writeBe32(
-        stored + 16u,
+        dogfoodStoredBuffer + 16u,
         (uint32_t)rawCrc
     );
 
@@ -1113,20 +1323,24 @@ bool GC_CHDogfoodWriteSave(
 
     DC_INFO(
         "DoomCube: CarryHandle dogfood slot 0 DEFLATE "
-        "raw=%lu compressed=%lu object=%lu\n",
+        "raw=%lu compressed=%lu object=%lu fixed_zlib_peak=%lu\n",
         (unsigned long)size,
         (unsigned long)compressedSize,
-        (unsigned long)storedSize
+        (unsigned long)storedSize,
+        (unsigned long)dogfoodZlibPeak
     );
+
+
+    /*
+     * zlib no longer needs its arena once deflateEnd() returned.
+     * The compressed bytes live separately in dogfoodStoredBuffer.
+     */
+    resetDogfoodZlibArena();
 
 
     if (!openDogfoodSave(
             &save))
     {
-        free(
-            stored
-        );
-
         return false;
     }
 
@@ -1138,7 +1352,7 @@ bool GC_CHDogfoodWriteSave(
             dogfoodScopeSize,
             dogfoodSaveKey,
             sizeof(dogfoodSaveKey),
-            stored,
+            dogfoodStoredBuffer,
             storedSize
         );
 
@@ -1172,8 +1386,6 @@ bool GC_CHDogfoodWriteSave(
     /*
      * Replace the cache only after CarryHandle reported a definite commit
      * and its owned application-save session closed successfully.
-     *
-     * On any failed/uncertain write, retain the previously verified cache.
      */
     if (result ==
             CH_PERSIST_RESULT_OK &&
@@ -1197,11 +1409,6 @@ bool GC_CHDogfoodWriteSave(
             );
         }
     }
-
-
-    free(
-        stored
-    );
 
 
     return
