@@ -1241,15 +1241,24 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         exist_ok=True,
     )
 
-    generated = 0
+    # DoomCube deliberately uses one launcher theme. Purge old per-game
+    # outputs so incremental staging can never retain obsolete tracks.
+    stale_launcher_music = (
+        "doom1.mid",
+        "doom.mid",
+        "doom2.mid",
+        "tnt.mid",
+        "plutonia.mid",
+        "sigil.mid",
+        "sigil2.mid",
+    )
 
-    for campaign in CAMPAIGNS:
-        if generate_campaign_music(
-            root,
-            music_dir,
-            campaign,
-        ):
-            generated += 1
+    for filename in stale_launcher_music:
+        stale = music_dir / filename
+        if stale.exists():
+            stale.unlink()
+
+    generated = 0
 
     custom_generated = generate_custom_intermission_music(
         root,
@@ -1264,12 +1273,7 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         audio_dir,
     )
 
-    menu_choose_generated = generate_menu_choose_wav(
-        root,
-        audio_dir,
-    )
-
-    expected = len(CAMPAIGNS) + 1
+    expected = 1
 
     print()
     print(
@@ -1287,17 +1291,7 @@ def generate_launcher_audio(root: Path) -> tuple[int, int, bool]:
         )
     )
 
-    print(
-        "Launcher menu confirm audio: "
-        + (
-            "generated"
-            if menu_choose_generated
-            else "not generated"
-        )
-    )
-
     return generated, expected - generated, roar_generated
-
 
 def generate_launcher_assets(root: Path) -> tuple[int, int]:
     output_dir = (

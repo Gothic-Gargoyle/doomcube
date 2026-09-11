@@ -128,13 +128,6 @@ static void GC_LauncherProbeGlobalConfig(void)
 #define GC_CARRYHANDLE_IDENT_FADE_MS 500u
 #define GC_CARRYHANDLE_IDENT_HOLD_MS 1250u
 #define GC_LAUNCHER_TIMIDITY_CFG          "dvd:/data/timidity/timidity.cfg"
-#define GC_LAUNCHER_MUSIC_DOOM1_PATH      "dvd:/launcher/music/doom1.mid"
-#define GC_LAUNCHER_MUSIC_DOOM_PATH       "dvd:/launcher/music/doom.mid"
-#define GC_LAUNCHER_MUSIC_DOOM2_PATH      "dvd:/launcher/music/doom2.mid"
-#define GC_LAUNCHER_MUSIC_TNT_PATH        "dvd:/launcher/music/tnt.mid"
-#define GC_LAUNCHER_MUSIC_PLUTONIA_PATH   "dvd:/launcher/music/plutonia.mid"
-#define GC_LAUNCHER_MUSIC_SIGIL_PATH      "dvd:/launcher/music/sigil.mid"
-#define GC_LAUNCHER_MUSIC_SIGIL2_PATH     "dvd:/launcher/music/sigil2.mid"
 #define GC_LAUNCHER_MUSIC_CUSTOM_PATH     "dvd:/launcher/music/custom.mid"
 #define GC_LAUNCHER_MENU_CHOOSE_AUDIO_PATH "dvd:/launcher/audio/menu_choose.wav"
 #define GC_STUDIO_IDENT_FADE_MS   750u
@@ -3340,13 +3333,6 @@ typedef struct GC_LauncherMusicCacheEntry
 
 static GC_LauncherMusicCacheEntry gcLauncherMusicCache[] =
 {
-    { GC_LAUNCHER_MUSIC_DOOM1_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_DOOM_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_DOOM2_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_TNT_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_PLUTONIA_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_SIGIL_PATH, NULL },
-    { GC_LAUNCHER_MUSIC_SIGIL2_PATH, NULL },
     { GC_LAUNCHER_MUSIC_CUSTOM_PATH, NULL }
 };
 
@@ -3717,68 +3703,12 @@ static bool GC_LauncherMusicUseIntermission(void)
 }
 
 
-static const char *GC_LauncherMusicPathForGame(
-    int gameIndex)
-{
-    switch (gameIndex)
-    {
-        case 0:
-            return GC_LAUNCHER_MUSIC_DOOM1_PATH;
-
-        case 1:
-            return GC_LAUNCHER_MUSIC_DOOM_PATH;
-
-        case 2:
-            return GC_LAUNCHER_MUSIC_DOOM2_PATH;
-
-        case 3:
-            return GC_LAUNCHER_MUSIC_TNT_PATH;
-
-        case 4:
-            return GC_LAUNCHER_MUSIC_PLUTONIA_PATH;
-
-        case 5:
-            return GC_LAUNCHER_MUSIC_SIGIL_PATH;
-
-        case 6:
-            return GC_LAUNCHER_MUSIC_SIGIL2_PATH;
-
-        case GC_CUSTOM_GAME_INDEX:
-            return GC_LAUNCHER_MUSIC_CUSTOM_PATH;
-
-        default:
-            return NULL;
-    }
-}
-
-
-static bool GC_LauncherMusicUseGame(
-    int gameIndex)
-{
-    const char *path =
-        GC_LauncherMusicPathForGame(
-            gameIndex);
-
-    if (path == NULL)
-    {
-        DC_WARN(
-            "DoomCube: no launcher music mapping for game index %d\n",
-            gameIndex);
-
-        return false;
-    }
-
-    return GC_LauncherMusicUsePath(
-        path);
-}
-
-
 static void GC_LauncherMusicPreloadAvailable(void)
 {
-    int gameIndex;
     int loaded = 0;
     int alreadyLoaded = 0;
     int failed = 0;
+    GC_LauncherMusicCacheEntry *entry;
 
     if (!GC_LauncherMusicEnsureReady())
     {
@@ -3788,53 +3718,26 @@ static void GC_LauncherMusicPreloadAvailable(void)
         return;
     }
 
-    for (gameIndex = 0;
-         gameIndex < GC_MAX_GAMES;
-         ++gameIndex)
+    entry =
+        GC_LauncherMusicFindCache(
+            GC_LAUNCHER_MUSIC_CUSTOM_PATH);
+
+    if (entry == NULL)
     {
-        const char *path;
-        GC_LauncherMusicCacheEntry *entry;
-
-        if (gameIndex != GC_CUSTOM_GAME_INDEX
-            && !gcGames[gameIndex].available)
-        {
-            continue;
-        }
-
-        path =
-            GC_LauncherMusicPathForGame(
-                gameIndex);
-
-        if (path == NULL)
-        {
-            continue;
-        }
-
-        entry =
-            GC_LauncherMusicFindCache(
-                path);
-
-        if (entry == NULL)
-        {
-            ++failed;
-            continue;
-        }
-
-        if (entry->music != NULL)
-        {
-            ++alreadyLoaded;
-            continue;
-        }
-
-        if (GC_LauncherMusicLoadCached(
-                path) != NULL)
-        {
-            ++loaded;
-        }
-        else
-        {
-            ++failed;
-        }
+        ++failed;
+    }
+    else if (entry->music != NULL)
+    {
+        ++alreadyLoaded;
+    }
+    else if (GC_LauncherMusicLoadCached(
+                 GC_LAUNCHER_MUSIC_CUSTOM_PATH) != NULL)
+    {
+        ++loaded;
+    }
+    else
+    {
+        ++failed;
     }
 
     DC_INFO(
@@ -3845,13 +3748,11 @@ static void GC_LauncherMusicPreloadAvailable(void)
         failed);
 }
 
-
 static bool GC_LauncherMusicUseEntry(int entryIndex)
 {
-    if (entryIndex == GC_OPTIONS_ENTRY_INDEX ||
-        entryIndex == GC_CONTROLS_ENTRY_INDEX)
-        return GC_LauncherMusicUseIntermission();
-    return GC_LauncherMusicUseGame(entryIndex);
+    (void)entryIndex;
+
+    return GC_LauncherMusicUseIntermission();
 }
 
 typedef struct GC_LauncherOptionsConfig
