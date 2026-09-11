@@ -435,8 +435,6 @@ enum
     gc_action_run,
     gc_action_nextweapon,
     gc_action_prevweapon,
-    gc_action_confirm,
-    gc_action_back,
     gc_actions_end
 };
 
@@ -469,9 +467,7 @@ static const gc_action_t gcGameplayActions[gc_actions_end] =
     GC_ACTION_USE,
     GC_ACTION_RUN,
     GC_ACTION_NEXT_WEAPON,
-    GC_ACTION_PREV_WEAPON,
-    GC_ACTION_MENU_CONFIRM,
-    GC_ACTION_MENU_BACK
+    GC_ACTION_PREV_WEAPON
 };
 
 
@@ -481,9 +477,7 @@ static const char *gcGameplayNames[gc_actions_end] =
     "USE",
     "RUN",
     "NEXT WEAPON",
-    "PREV WEAPON",
-    "MENU CONFIRM",
-    "MENU BACK"
+    "PREV WEAPON"
 };
 
 
@@ -535,9 +529,7 @@ menuitem_t GameCubeActionsMenu[] =
     {1,"", M_GameCubeBindAction,'u'},
     {1,"", M_GameCubeBindAction,'r'},
     {1,"", M_GameCubeBindAction,'n'},
-    {1,"", M_GameCubeBindAction,'p'},
-    {1,"", M_GameCubeBindAction,'c'},
-    {1,"", M_GameCubeBindAction,'b'}
+    {1,"", M_GameCubeBindAction,'p'}
 };
 
 
@@ -2746,4 +2738,3 @@ void M_Init (void)
 
     //opldev = M_CheckParm("-opldev") > 0;
 }
-

@@ -411,8 +411,30 @@ bool GC_ControlHeld(
         return false;
     }
 
+    /*
+     * Menu navigation is a fixed console UI contract.
+     *
+     * A always confirms/enters.
+     * B always goes back/aborts.
+     */
+    if (action ==
+        GC_ACTION_MENU_CONFIRM)
+    {
+        return
+            (gcHeld & CH_PAD_BUTTON_A) != 0;
+    }
+
+    if (action ==
+        GC_ACTION_MENU_BACK)
+    {
+        return
+            (gcHeld & CH_PAD_BUTTON_B) != 0;
+    }
+
     if (!GC_SyncCarryHandleBindings())
+    {
         return false;
+    }
 
     /*
      * Preserve DoomCube's established trigger behavior.
@@ -422,17 +444,18 @@ bool GC_ControlHeld(
      * its analogue travel exceeds GC_TRIGGER_THRESHOLD.
      */
     if ((gc_input_t)gcBindings[action] ==
-            GC_INPUT_R)
+        GC_INPUT_R)
     {
         return
             gcTriggerR >
             GC_TRIGGER_THRESHOLD;
     }
 
-    return CH_ActionBindingsHeld(
-        &gcCHBindings,
-        &gcPad,
-        (size_t)action);
+    return
+        CH_ActionBindingsHeld(
+            &gcCHBindings,
+            &gcPad,
+            action);
 }
 
 bool GC_ControlHasAnalogAxis(
@@ -857,10 +880,21 @@ gc_input_t GC_ControlsGetBinding(
         return GC_INPUT_NONE;
     }
 
+    if (action ==
+        GC_ACTION_MENU_CONFIRM)
+    {
+        return GC_INPUT_A;
+    }
+
+    if (action ==
+        GC_ACTION_MENU_BACK)
+    {
+        return GC_INPUT_B;
+    }
+
     return
         (gc_input_t)gcBindings[action];
 }
-
 
 void GC_ControlsSetBinding(
     gc_action_t action,
@@ -868,6 +902,18 @@ void GC_ControlsSetBinding(
 {
     if (action < 0 ||
         action >= GC_ACTION_COUNT)
+    {
+        return;
+    }
+
+    /*
+     * MENU CONFIRM/BACK are permanently fixed to A/B.
+     * Reject programmatic rebinding as well as hiding them from UI.
+     */
+    if (action ==
+            GC_ACTION_MENU_CONFIRM ||
+        action ==
+            GC_ACTION_MENU_BACK)
     {
         return;
     }
@@ -1069,6 +1115,18 @@ void GC_ControlsBeginCapture(
         return;
     }
 
+    /*
+     * MENU CONFIRM/BACK are fixed console controls and never
+     * participate in binding capture.
+     */
+    if (action ==
+            GC_ACTION_MENU_CONFIRM ||
+        action ==
+            GC_ACTION_MENU_BACK)
+    {
+        return;
+    }
+
     gcCaptureAction =
         action;
 
@@ -1081,7 +1139,6 @@ void GC_ControlsBeginCapture(
     gcCaptureReleaseWait =
         false;
 }
-
 
 void GC_ControlsCancelCapture(void)
 {
