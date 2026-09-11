@@ -18,6 +18,8 @@ int gc_rumble_enabled = 1;
 static bool gcRumbleInitialized;
 static bool gcRumbleExitRegistered;
 static bool gcRumbleDemoMuted;
+static bool gcRumbleSessionOverrideSet;
+static int gcRumbleSessionOverrideValue;
 
 
 static uint32_t ticksToMs(
@@ -132,6 +134,40 @@ void GC_RumbleSetEnabled(
 }
 
 
+void GC_RumbleSetSessionOverride(
+    bool enabled)
+{
+    gcRumbleSessionOverrideSet =
+        true;
+
+    gcRumbleSessionOverrideValue =
+        enabled ? 1 : 0;
+
+    GC_RumbleSetEnabled(
+        enabled);
+
+    DC_INFO(
+        "DoomCube: launcher rumble session override=%d\n",
+        gcRumbleSessionOverrideValue);
+}
+
+
+bool GC_RumbleGetSessionOverride(
+    bool *enabledOut)
+{
+    if (!gcRumbleSessionOverrideSet)
+        return false;
+
+    if (enabledOut != NULL)
+    {
+        *enabledOut =
+            gcRumbleSessionOverrideValue != 0;
+    }
+
+    return true;
+}
+
+
 void GC_RumbleSetDemoMode(
     bool active)
 {
@@ -155,6 +191,16 @@ void GC_RumbleSetDemoMode(
 
 void GC_RumbleApplyConfig(void)
 {
+    if (gcRumbleSessionOverrideSet)
+    {
+        gc_rumble_enabled =
+            gcRumbleSessionOverrideValue;
+
+        DC_INFO(
+            "DoomCube: reapplying launcher rumble session override=%d\n",
+            gc_rumble_enabled);
+    }
+
     gc_rumble_enabled =
         gc_rumble_enabled ? 1 : 0;
 

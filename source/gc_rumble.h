@@ -36,6 +36,19 @@ void GC_RumblePatternTicks(
 void GC_RumbleSetEnabled(
     bool enabled);
 
+/*
+ * Launcher-only current-process preference override.
+ *
+ * This survives M_LoadDefaults() for the game about to launch, so a setting
+ * chosen before Doom configuration is loaded still governs the current
+ * session even when persistence is unavailable.
+ */
+void GC_RumbleSetSessionOverride(
+    bool enabled);
+
+bool GC_RumbleGetSessionOverride(
+    bool *enabledOut);
+
 void GC_RumbleSetDemoMode(
     bool active);
 

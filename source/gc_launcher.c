@@ -13,6 +13,7 @@
 #include <carryhandle/ch_memcard_ui.h>
 #include <carryhandle/ch_splash.h>
 #include "gc_memcard.h"
+#include "gc_rumble.h"
 #include "gc_regression.h"
 
 #include <ctype.h>
@@ -3791,15 +3792,91 @@ static bool GC_LauncherMusicUseEntry(int entryIndex)
 static int GC_LauncherOptionsRumbleValue(void)
 {
     gc_config_snapshot_t snapshot;
-    int value=1;
-    GC_ConfigSnapshotInit(&snapshot);
-    if (GC_ConfigSnapshotLoad(&snapshot))
+    bool sessionEnabled;
+    int value = 1;
+
+    if (GC_RumbleGetSessionOverride(
+            &sessionEnabled))
+    {
+        return
+            sessionEnabled ? 1 : 0;
+    }
+
+    GC_ConfigSnapshotInit(
+        &snapshot);
+
+    if (GC_ConfigSnapshotLoad(
+            &snapshot))
     {
         int loaded;
-        if (GC_ConfigSnapshotFindInt(&snapshot,"gc_rumble_enabled",&loaded))
-            value=loaded ? 1 : 0;
+
+        if (GC_ConfigSnapshotFindInt(
+                &snapshot,
+                "gc_rumble_enabled",
+                &loaded))
+        {
+            value =
+                loaded ? 1 : 0;
+        }
     }
+
     return value;
+}
+
+
+static bool GC_LauncherOptionsPersistRumbleValue(
+    int rumbleEnabled)
+{
+    gc_config_snapshot_t snapshot;
+
+    GC_ConfigSnapshotInit(
+        &snapshot);
+
+    /*
+     * Never replace an unavailable or unreadable config with a synthetic
+     * one-line file.  The session override remains authoritative even when
+     * persistence cannot be attempted safely.
+     */
+    if (!GC_ConfigSnapshotLoad(
+            &snapshot))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS rumble=%d active for this session; "
+            "global config snapshot unavailable, not persisted\n",
+            rumbleEnabled ? 1 : 0);
+
+        return false;
+    }
+
+    if (!GC_ConfigSnapshotSetInt(
+            &snapshot,
+            "gc_rumble_enabled",
+            rumbleEnabled ? 1 : 0))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS rumble=%d active for this session; "
+            "could not update config snapshot\n",
+            rumbleEnabled ? 1 : 0);
+
+        return false;
+    }
+
+    if (!GC_ConfigSnapshotSave(
+            &snapshot))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS rumble=%d active for this session; "
+            "global config save failed\n",
+            rumbleEnabled ? 1 : 0);
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: OPTIONS rumble=%d persisted to global config\n",
+        rumbleEnabled ? 1 : 0);
+
+    return true;
 }
 
 static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
@@ -3847,22 +3924,89 @@ static void GC_DrawOptionsLauncher(SDL_Renderer *renderer, int rumbleEnabled)
 
 static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 {
-    int rumbleEnabled=GC_LauncherOptionsRumbleValue();
+    int rumbleEnabled =
+        GC_LauncherOptionsRumbleValue();
+
     (void)GC_LauncherMusicUseIntermission();
-    GC_DrawOptionsLauncher(renderer,rumbleEnabled);
-    DC_INFO("DoomCube: OPTIONS opened; rumble=%d (read-only shell)\n",rumbleEnabled);
-    for (int i=0;i<3;++i){ PAD_ScanPads(); (void)PAD_ButtonsDown(0); SDL_Delay(16); }
+
+    GC_DrawOptionsLauncher(
+        renderer,
+        rumbleEnabled);
+
+    DC_INFO(
+        "DoomCube: OPTIONS opened; rumble=%d\n",
+        rumbleEnabled);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        PAD_ScanPads();
+        (void)PAD_ButtonsDown(0);
+        SDL_Delay(16);
+    }
+
     while (SYS_MainLoop())
     {
         u16 down;
-        PAD_ScanPads(); down=PAD_ButtonsDown(0);
+
+        PAD_ScanPads();
+
+        down =
+            PAD_ButtonsDown(0);
+
         if (down & PAD_BUTTON_B)
         {
-            DC_INFO("DoomCube: OPTIONS returning to carousel\n");
+            DC_INFO(
+                "DoomCube: OPTIONS returning to carousel\n");
+
             return 0;
         }
+
+        if (down & PAD_BUTTON_A)
+        {
+            bool persisted;
+
+            rumbleEnabled =
+                rumbleEnabled ? 0 : 1;
+
+            /*
+             * Apply the player's choice immediately and remember it across
+             * the later M_LoadDefaults() call for this process.
+             */
+            GC_RumbleSetSessionOverride(
+                rumbleEnabled != 0);
+
+            GC_DrawOptionsLauncher(
+                renderer,
+                rumbleEnabled);
+
+            /*
+             * Enabling rumble doubles as a physical hardware check.
+             * Four historical 35 Hz-style ticks become about 230 ms using
+             * DoomCube's existing rumble timing conversion.
+             *
+             * OFF deliberately gives no pulse: GC_RumbleSetEnabled(false)
+             * has already hard-stopped the motor.
+             */
+            if (rumbleEnabled)
+            {
+                GC_RumblePulseTicks(
+                    4);
+            }
+
+            persisted =
+                GC_LauncherOptionsPersistRumbleValue(
+                    rumbleEnabled);
+
+            DC_INFO(
+                "DoomCube: OPTIONS rumble changed to %d "
+                "(session=1 persisted=%d)\n",
+                rumbleEnabled,
+                persisted ? 1 : 0);
+        }
+
         SDL_Delay(16);
     }
+
     return -1;
 }
 
