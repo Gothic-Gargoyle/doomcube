@@ -529,8 +529,21 @@ GCM_ROOT := \
 GCM_OUTPUT := \
 	$(ISO_OUT)
 
+DOOMCUBE_TIMIDITY_PATCH := \
+	doomcube-timidity-patch
+
+
+.PHONY: $(DOOMCUBE_TIMIDITY_PATCH)
+
+
+$(DOOMCUBE_TIMIDITY_PATCH): all
+	@python3 "$(DOOMCUBE_ROOT)/tools/patch_timidity_calloc_dol.py" \
+		--dol "$(GCM_DOL)"
+
+
 GCM_PREPARE := \
-	$(DOOMCUBE_DISC_STAGE)
+	$(DOOMCUBE_DISC_STAGE) \
+	$(DOOMCUBE_TIMIDITY_PATCH)
 
 
 include $(CARRYHANDLE_DIR)/make/image.mk
@@ -711,7 +724,7 @@ release-debug:
 # CarryHandle calls this target for final releases. The rc and release-debug
 # convenience targets also call it with their own application-specific build
 # variables.
-release-bundle: all
+release-bundle: all $(DOOMCUBE_TIMIDITY_PATCH)
 	@echo
 	@echo "============================================================"
 	@echo " DoomCube player release"
