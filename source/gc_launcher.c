@@ -6,6 +6,7 @@
 #include "i_sound.h"
 
 #include "gc_config.h"
+#include "m_config.h"
 #include "gc_launcher.h"
 #include <SDL2/SDL_mixer.h>
 
@@ -3830,6 +3831,24 @@ static bool GC_LauncherOptionsConfigFindInt(
     const char *name,
     int *valueOut)
 {
+    if (name == NULL ||
+        valueOut == NULL)
+    {
+        return false;
+    }
+
+    /*
+     * A value changed earlier in this process is newer than anything on the
+     * Memory Card. This also makes re-entering OPTIONS correct when the card
+     * could not be written.
+     */
+    if (M_GetSessionVariableInt(
+            (char *)name,
+            valueOut))
+    {
+        return true;
+    }
+
     if (config == NULL ||
         !config->available)
     {
@@ -3849,14 +3868,34 @@ static bool GC_LauncherOptionsConfigSetInt(
     const char *name,
     int value)
 {
+    if (name == NULL)
+        return false;
+
+    /*
+     * Session state is independent from persistence. Install it first so the
+     * game about to launch receives this value even when the Memory Card path
+     * is unavailable or the subsequent write fails.
+     */
+    if (!M_SetSessionVariableInt(
+            (char *)name,
+            value))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS could not install session override "
+            "%s=%d\n",
+            name,
+            value);
+
+        return false;
+    }
+
     if (config == NULL ||
-        name == NULL ||
         !config->available)
     {
         DC_WARN(
             "DoomCube: OPTIONS config unavailable; "
-            "%s=%d not persisted\n",
-            name != NULL ? name : "<null>",
+            "%s=%d active for this session but not persisted\n",
+            name,
             value);
 
         return false;
@@ -3956,6 +3995,41 @@ static bool GC_LauncherOptionsPersistRumbleValue(
     return persisted;
 }
 
+static int GC_LauncherOptionsSfxVolume(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 8;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(
+            config,
+            "sfx_volume",
+            &loaded))
+    {
+        value = loaded;
+    }
+
+    if (value < 0)
+        value = 0;
+    else if (value > 15)
+        value = 15;
+
+    return value;
+}
+
+
+static bool GC_LauncherOptionsPersistSfxVolume(
+    GC_LauncherOptionsConfig *config,
+    int sfxVolume)
+{
+    return
+        GC_LauncherOptionsConfigSetInt(
+            config,
+            "sfx_volume",
+            sfxVolume);
+}
+
+
 static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
 {
     SDL_Texture *texture=GC_LoadDoomMenuSkull(renderer);
@@ -3969,27 +4043,60 @@ static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
     (void)SDL_RenderCopy(renderer,texture,NULL,&dst);
 }
 
-static void GC_DrawOptionsLauncher(SDL_Renderer *renderer, int rumbleEnabled)
+static void GC_DrawOptionsLauncher(
+    SDL_Renderer *renderer,
+    int selectedRow,
+    int rumbleEnabled,
+    int sfxVolume)
 {
     SDL_Texture *background;
     SDL_Texture *bGlyph;
-    SDL_Rect fullscreen={0,0,GC_LAUNCHER_WIDTH,480};
-    const char *value=rumbleEnabled ? "ON" : "OFF";
-    int titleWidth,valueWidth,backWidth,backX;
+    SDL_Rect fullscreen =
+        { 0, 0, GC_LAUNCHER_WIDTH, 480 };
+    const char *rumbleValue =
+        rumbleEnabled ? "ON" : "OFF";
+    char sfxValue[16];
+    int titleWidth;
+    int valueWidth;
+    int backWidth;
+    int backX;
+    int skullY =
+        selectedRow == 0 ? 196 : 246;
+
+    snprintf(
+        sfxValue,
+        sizeof(sfxValue),
+        "%d",
+        sfxVolume);
+
     SDL_SetRenderDrawColor(renderer,0,0,0,255);
     SDL_RenderClear(renderer);
-    background=GC_LoadLauncherBitmap(renderer,GC_OPTIONS_BACKGROUND_PATH,"OPTIONS INTERPIC");
+
+    background =
+        GC_LoadLauncherBitmap(
+            renderer,
+            GC_OPTIONS_BACKGROUND_PATH,
+            "OPTIONS INTERPIC");
+
     if (background != NULL)
     {
         (void)SDL_RenderCopy(renderer,background,NULL,&fullscreen);
         SDL_DestroyTexture(background);
     }
+
     titleWidth=GC_TextWidth("OPTIONS",4);
     GC_DrawText(renderer,(GC_LAUNCHER_WIDTH-titleWidth)/2,70,"OPTIONS",4);
-    GC_DrawOptionsSkull(renderer,142,206);
-    GC_DrawText(renderer,190,220,"RUMBLE",3);
-    valueWidth=GC_TextWidth(value,3);
-    GC_DrawText(renderer,450-valueWidth,220,value,3);
+
+    GC_DrawOptionsSkull(renderer,142,skullY);
+
+    GC_DrawText(renderer,190,210,"RUMBLE",3);
+    valueWidth=GC_TextWidth(rumbleValue,3);
+    GC_DrawText(renderer,450-valueWidth,210,rumbleValue,3);
+
+    GC_DrawText(renderer,190,260,"SFX VOLUME",3);
+    valueWidth=GC_TextWidth(sfxValue,3);
+    GC_DrawText(renderer,450-valueWidth,260,sfxValue,3);
+
     bGlyph=GC_LoadCarouselControllerGlyph(renderer,&gcCarouselBGlyph,CH_CONTROLLER_GLYPH_B,GC_CAROUSEL_ACTION_GLYPH_SIZE,"OPTIONS B");
     backWidth=GC_TextWidth("BACK",3);
     backX=(GC_LAUNCHER_WIDTH-GC_CAROUSEL_ACTION_GLYPH_SIZE-8-backWidth)/2;
@@ -4002,13 +4109,14 @@ static void GC_DrawOptionsLauncher(SDL_Renderer *renderer, int rumbleEnabled)
 static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 {
     GC_LauncherOptionsConfig config;
+    int selectedRow = 0;
     int rumbleEnabled;
+    int sfxVolume;
 
     /*
      * One Memory Card config read per OPTIONS visit.
      *
-     * Every row added hereafter should read and edit this same in-RAM
-     * snapshot rather than performing its own load.
+     * Every row reads and edits this same in-RAM snapshot.
      */
     GC_LauncherOptionsConfigInit(
         &config);
@@ -4017,15 +4125,22 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
         GC_LauncherOptionsRumbleValue(
             &config);
 
+    sfxVolume =
+        GC_LauncherOptionsSfxVolume(
+            &config);
+
     (void)GC_LauncherMusicUseIntermission();
 
     GC_DrawOptionsLauncher(
         renderer,
-        rumbleEnabled);
+        selectedRow,
+        rumbleEnabled,
+        sfxVolume);
 
     DC_INFO(
-        "DoomCube: OPTIONS opened; rumble=%d\n",
-        rumbleEnabled);
+        "DoomCube: OPTIONS opened; rumble=%d sfx_volume=%d\n",
+        rumbleEnabled,
+        sfxVolume);
 
     for (int i = 0; i < 3; ++i)
     {
@@ -4051,32 +4166,47 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
             return 0;
         }
 
-        if (down & PAD_BUTTON_A)
+        if (down & PAD_BUTTON_UP)
+        {
+            if (selectedRow > 0)
+                --selectedRow;
+
+            GC_DrawOptionsLauncher(
+                renderer,
+                selectedRow,
+                rumbleEnabled,
+                sfxVolume);
+        }
+
+        if (down & PAD_BUTTON_DOWN)
+        {
+            if (selectedRow < 1)
+                ++selectedRow;
+
+            GC_DrawOptionsLauncher(
+                renderer,
+                selectedRow,
+                rumbleEnabled,
+                sfxVolume);
+        }
+
+        if ((down & PAD_BUTTON_A) &&
+            selectedRow == 0)
         {
             bool persisted;
 
             rumbleEnabled =
                 rumbleEnabled ? 0 : 1;
 
-            /*
-             * Apply the player's choice immediately and remember it across
-             * the later M_LoadDefaults() call for this process.
-             */
             GC_RumbleSetSessionOverride(
                 rumbleEnabled != 0);
 
             GC_DrawOptionsLauncher(
                 renderer,
-                rumbleEnabled);
+                selectedRow,
+                rumbleEnabled,
+                sfxVolume);
 
-            /*
-             * Enabling rumble doubles as a physical hardware check.
-             * Four historical 35 Hz-style ticks become about 230 ms using
-             * DoomCube's existing rumble timing conversion.
-             *
-             * OFF deliberately gives no pulse: GC_RumbleSetEnabled(false)
-             * has already hard-stopped the motor.
-             */
             if (rumbleEnabled)
             {
                 GC_RumblePulseTicks(
@@ -4093,6 +4223,47 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
                 "(session=1 persisted=%d)\n",
                 rumbleEnabled,
                 persisted ? 1 : 0);
+        }
+
+        if (selectedRow == 1 &&
+            (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        {
+            int oldVolume =
+                sfxVolume;
+
+            bool persisted;
+
+            if ((down & PAD_BUTTON_LEFT) &&
+                sfxVolume > 0)
+            {
+                --sfxVolume;
+            }
+
+            if ((down & PAD_BUTTON_RIGHT) &&
+                sfxVolume < 15)
+            {
+                ++sfxVolume;
+            }
+
+            if (sfxVolume != oldVolume)
+            {
+                persisted =
+                    GC_LauncherOptionsPersistSfxVolume(
+                        &config,
+                        sfxVolume);
+
+                GC_DrawOptionsLauncher(
+                    renderer,
+                    selectedRow,
+                    rumbleEnabled,
+                    sfxVolume);
+
+                DC_INFO(
+                    "DoomCube: OPTIONS sfx_volume changed to %d "
+                    "(session=1 persisted=%d)\n",
+                    sfxVolume,
+                    persisted ? 1 : 0);
+            }
         }
 
         SDL_Delay(16);

@@ -28,6 +28,17 @@ void M_SaveDefaultsAlternate(char *main, char *extra);
 void M_SetConfigDir(char *dir);
 void M_BindVariable(char *name, void *variable);
 boolean M_SetVariable(char *name, char *value);
+
+/*
+ * Current-process overrides installed before M_LoadDefaults().
+ *
+ * The launcher uses these for OPTIONS changes so they still affect the game
+ * being launched when Memory Card persistence is unavailable. M_LoadDefaults
+ * reapplies them after parsing the stored config.
+ */
+boolean M_SetSessionVariableInt(char *name, int value);
+boolean M_GetSessionVariableInt(char *name, int *value);
+
 int M_GetIntVariable(char *name);
 const char *M_GetStrVariable(char *name);
 float M_GetFloatVariable(char *name);

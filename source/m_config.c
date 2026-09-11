@@ -2155,6 +2155,162 @@ void M_SaveDefaultsAlternate(char *main, char *extra)
     extra_defaults.filename = orig_extra;
 }
 
+
+/*
+ * m_config.c historically defines the public setters below M_LoadDefaults().
+ * The launcher override helper needs this one before that definition.
+ */
+boolean M_SetVariable(char *name, char *value);
+
+
+/*
+ * DoomCube launcher current-process configuration overrides.
+ *
+ * These are deliberately separate from persistence. The launcher may install
+ * an option while Memory Card writing is unavailable; after the normal config
+ * file has been parsed, these values win for the game about to start.
+ */
+#define M_SESSION_OVERRIDE_MAX 16
+#define M_SESSION_OVERRIDE_NAME_MAX 64
+
+typedef struct
+{
+    boolean used;
+    char name[M_SESSION_OVERRIDE_NAME_MAX];
+    int value;
+} m_session_override_t;
+
+static m_session_override_t m_session_overrides[M_SESSION_OVERRIDE_MAX];
+
+
+static boolean M_SessionVariableNameValid(
+    const char *name)
+{
+    size_t i;
+    size_t length;
+
+    if (name == NULL ||
+        *name == '\0')
+    {
+        return false;
+    }
+
+    length = strlen(name);
+
+    if (length >= M_SESSION_OVERRIDE_NAME_MAX)
+        return false;
+
+    for (i = 0; i < length; ++i)
+    {
+        if ((unsigned char)name[i] <= ' ')
+            return false;
+    }
+
+    return true;
+}
+
+
+boolean M_SetSessionVariableInt(
+    char *name,
+    int value)
+{
+    int i;
+    int free_index = -1;
+
+    if (!M_SessionVariableNameValid(name))
+        return false;
+
+    for (i = 0; i < M_SESSION_OVERRIDE_MAX; ++i)
+    {
+        if (m_session_overrides[i].used)
+        {
+            if (!strcmp(m_session_overrides[i].name, name))
+            {
+                m_session_overrides[i].value = value;
+                return true;
+            }
+        }
+        else if (free_index < 0)
+        {
+            free_index = i;
+        }
+    }
+
+    if (free_index < 0)
+        return false;
+
+    m_session_overrides[free_index].used = true;
+    strcpy(m_session_overrides[free_index].name, name);
+    m_session_overrides[free_index].value = value;
+
+    return true;
+}
+
+
+boolean M_GetSessionVariableInt(
+    char *name,
+    int *value)
+{
+    int i;
+
+    if (!M_SessionVariableNameValid(name) ||
+        value == NULL)
+    {
+        return false;
+    }
+
+    for (i = 0; i < M_SESSION_OVERRIDE_MAX; ++i)
+    {
+        if (m_session_overrides[i].used &&
+            !strcmp(m_session_overrides[i].name, name))
+        {
+            *value = m_session_overrides[i].value;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+static void M_ApplySessionVariableOverrides(void)
+{
+    int i;
+
+    for (i = 0; i < M_SESSION_OVERRIDE_MAX; ++i)
+    {
+        char value_text[32];
+
+        if (!m_session_overrides[i].used)
+            continue;
+
+        snprintf(
+            value_text,
+            sizeof(value_text),
+            "%d",
+            m_session_overrides[i].value);
+
+        if (M_SetVariable(
+                m_session_overrides[i].name,
+                value_text))
+        {
+            printf(
+                "DoomCube: reapplied launcher config override %s=%d\n",
+                m_session_overrides[i].name,
+                m_session_overrides[i].value);
+        }
+        else
+        {
+            printf(
+                "DoomCube: WARNING: could not reapply launcher "
+                "config override %s=%d\n",
+                m_session_overrides[i].name,
+                m_session_overrides[i].value);
+        }
+    }
+}
+
+
 //
 // M_LoadDefaults
 //
@@ -2237,6 +2393,12 @@ void M_LoadDefaults (void)
     }
 #endif
 
+    /*
+     * Launcher OPTIONS values are current-process preferences. Reapply them
+     * after normal config parsing so they remain effective even if the card
+     * write failed or saving was unavailable.
+     */
+    M_ApplySessionVariableOverrides();
 }
 
 // Get a configuration file variable by its name
