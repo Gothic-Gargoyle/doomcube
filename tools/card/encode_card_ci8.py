@@ -331,6 +331,15 @@ def main():
     )
 
     parser.add_argument(
+        "--icon",
+        help=(
+            "optional exact 32x32 icon image; "
+            "when omitted, preserve legacy behaviour "
+            "and derive the icon from --input"
+        ),
+    )
+
+    parser.add_argument(
         "--output-c",
         required=True,
     )
@@ -363,10 +372,23 @@ def main():
     with Image.open(source) as raw:
         original = raw.convert("RGB")
 
-        icon_source = original.resize(
-            (ICON_W, ICON_H),
-            Image.Resampling.LANCZOS,
-        )
+        if args.icon:
+            icon_path = Path(args.icon)
+
+            with Image.open(icon_path) as icon_raw:
+                icon_source = icon_raw.convert("RGB")
+
+            if icon_source.size != (ICON_W, ICON_H):
+                raise RuntimeError(
+                    f"icon must be exactly {ICON_W}x{ICON_H}; "
+                    f"got {icon_source.width}x{icon_source.height}"
+                )
+        else:
+            # Backwards-compatible legacy behaviour.
+            icon_source = original.resize(
+                (ICON_W, ICON_H),
+                Image.Resampling.LANCZOS,
+            )
 
         # Keep the existing square DoomCube artwork undistorted:
         # centre a 32x32 copy in the 96x32 CARD banner.
