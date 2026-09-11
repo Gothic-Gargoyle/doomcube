@@ -1346,6 +1346,8 @@ def generate_launcher_assets(root: Path) -> tuple[int, int]:
 
     generate_splash_collage(root)
     generate_doom_menu_logo(root)
+    if not generate_options_intermission(root):
+        raise SystemExit(1)
     generate_doom_menu_skull(root)
     generate_doom_memcard_art(root)
     generate_splash_cube(root)
@@ -2129,6 +2131,43 @@ def generate_doom_memcard_art(root: Path) -> bool:
 
     return True
 
+
+
+def generate_options_intermission(root: Path) -> bool:
+    "Stage one genuine Doom INTERPIC for the global OPTIONS screen."
+    candidates=(
+        ("DOOM","data/wad/doom.wad"),
+        ("DOOM SHAREWARE","data/wad/doom1.wad"),
+        ("DOOM II","data/wad/doom2.wad"),
+        ("TNT: EVILUTION","data/wad/tnt.wad"),
+        ("PLUTONIA","data/wad/plutonia.wad"),
+    )
+    output=root/"launcher"/"options"/"interpic.bmp"
+    for label,relative in candidates:
+        iwad=root/relative
+        if not iwad.is_file(): continue
+        try:
+            wad=wadgfx.WadFile(iwad)
+            lump=wad.find_last("INTERPIC")
+            if lump is None: continue
+            _palette_wad,palette=wadgfx.resolve_palette([wad],0)
+            patch=wadgfx.decode_patch(wad.lump_data(lump))
+            if patch.width != TITLEPIC_WIDTH or patch.height != TITLEPIC_HEIGHT:
+                raise wadgfx.WadError(f"INTERPIC has unsupported dimensions {patch.width}x{patch.height}")
+            output.parent.mkdir(parents=True,exist_ok=True)
+            wadgfx.write_bmp(output,patch,palette)
+        except (OSError,ValueError,wadgfx.WadError) as exc:
+            print(f"[!!] Launcher OPTIONS INTERPIC failed: {exc}")
+            return False
+        print("[OK] Launcher OPTIONS intermission background")
+        print(f"     Source  : {label}")
+        print(f"     IWAD    : {iwad}")
+        print("     Lump    : INTERPIC")
+        print(f"     Size    : {patch.width}x{patch.height}")
+        print("     Output  : launcher/options/interpic.bmp")
+        return True
+    print("[!!] Launcher OPTIONS INTERPIC unavailable: no staged supported IWAD provides INTERPIC")
+    return False
 
 def generate_doom_menu_skull(root: Path) -> bool:
     # Generate the stock Doom menu cursor directly from a supplied IWAD.

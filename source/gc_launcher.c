@@ -118,6 +118,9 @@ static void GC_LauncherProbeGlobalConfig(void)
 
 #define GC_MAX_GAMES 8
 #define GC_CUSTOM_GAME_INDEX 7
+#define GC_OPTIONS_ENTRY_INDEX GC_MAX_GAMES
+#define GC_LAUNCHER_ENTRY_COUNT (GC_MAX_GAMES + 1)
+#define GC_OPTIONS_BACKGROUND_PATH "dvd:/launcher/options/interpic.bmp"
 
 #define GC_PWAD_MANIFEST_PATH "dvd:/data/pwad/doomcube.lst"
 #define GC_PWAD_DIRECTORY     "dvd:/data/pwad"
@@ -1799,39 +1802,6 @@ static void GC_HideRedundantShareware(void)
 }
 
 
-static int GC_FirstAvailableGame(void)
-{
-    int i;
-
-    for (i = 0; i < GC_MAX_GAMES; ++i)
-    {
-        if (gcGames[i].available)
-            return i;
-    }
-
-    return -1;
-}
-
-static int GC_NextAvailableGame(int current, int direction)
-{
-    int attempts;
-
-    for (attempts = 0; attempts < GC_MAX_GAMES; ++attempts)
-    {
-        current += direction;
-
-        if (current < 0)
-            current = GC_MAX_GAMES - 1;
-        else if (current >= GC_MAX_GAMES)
-            current = 0;
-
-        if (gcGames[current].available)
-            return current;
-    }
-
-    return -1;
-}
-
 #define GC_CAROUSEL_NAV_GLYPH_SIZE       40
 #define GC_CAROUSEL_NAV_GLYPH_GAP        10
 #define GC_CAROUSEL_NAV_GLYPH_Y         360
@@ -1890,6 +1860,50 @@ static void GC_DrawCarouselControllerGlyph(
     SDL_SetTextureColorMod(texture, 255, 255, 255);
     SDL_SetTextureAlphaMod(texture, 255);
     SDL_RenderCopy(renderer, texture, NULL, &dst);
+}
+
+
+static bool GC_LauncherEntryAvailable(int index)
+{
+    if (index == GC_OPTIONS_ENTRY_INDEX) return true;
+    return index >= 0 && index < GC_MAX_GAMES && gcGames[index].available;
+}
+
+static const char *GC_LauncherEntryName(int index)
+{
+    if (index == GC_OPTIONS_ENTRY_INDEX) return "OPTIONS";
+    if (index < 0 || index >= GC_MAX_GAMES) return "";
+    return gcGames[index].name;
+}
+
+static const char *GC_LauncherEntryArtPath(int index)
+{
+    if (index == GC_OPTIONS_ENTRY_INDEX) return GC_OPTIONS_BACKGROUND_PATH;
+    if (index < 0 || index >= GC_MAX_GAMES) return NULL;
+    return gcGames[index].artPath;
+}
+
+static int GC_FirstAvailableEntry(void)
+{
+    int i;
+    for (i = 0; i < GC_LAUNCHER_ENTRY_COUNT; ++i)
+        if (GC_LauncherEntryAvailable(i)) return i;
+    return -1;
+}
+
+static int GC_NextAvailableEntry(int current, int direction)
+{
+    int candidate=current;
+    int attempts;
+    if (direction == 0) return current;
+    for (attempts=0; attempts<GC_LAUNCHER_ENTRY_COUNT; ++attempts)
+    {
+        candidate += direction < 0 ? -1 : 1;
+        if (candidate < 0) candidate=GC_LAUNCHER_ENTRY_COUNT-1;
+        else if (candidate >= GC_LAUNCHER_ENTRY_COUNT) candidate=0;
+        if (GC_LauncherEntryAvailable(candidate)) return candidate;
+    }
+    return -1;
 }
 
 static void GC_DrawLauncher(
@@ -1953,13 +1967,13 @@ static void GC_DrawLauncher(
     SDL_RenderClear(renderer);
 
     if (selected >= 0 &&
-        selected < GC_MAX_GAMES &&
-        gcGames[selected].artPath != NULL)
+        selected < GC_LAUNCHER_ENTRY_COUNT &&
+        GC_LauncherEntryArtPath(selected) != NULL)
     {
         background =
             GC_LoadLauncherBitmap(
                 renderer,
-                gcGames[selected].artPath,
+                GC_LauncherEntryArtPath(selected),
                 "TITLEPIC");
 
         titlepicLoaded =
@@ -2042,23 +2056,23 @@ static void GC_DrawLauncher(
 
     textWidth =
         GC_TextWidth(
-            gcGames[selected].name,
+            GC_LauncherEntryName(selected),
             5);
 
     GC_DrawText(
         renderer,
         (GC_LAUNCHER_WIDTH - textWidth) / 2,
         294,
-        gcGames[selected].name,
+        GC_LauncherEntryName(selected),
         5);
 
     previous =
-        GC_NextAvailableGame(
+        GC_NextAvailableEntry(
             selected,
             -1);
 
     next =
-        GC_NextAvailableGame(
+        GC_NextAvailableEntry(
             selected,
             1);
 
@@ -2067,14 +2081,14 @@ static void GC_DrawLauncher(
     {
         int width =
             GC_TextWidth(
-                gcGames[previous].name,
+                GC_LauncherEntryName(previous),
                 3);
 
         GC_DrawText(
             renderer,
             160 - width / 2,
             360,
-            gcGames[previous].name,
+            GC_LauncherEntryName(previous),
             3);
 
         if (dpadLeftGlyph != NULL)
@@ -2095,14 +2109,14 @@ static void GC_DrawLauncher(
     {
         int width =
             GC_TextWidth(
-                gcGames[next].name,
+                GC_LauncherEntryName(next),
                 3);
 
         GC_DrawText(
             renderer,
             480 - width / 2,
             360,
-            gcGames[next].name,
+            GC_LauncherEntryName(next),
             3);
 
         if (dpadRightGlyph != NULL)
@@ -3581,6 +3595,93 @@ static bool GC_LauncherMusicUseGame(
     return GC_LauncherMusicUsePath(
         path);
 }
+
+
+static bool GC_LauncherMusicUseEntry(int entryIndex)
+{
+    if (entryIndex == GC_OPTIONS_ENTRY_INDEX)
+        return GC_LauncherMusicUseIntermission();
+    return GC_LauncherMusicUseGame(entryIndex);
+}
+
+static int GC_LauncherOptionsRumbleValue(void)
+{
+    gc_config_snapshot_t snapshot;
+    int value=1;
+    GC_ConfigSnapshotInit(&snapshot);
+    if (GC_ConfigSnapshotLoad(&snapshot))
+    {
+        int loaded;
+        if (GC_ConfigSnapshotFindInt(&snapshot,"gc_rumble_enabled",&loaded))
+            value=loaded ? 1 : 0;
+    }
+    return value;
+}
+
+static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
+{
+    SDL_Texture *texture=GC_LoadDoomMenuSkull(renderer);
+    int w,h;
+    SDL_Rect dst;
+    if (texture == NULL) return;
+    if (SDL_QueryTexture(texture,NULL,NULL,&w,&h) != 0) return;
+    dst.x=x; dst.y=y; dst.w=w*2; dst.h=h*2;
+    SDL_SetTextureColorMod(texture,255,255,255);
+    SDL_SetTextureAlphaMod(texture,255);
+    (void)SDL_RenderCopy(renderer,texture,NULL,&dst);
+}
+
+static void GC_DrawOptionsLauncher(SDL_Renderer *renderer, int rumbleEnabled)
+{
+    SDL_Texture *background;
+    SDL_Texture *bGlyph;
+    SDL_Rect fullscreen={0,0,GC_LAUNCHER_WIDTH,480};
+    const char *value=rumbleEnabled ? "ON" : "OFF";
+    int titleWidth,valueWidth,backWidth,backX;
+    SDL_SetRenderDrawColor(renderer,0,0,0,255);
+    SDL_RenderClear(renderer);
+    background=GC_LoadLauncherBitmap(renderer,GC_OPTIONS_BACKGROUND_PATH,"OPTIONS INTERPIC");
+    if (background != NULL)
+    {
+        (void)SDL_RenderCopy(renderer,background,NULL,&fullscreen);
+        SDL_DestroyTexture(background);
+    }
+    titleWidth=GC_TextWidth("OPTIONS",4);
+    GC_DrawText(renderer,(GC_LAUNCHER_WIDTH-titleWidth)/2,70,"OPTIONS",4);
+    GC_DrawOptionsSkull(renderer,142,206);
+    GC_DrawText(renderer,190,220,"RUMBLE",3);
+    valueWidth=GC_TextWidth(value,3);
+    GC_DrawText(renderer,450-valueWidth,220,value,3);
+    bGlyph=GC_LoadCarouselControllerGlyph(renderer,&gcCarouselBGlyph,CH_CONTROLLER_GLYPH_B,GC_CAROUSEL_ACTION_GLYPH_SIZE,"OPTIONS B");
+    backWidth=GC_TextWidth("BACK",3);
+    backX=(GC_LAUNCHER_WIDTH-GC_CAROUSEL_ACTION_GLYPH_SIZE-8-backWidth)/2;
+    if (bGlyph != NULL)
+        GC_DrawCarouselControllerGlyph(renderer,bGlyph,backX,408,GC_CAROUSEL_ACTION_GLYPH_SIZE);
+    GC_DrawText(renderer,backX+GC_CAROUSEL_ACTION_GLYPH_SIZE+8,421,"BACK",3);
+    SDL_RenderPresent(renderer);
+}
+
+static int GC_LauncherRunOptions(SDL_Renderer *renderer)
+{
+    int rumbleEnabled=GC_LauncherOptionsRumbleValue();
+    (void)GC_LauncherMusicUseIntermission();
+    GC_DrawOptionsLauncher(renderer,rumbleEnabled);
+    DC_INFO("DoomCube: OPTIONS opened; rumble=%d (read-only shell)\n",rumbleEnabled);
+    for (int i=0;i<3;++i){ PAD_ScanPads(); (void)PAD_ButtonsDown(0); SDL_Delay(16); }
+    while (SYS_MainLoop())
+    {
+        u16 down;
+        PAD_ScanPads(); down=PAD_ButtonsDown(0);
+        if (down & PAD_BUTTON_B)
+        {
+            DC_INFO("DoomCube: OPTIONS returning to carousel\n");
+            return 0;
+        }
+        SDL_Delay(16);
+    }
+    return -1;
+}
+
 static Mix_Chunk *gcLauncherMenuChooseChunk;
 static int gcLauncherMenuChooseChannel = -1;
 static bool gcLauncherMenuChooseLoadAttempted;
@@ -3846,11 +3947,11 @@ static int GC_LauncherRun(
      * usable.
      */
     if (selected < 0 ||
-        selected >= GC_MAX_GAMES ||
-        !gcGames[selected].available)
+        selected >= GC_LAUNCHER_ENTRY_COUNT ||
+        !GC_LauncherEntryAvailable(selected))
     {
         selected =
-            GC_FirstAvailableGame();
+            GC_FirstAvailableEntry();
     }
 
     if (selected < 0)
@@ -3860,7 +3961,7 @@ static int GC_LauncherRun(
         renderer,
         selected);
 
-    (void)GC_LauncherMusicUseGame(
+    (void)GC_LauncherMusicUseEntry(
         selected);
 
     /*
@@ -3934,7 +4035,7 @@ static int GC_LauncherRun(
             (stickDirection < 0 && !stickHeld))
         {
             int previous =
-                GC_NextAvailableGame(
+                GC_NextAvailableEntry(
                     selected,
                     -1);
 
@@ -3945,13 +4046,13 @@ static int GC_LauncherRun(
 
                 DC_DEBUG(
                     "DoomCube: carousel previous -> %s\n",
-                    gcGames[selected].name);
+                    GC_LauncherEntryName(selected));
 
                 GC_DrawLauncher(
                     renderer,
                     selected);
 
-                (void)GC_LauncherMusicUseGame(
+                (void)GC_LauncherMusicUseEntry(
                     selected);
             }
         }
@@ -3963,7 +4064,7 @@ static int GC_LauncherRun(
             (stickDirection > 0 && !stickHeld))
         {
             int next =
-                GC_NextAvailableGame(
+                GC_NextAvailableEntry(
                     selected,
                     1);
 
@@ -3974,13 +4075,13 @@ static int GC_LauncherRun(
 
                 DC_DEBUG(
                     "DoomCube: carousel next -> %s\n",
-                    gcGames[selected].name);
+                    GC_LauncherEntryName(selected));
 
                 GC_DrawLauncher(
                     renderer,
                     selected);
 
-                (void)GC_LauncherMusicUseGame(
+                (void)GC_LauncherMusicUseEntry(
                     selected);
             }
         }
@@ -4007,7 +4108,7 @@ static int GC_LauncherRun(
         {
             DC_DEBUG(
                 "DoomCube: carousel selected %s\n",
-                gcGames[selected].name);
+                GC_LauncherEntryName(selected));
 
             GC_LauncherMenuChoosePlay();
 
@@ -5495,6 +5596,12 @@ bool GC_LauncherSelectGame(
         if (selectedGame < 0)
         {
             break;
+        }
+
+        if (selectedGame == GC_OPTIONS_ENTRY_INDEX)
+        {
+            (void)GC_LauncherRunOptions(renderer);
+            continue;
         }
 
         game =
