@@ -3789,12 +3789,132 @@ static bool GC_LauncherMusicUseEntry(int entryIndex)
     return GC_LauncherMusicUseGame(entryIndex);
 }
 
-static int GC_LauncherOptionsRumbleValue(void)
+typedef struct GC_LauncherOptionsConfig
 {
     gc_config_snapshot_t snapshot;
+    bool available;
+} GC_LauncherOptionsConfig;
+
+
+static void GC_LauncherOptionsConfigInit(
+    GC_LauncherOptionsConfig *config)
+{
+    if (config == NULL)
+        return;
+
+    GC_ConfigSnapshotInit(
+        &config->snapshot);
+
+    config->available =
+        GC_ConfigSnapshotLoad(
+            &config->snapshot);
+
+    if (config->available)
+    {
+        DC_INFO(
+            "DoomCube: OPTIONS config snapshot loaded once "
+            "(%u bytes)\n",
+            (unsigned int)config->snapshot.size);
+    }
+    else
+    {
+        DC_INFO(
+            "DoomCube: OPTIONS config snapshot unavailable; "
+            "session-only changes remain possible\n");
+    }
+}
+
+
+static bool GC_LauncherOptionsConfigFindInt(
+    const GC_LauncherOptionsConfig *config,
+    const char *name,
+    int *valueOut)
+{
+    if (config == NULL ||
+        !config->available)
+    {
+        return false;
+    }
+
+    return
+        GC_ConfigSnapshotFindInt(
+            &config->snapshot,
+            name,
+            valueOut);
+}
+
+
+static bool GC_LauncherOptionsConfigSetInt(
+    GC_LauncherOptionsConfig *config,
+    const char *name,
+    int value)
+{
+    if (config == NULL ||
+        name == NULL ||
+        !config->available)
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS config unavailable; "
+            "%s=%d not persisted\n",
+            name != NULL ? name : "<null>",
+            value);
+
+        return false;
+    }
+
+    /*
+     * Mutate the already-loaded in-RAM snapshot.  No second Memory Card read
+     * occurs while OPTIONS is open.  If the write fails, the edited snapshot
+     * remains in RAM so a later change can retry from the same menu-session
+     * state.
+     */
+    if (!GC_ConfigSnapshotSetInt(
+            &config->snapshot,
+            name,
+            value))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS could not update config snapshot "
+            "%s=%d\n",
+            name,
+            value);
+
+        return false;
+    }
+
+    if (!GC_ConfigSnapshotSave(
+            &config->snapshot))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS config save failed for "
+            "%s=%d; in-RAM snapshot retained\n",
+            name,
+            value);
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: OPTIONS config persisted %s=%d "
+        "from session snapshot\n",
+        name,
+        value);
+
+    return true;
+}
+
+
+static int GC_LauncherOptionsRumbleValue(
+    const GC_LauncherOptionsConfig *config)
+{
     bool sessionEnabled;
     int value = 1;
+    int loaded;
 
+    /*
+     * The explicit runtime override remains authoritative when present.
+     * Otherwise use the single config snapshot loaded on menu entry.
+     */
     if (GC_RumbleGetSessionOverride(
             &sessionEnabled))
     {
@@ -3802,22 +3922,13 @@ static int GC_LauncherOptionsRumbleValue(void)
             sessionEnabled ? 1 : 0;
     }
 
-    GC_ConfigSnapshotInit(
-        &snapshot);
-
-    if (GC_ConfigSnapshotLoad(
-            &snapshot))
+    if (GC_LauncherOptionsConfigFindInt(
+            config,
+            "gc_rumble_enabled",
+            &loaded))
     {
-        int loaded;
-
-        if (GC_ConfigSnapshotFindInt(
-                &snapshot,
-                "gc_rumble_enabled",
-                &loaded))
-        {
-            value =
-                loaded ? 1 : 0;
-        }
+        value =
+            loaded ? 1 : 0;
     }
 
     return value;
@@ -3825,58 +3936,24 @@ static int GC_LauncherOptionsRumbleValue(void)
 
 
 static bool GC_LauncherOptionsPersistRumbleValue(
+    GC_LauncherOptionsConfig *config,
     int rumbleEnabled)
 {
-    gc_config_snapshot_t snapshot;
-
-    GC_ConfigSnapshotInit(
-        &snapshot);
-
-    /*
-     * Never replace an unavailable or unreadable config with a synthetic
-     * one-line file.  The session override remains authoritative even when
-     * persistence cannot be attempted safely.
-     */
-    if (!GC_ConfigSnapshotLoad(
-            &snapshot))
-    {
-        DC_WARN(
-            "DoomCube: OPTIONS rumble=%d active for this session; "
-            "global config snapshot unavailable, not persisted\n",
-            rumbleEnabled ? 1 : 0);
-
-        return false;
-    }
-
-    if (!GC_ConfigSnapshotSetInt(
-            &snapshot,
+    bool persisted =
+        GC_LauncherOptionsConfigSetInt(
+            config,
             "gc_rumble_enabled",
-            rumbleEnabled ? 1 : 0))
-    {
-        DC_WARN(
-            "DoomCube: OPTIONS rumble=%d active for this session; "
-            "could not update config snapshot\n",
             rumbleEnabled ? 1 : 0);
 
-        return false;
-    }
-
-    if (!GC_ConfigSnapshotSave(
-            &snapshot))
+    if (!persisted)
     {
         DC_WARN(
-            "DoomCube: OPTIONS rumble=%d active for this session; "
-            "global config save failed\n",
+            "DoomCube: OPTIONS rumble=%d remains active "
+            "for this session but was not persisted\n",
             rumbleEnabled ? 1 : 0);
-
-        return false;
     }
 
-    DC_INFO(
-        "DoomCube: OPTIONS rumble=%d persisted to global config\n",
-        rumbleEnabled ? 1 : 0);
-
-    return true;
+    return persisted;
 }
 
 static void GC_DrawOptionsSkull(SDL_Renderer *renderer, int x, int y)
@@ -3924,8 +4001,21 @@ static void GC_DrawOptionsLauncher(SDL_Renderer *renderer, int rumbleEnabled)
 
 static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 {
-    int rumbleEnabled =
-        GC_LauncherOptionsRumbleValue();
+    GC_LauncherOptionsConfig config;
+    int rumbleEnabled;
+
+    /*
+     * One Memory Card config read per OPTIONS visit.
+     *
+     * Every row added hereafter should read and edit this same in-RAM
+     * snapshot rather than performing its own load.
+     */
+    GC_LauncherOptionsConfigInit(
+        &config);
+
+    rumbleEnabled =
+        GC_LauncherOptionsRumbleValue(
+            &config);
 
     (void)GC_LauncherMusicUseIntermission();
 
@@ -3995,6 +4085,7 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 
             persisted =
                 GC_LauncherOptionsPersistRumbleValue(
+                    &config,
                     rumbleEnabled);
 
             DC_INFO(
