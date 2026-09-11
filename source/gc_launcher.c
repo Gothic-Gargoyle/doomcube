@@ -33,6 +33,15 @@
 #define GC_LAUNCHER_DEADZONE     24
 
 
+/*
+ * Doom-style launcher music volume (0..15).
+ *
+ * -1 means no persisted launcher preference was available, in which case
+ * the historical full SDL_mixer volume is retained.
+ */
+static int gcLauncherConfiguredMusicVolume = -1;
+
+
 static void GC_LauncherProbeGlobalConfig(void)
 {
     static gc_config_snapshot_t snapshot;
@@ -77,6 +86,23 @@ static void GC_LauncherProbeGlobalConfig(void)
                 integerKeys[i],
                 &value))
         {
+            if (!strcmp(
+                    integerKeys[i],
+                    "music_volume"))
+            {
+                if (value < 0)
+                    value = 0;
+                else if (value > 15)
+                    value = 15;
+
+                gcLauncherConfiguredMusicVolume =
+                    value;
+
+                DC_INFO(
+                    "DoomCube: launcher music startup preference=%d\n",
+                    gcLauncherConfiguredMusicVolume);
+            }
+
             DC_INFO(
                 "DoomCube: launcher config %s=%d\n",
                 integerKeys[i],
@@ -3475,8 +3501,34 @@ static bool GC_LauncherMusicEnsureReady(void)
         "DoomCube: launcher music TiMidity config: %s\n",
         cfg != NULL ? cfg : "(null)");
 
-    Mix_VolumeMusic(
-        MIX_MAX_VOLUME);
+    if (gcLauncherConfiguredMusicVolume >= 0)
+    {
+        int doomVolume =
+            gcLauncherConfiguredMusicVolume * 8;
+
+        int mixerVolume =
+            (doomVolume * MIX_MAX_VOLUME) / 127;
+
+        Mix_VolumeMusic(
+            mixerVolume);
+
+        DC_INFO(
+            "DoomCube: launcher music initial volume "
+            "music_volume=%d doom=%d mixer=%d\n",
+            gcLauncherConfiguredMusicVolume,
+            doomVolume,
+            mixerVolume);
+    }
+    else
+    {
+        Mix_VolumeMusic(
+            MIX_MAX_VOLUME);
+
+        DC_INFO(
+            "DoomCube: launcher music initial volume "
+            "using legacy full mixer volume=%d\n",
+            MIX_MAX_VOLUME);
+    }
 
     gcLauncherMusic.ready = true;
 
@@ -3794,6 +3846,7 @@ typedef struct GC_LauncherOptionsConfig
 {
     gc_config_snapshot_t snapshot;
     bool available;
+    bool dirty;
 } GC_LauncherOptionsConfig;
 
 
@@ -3809,6 +3862,9 @@ static void GC_LauncherOptionsConfigInit(
     config->available =
         GC_ConfigSnapshotLoad(
             &config->snapshot);
+
+    config->dirty =
+        false;
 
     if (config->available)
     {
@@ -3921,23 +3977,58 @@ static bool GC_LauncherOptionsConfigSetInt(
         return false;
     }
 
-    if (!GC_ConfigSnapshotSave(
-            &config->snapshot))
+    config->dirty =
+        true;
+
+    DC_INFO(
+        "DoomCube: OPTIONS config staged %s=%d "
+        "in session snapshot\n",
+        name,
+        value);
+
+    return true;
+}
+
+
+static bool GC_LauncherOptionsConfigFlush(
+    GC_LauncherOptionsConfig *config)
+{
+    if (config == NULL ||
+        !config->dirty)
     {
+        return true;
+    }
+
+    if (!config->available)
+    {
+        /*
+         * Current-process overrides already own runtime behavior.
+         * There is deliberately no synthetic replacement config here.
+         */
         DC_WARN(
-            "DoomCube: OPTIONS config save failed for "
-            "%s=%d; in-RAM snapshot retained\n",
-            name,
-            value);
+            "DoomCube: OPTIONS config dirty but persistence "
+            "is unavailable; session values remain active\n");
 
         return false;
     }
 
+    if (!GC_ConfigSnapshotSave(
+            &config->snapshot))
+    {
+        DC_WARN(
+            "DoomCube: OPTIONS config flush failed; "
+            "dirty in-RAM snapshot retained until menu exit\n");
+
+        return false;
+    }
+
+    config->dirty =
+        false;
+
     DC_INFO(
-        "DoomCube: OPTIONS config persisted %s=%d "
-        "from session snapshot\n",
-        name,
-        value);
+        "DoomCube: OPTIONS config flushed once on menu exit "
+        "(%u bytes)\n",
+        (unsigned int)config->snapshot.size);
 
     return true;
 }
@@ -3974,7 +4065,7 @@ static int GC_LauncherOptionsRumbleValue(
 }
 
 
-static bool GC_LauncherOptionsPersistRumbleValue(
+static bool GC_LauncherOptionsStageRumbleValue(
     GC_LauncherOptionsConfig *config,
     int rumbleEnabled)
 {
@@ -3988,7 +4079,7 @@ static bool GC_LauncherOptionsPersistRumbleValue(
     {
         DC_WARN(
             "DoomCube: OPTIONS rumble=%d remains active "
-            "for this session but was not persisted\n",
+            "for this session but could not be staged\n",
             rumbleEnabled ? 1 : 0);
     }
 
@@ -4018,7 +4109,7 @@ static int GC_LauncherOptionsSfxVolume(
 }
 
 
-static bool GC_LauncherOptionsPersistSfxVolume(
+static bool GC_LauncherOptionsStageSfxVolume(
     GC_LauncherOptionsConfig *config,
     int sfxVolume)
 {
@@ -4027,6 +4118,85 @@ static bool GC_LauncherOptionsPersistSfxVolume(
             config,
             "sfx_volume",
             sfxVolume);
+}
+
+
+static int GC_LauncherOptionsMusicVolume(
+    const GC_LauncherOptionsConfig *config)
+{
+    int value = 8;
+    int loaded;
+
+    if (GC_LauncherOptionsConfigFindInt(
+            config,
+            "music_volume",
+            &loaded))
+    {
+        value =
+            loaded;
+    }
+
+    if (value < 0)
+        value = 0;
+    else if (value > 15)
+        value = 15;
+
+    return value;
+}
+
+
+static bool GC_LauncherOptionsStageMusicVolume(
+    GC_LauncherOptionsConfig *config,
+    int musicVolume)
+{
+    return
+        GC_LauncherOptionsConfigSetInt(
+            config,
+            "music_volume",
+            musicVolume);
+}
+
+
+static bool GC_LauncherOptionsApplyMusicVolume(
+    int musicVolume)
+{
+    int doomVolume;
+    int mixerVolume;
+
+    if (musicVolume < 0)
+        musicVolume = 0;
+    else if (musicVolume > 15)
+        musicVolume = 15;
+
+    gcLauncherConfiguredMusicVolume =
+        musicVolume;
+
+    if (!GC_LauncherMusicEnsureReady())
+        return false;
+
+    /*
+     * Match Doom's own path:
+     *   musicVolume (0..15) -> * 8 (0..120)
+     * then the SDL_mixer backend scales its 0..127 volume to
+     * MIX_MAX_VOLUME.
+     */
+    doomVolume =
+        musicVolume * 8;
+
+    mixerVolume =
+        (doomVolume * MIX_MAX_VOLUME) / 127;
+
+    Mix_VolumeMusic(
+        mixerVolume);
+
+    DC_INFO(
+        "DoomCube: launcher preview music_volume=%d "
+        "doom=%d mixer=%d\n",
+        musicVolume,
+        doomVolume,
+        mixerVolume);
+
+    return true;
 }
 
 
@@ -4047,7 +4217,8 @@ static void GC_DrawOptionsLauncher(
     SDL_Renderer *renderer,
     int selectedRow,
     int rumbleEnabled,
-    int sfxVolume)
+    int sfxVolume,
+    int musicVolume)
 {
     SDL_Texture *background;
     SDL_Texture *bGlyph;
@@ -4056,18 +4227,39 @@ static void GC_DrawOptionsLauncher(
     const char *rumbleValue =
         rumbleEnabled ? "ON" : "OFF";
     char sfxValue[16];
+    char musicValue[16];
     int titleWidth;
     int valueWidth;
     int backWidth;
     int backX;
-    int skullY =
-        selectedRow == 0 ? 196 : 246;
+    int skullY;
+
+    switch (selectedRow)
+    {
+        case 1:
+            skullY = 246;
+            break;
+
+        case 2:
+            skullY = 296;
+            break;
+
+        default:
+            skullY = 196;
+            break;
+    }
 
     snprintf(
         sfxValue,
         sizeof(sfxValue),
         "%d",
         sfxVolume);
+
+    snprintf(
+        musicValue,
+        sizeof(musicValue),
+        "%d",
+        musicVolume);
 
     SDL_SetRenderDrawColor(renderer,0,0,0,255);
     SDL_RenderClear(renderer);
@@ -4097,6 +4289,10 @@ static void GC_DrawOptionsLauncher(
     valueWidth=GC_TextWidth(sfxValue,3);
     GC_DrawText(renderer,450-valueWidth,260,sfxValue,3);
 
+    GC_DrawText(renderer,190,310,"MUSIC VOLUME",3);
+    valueWidth=GC_TextWidth(musicValue,3);
+    GC_DrawText(renderer,450-valueWidth,310,musicValue,3);
+
     bGlyph=GC_LoadCarouselControllerGlyph(renderer,&gcCarouselBGlyph,CH_CONTROLLER_GLYPH_B,GC_CAROUSEL_ACTION_GLYPH_SIZE,"OPTIONS B");
     backWidth=GC_TextWidth("BACK",3);
     backX=(GC_LAUNCHER_WIDTH-GC_CAROUSEL_ACTION_GLYPH_SIZE-8-backWidth)/2;
@@ -4112,6 +4308,7 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
     int selectedRow = 0;
     int rumbleEnabled;
     int sfxVolume;
+    int musicVolume;
 
     /*
      * One Memory Card config read per OPTIONS visit.
@@ -4129,18 +4326,32 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
         GC_LauncherOptionsSfxVolume(
             &config);
 
+    musicVolume =
+        GC_LauncherOptionsMusicVolume(
+            &config);
+
     (void)GC_LauncherMusicUseIntermission();
+
+    /*
+     * Apply the stored/current-session music setting to the already-running
+     * launcher music without restarting it.
+     */
+    (void)GC_LauncherOptionsApplyMusicVolume(
+        musicVolume);
 
     GC_DrawOptionsLauncher(
         renderer,
         selectedRow,
         rumbleEnabled,
-        sfxVolume);
+        sfxVolume,
+        musicVolume);
 
     DC_INFO(
-        "DoomCube: OPTIONS opened; rumble=%d sfx_volume=%d\n",
+        "DoomCube: OPTIONS opened; rumble=%d "
+        "sfx_volume=%d music_volume=%d\n",
         rumbleEnabled,
-        sfxVolume);
+        sfxVolume,
+        musicVolume);
 
     for (int i = 0; i < 3; ++i)
     {
@@ -4160,8 +4371,15 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 
         if (down & PAD_BUTTON_B)
         {
+            bool flushed =
+                GC_LauncherOptionsConfigFlush(
+                    &config);
+
             DC_INFO(
-                "DoomCube: OPTIONS returning to carousel\n");
+                "DoomCube: OPTIONS returning to carousel "
+                "(flush=%d dirty=%d)\n",
+                flushed ? 1 : 0,
+                config.dirty ? 1 : 0);
 
             return 0;
         }
@@ -4175,25 +4393,27 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
                 renderer,
                 selectedRow,
                 rumbleEnabled,
-                sfxVolume);
+                sfxVolume,
+                musicVolume);
         }
 
         if (down & PAD_BUTTON_DOWN)
         {
-            if (selectedRow < 1)
+            if (selectedRow < 2)
                 ++selectedRow;
 
             GC_DrawOptionsLauncher(
                 renderer,
                 selectedRow,
                 rumbleEnabled,
-                sfxVolume);
+                sfxVolume,
+                musicVolume);
         }
 
         if ((down & PAD_BUTTON_A) &&
             selectedRow == 0)
         {
-            bool persisted;
+            bool staged;
 
             rumbleEnabled =
                 rumbleEnabled ? 0 : 1;
@@ -4205,7 +4425,8 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
                 renderer,
                 selectedRow,
                 rumbleEnabled,
-                sfxVolume);
+                sfxVolume,
+                musicVolume);
 
             if (rumbleEnabled)
             {
@@ -4213,16 +4434,16 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
                     4);
             }
 
-            persisted =
-                GC_LauncherOptionsPersistRumbleValue(
+            staged =
+                GC_LauncherOptionsStageRumbleValue(
                     &config,
                     rumbleEnabled);
 
             DC_INFO(
                 "DoomCube: OPTIONS rumble changed to %d "
-                "(session=1 persisted=%d)\n",
+                "(session=1 staged=%d)\n",
                 rumbleEnabled,
-                persisted ? 1 : 0);
+                staged ? 1 : 0);
         }
 
         if (selectedRow == 1 &&
@@ -4231,7 +4452,7 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
             int oldVolume =
                 sfxVolume;
 
-            bool persisted;
+            bool staged;
 
             if ((down & PAD_BUTTON_LEFT) &&
                 sfxVolume > 0)
@@ -4247,8 +4468,8 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
 
             if (sfxVolume != oldVolume)
             {
-                persisted =
-                    GC_LauncherOptionsPersistSfxVolume(
+                staged =
+                    GC_LauncherOptionsStageSfxVolume(
                         &config,
                         sfxVolume);
 
@@ -4256,18 +4477,71 @@ static int GC_LauncherRunOptions(SDL_Renderer *renderer)
                     renderer,
                     selectedRow,
                     rumbleEnabled,
-                    sfxVolume);
+                    sfxVolume,
+                    musicVolume);
 
                 DC_INFO(
                     "DoomCube: OPTIONS sfx_volume changed to %d "
-                    "(session=1 persisted=%d)\n",
+                    "(session=1 staged=%d)\n",
                     sfxVolume,
-                    persisted ? 1 : 0);
+                    staged ? 1 : 0);
+            }
+        }
+
+        if (selectedRow == 2 &&
+            (down & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT)))
+        {
+            int oldVolume =
+                musicVolume;
+
+            bool staged;
+
+            if ((down & PAD_BUTTON_LEFT) &&
+                musicVolume > 0)
+            {
+                --musicVolume;
+            }
+
+            if ((down & PAD_BUTTON_RIGHT) &&
+                musicVolume < 15)
+            {
+                ++musicVolume;
+            }
+
+            if (musicVolume != oldVolume)
+            {
+                /*
+                 * Preview first: this should be audibly immediate and must not
+                 * depend on whether Memory Card persistence succeeds.
+                 */
+                (void)GC_LauncherOptionsApplyMusicVolume(
+                    musicVolume);
+
+                staged =
+                    GC_LauncherOptionsStageMusicVolume(
+                        &config,
+                        musicVolume);
+
+                GC_DrawOptionsLauncher(
+                    renderer,
+                    selectedRow,
+                    rumbleEnabled,
+                    sfxVolume,
+                    musicVolume);
+
+                DC_INFO(
+                    "DoomCube: OPTIONS music_volume changed to %d "
+                    "(session=1 staged=%d)\n",
+                    musicVolume,
+                    staged ? 1 : 0);
             }
         }
 
         SDL_Delay(16);
     }
+
+    (void)GC_LauncherOptionsConfigFlush(
+        &config);
 
     return -1;
 }
