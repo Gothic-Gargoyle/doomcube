@@ -2,7 +2,7 @@
 
 #include "gc_config.h"
 
-#include "gc_memcard.h"
+#include "gc_carryhandle_dogfood.h"
 
 #include <ogcsys.h>
 
@@ -24,7 +24,7 @@ bool GC_ConfigSave(
         return false;
     }
 
-    if (!GC_MemoryCardWriteConfig(
+    if (!GC_CHDogfoodWriteConfig(
             data,
             size))
     {
@@ -54,7 +54,7 @@ bool GC_ConfigLoad(
         return false;
     }
 
-    if (!GC_MemoryCardReadConfig(
+    if (!GC_CHDogfoodReadConfig(
             buffer,
             bufferSize,
             actualSize))

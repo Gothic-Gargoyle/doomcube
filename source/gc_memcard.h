@@ -6,14 +6,14 @@
 #include <stdint.h>
 
 /*
- * Legacy v2 storage knows five IWAD families.
+ * DoomCube intentionally exposes exactly one Doom save slot per selected
+ * IWAD/PWAD launch identity.
  *
- * Save system v3 exposes Doom's six normal save slots. The stdio bridge
- * already names them doomsav0.dsg through doomsav5.dsg; the live backend
- * switch follows after production v3 container initialization is proven.
+ * The physical 64-block CarryHandle container can hold objects for multiple
+ * launch identities, but each identity owns only doomsav0.dsg.
  */
 #define GC_MEMCARD_GAME_COUNT 5
-#define GC_MEMCARD_SAVE_SLOTS 6
+#define GC_MEMCARD_SAVE_SLOTS 1
 
 typedef enum
 {

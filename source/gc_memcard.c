@@ -4,6 +4,8 @@
 #include "gc_save_v3.h"
 #include "gc_save_v3_card.h"
 #include "gc_card_presentation.h"
+#include "gc_carryhandle_dogfood.h"
+#include <carryhandle/carryhandle.h>
 
 #include <ogc/card.h>
 #include <ogcsys.h>
@@ -5225,13 +5227,54 @@ gc_memcard_status_t GC_MemoryCardGetStatus(void)
 
 uint32_t GC_MemoryCardSaveFileInitialBlocks(void)
 {
-    return GC_SAVE_V3_INITIAL_SECTORS;
+    return 64u;
 }
 
 
 uint32_t GC_MemoryCardSaveFileMaxBlocks(void)
 {
-    return GC_SAVE_V3_MAX_SECTORS;
+    return 64u;
+}
+
+
+static bool deleteObsoleteDoomCubeCardFile(
+    const char *filename)
+{
+    s32 result;
+
+    if (!filename ||
+        !cardMounted)
+    {
+        return false;
+    }
+
+    result =
+        CARD_Delete(
+            CARD_SLOT,
+            filename);
+
+    if (result ==
+            CARD_ERROR_READY ||
+        result ==
+            CARD_ERROR_NOFILE)
+    {
+        if (result ==
+            CARD_ERROR_READY)
+        {
+            DC_INFO(
+                "DoomCube: deleted obsolete Memory Card file %s\n",
+                filename);
+        }
+
+        return true;
+    }
+
+    DC_WARN(
+        "DoomCube: failed deleting obsolete Memory Card file %s: %ld\n",
+        filename,
+        (long)result);
+
+    return false;
 }
 
 
@@ -5245,24 +5288,49 @@ bool GC_MemoryCardCreateSaveFile(void)
     }
 
     DC_INFO(
-        "DoomCube: player approved creation of DoomCube save file\n"
-    );
+        "DoomCube: player approved destructive single-card creation\n");
 
-    if (!ensureProductionV3Container())
+    /*
+     * v1.1.2 deliberately has no migration contract.
+     *
+     * Remove every historical DoomCube physical file identity only after the
+     * player explicitly selected CREATE. Boot/probe paths never delete data.
+     */
+    if (!deleteObsoleteDoomCubeCardFile(
+            CARD_V3_FILENAME_A) ||
+        !deleteObsoleteDoomCubeCardFile(
+            CARD_V3_FILENAME_B) ||
+        !deleteObsoleteDoomCubeCardFile(
+            CARD_FILENAME) ||
+        !deleteObsoleteDoomCubeCardFile(
+            "DCHDOG00"))
     {
         DC_WARN(
-            "DoomCube: player-requested DoomCube save-file creation failed\n"
-        );
+            "DoomCube: obsolete save-file cleanup failed; "
+            "single-card creation aborted\n");
 
         return false;
     }
 
-    memoryCardStatus =
-        GC_MEMCARD_STATUS_READY;
+    if (!GC_CHDogfoodCreateContainer())
+    {
+        DC_WARN(
+            "DoomCube: failed to create fixed 64-block DOOMCUBE0\n");
+
+        return false;
+    }
+
+    if (memoryCardStatus !=
+        GC_MEMCARD_STATUS_READY)
+    {
+        DC_WARN(
+            "DoomCube: new DOOMCUBE0 failed post-create validation\n");
+
+        return false;
+    }
 
     DC_INFO(
-        "DoomCube: player-requested DoomCube save file ready\n"
-    );
+        "DoomCube: fixed 64-block DOOMCUBE0 is ready\n");
 
     return true;
 }
@@ -5270,55 +5338,42 @@ bool GC_MemoryCardCreateSaveFile(void)
 
 bool GC_MemoryCardInit(void)
 {
-    /*
-     * Assume unavailable until the complete initialization path succeeds.
-     * Specific failure reasons may replace this below.
-     */
+    card_file file;
+
+    CH_TxContainerHeader container;
+
+    unsigned char *sectorBuffer =
+        NULL;
+
+    s32 result;
+    s32 closeResult;
+
+    s32 memorySize =
+        0;
+
+    bool validContainer =
+        false;
+
+
     memoryCardStatus =
         GC_MEMCARD_STATUS_UNAVAILABLE;
 
-
-#ifdef DOOMCUBE_REGRESSION
-    if (!GC_SaveV3CodecSelfTest())
-    {
-        DC_ERROR(
-            "DoomCube: V3 CODEC SELFTEST FAILED\n"
-        );
-
-        return false;
-    }
-
-    DC_INFO(
-        "DoomCube: V3 CODEC SELFTEST PASS: "
-        "container + superblock + record\n"
-    );
-#endif
-
-    card_file legacyFile;
-
-    s32 result;
-    s32 memorySize = 0;
+    DC_DEBUG(
+        "DoomCube: ---- MEMORY CARD A ----\n");
 
     DC_DEBUG(
-        "DoomCube: ---- MEMORY CARD A ----\n"
-    );
-
-    DC_DEBUG(
-        "DoomCube: initializing memory card...\n"
-    );
+        "DoomCube: initializing single-container memory card...\n");
 
     result =
         CARD_Init(
             CARD_GAMECODE,
-            CARD_COMPANY
-        );
+            CARD_COMPANY);
 
     if (result < 0)
     {
         DC_WARN(
             "DoomCube: CARD_Init failed: %ld\n",
-            (long)result
-        );
+            (long)result);
 
         return false;
     }
@@ -5329,8 +5384,7 @@ bool GC_MemoryCardInit(void)
             CARD_ProbeEx(
                 CARD_SLOT,
                 &memorySize,
-                &sectorSize
-            );
+                &sectorSize);
     }
     while (result ==
         CARD_ERROR_BUSY);
@@ -5340,8 +5394,7 @@ bool GC_MemoryCardInit(void)
     {
         DC_WARN(
             "DoomCube: CARD_ProbeEx failed: %ld\n",
-            (long)result
-        );
+            (long)result);
 
         return false;
     }
@@ -5349,16 +5402,9 @@ bool GC_MemoryCardInit(void)
     DC_DEBUG(
         "DoomCube: card size=%ld sector=%ld\n",
         (long)memorySize,
-        (long)sectorSize
-    );
+        (long)sectorSize);
 
-    /*
-     * Reject undersized cards before mounting or writing anything.
-     *
-     * CARD_ProbeEx reports Memory Card 59 as 4 Mbit and Memory Card 251
-     * as 16 Mbit.  v3 deliberately does not try to contort its safe
-     * copy-on-write lifecycle to fit a Card 59.
-     */
+    /* Keep the established Card-251-or-larger product policy. */
     if ((uint32_t)memorySize <
         GC_MEMCARD_MIN_SIZE_MBIT)
     {
@@ -5369,178 +5415,178 @@ bool GC_MemoryCardInit(void)
             "DoomCube: Memory Card A is too small: %ld Mbit; "
             "Memory Card 251 or larger (16 Mbit minimum) required; "
             "saving disabled\n",
-            (long)memorySize
-        );
+            (long)memorySize);
 
-        return false;
-    }
-
-    /*
-     * Keep the old buffers during the transition because the legacy
-     * config backend and v2 fallback code still use them.
-     */
-    slotWorkBuffer =
-        memalign(
-            32,
-            saveRegionSize()
-        );
-
-    if (!slotWorkBuffer)
-    {
-        DC_WARN(
-            "DoomCube: failed to allocate %u-byte save work buffer\n",
-            (unsigned int)saveRegionSize()
-        );
-
-        return false;
-    }
-
-    configWorkBuffer =
-        memalign(
-            32,
-            configRegionSize()
-        );
-
-    if (!configWorkBuffer)
-    {
-        DC_WARN(
-            "DoomCube: failed to allocate %u-byte config work buffer\n",
-            (unsigned int)configRegionSize()
-        );
-
-        freeWorkBuffers();
-
-        return false;
+        return true;
     }
 
     result =
         CARD_Mount(
             CARD_SLOT,
             cardWorkArea,
-            cardRemoved
-        );
+            cardRemoved);
 
     if (result !=
         CARD_ERROR_READY)
     {
         DC_WARN(
             "DoomCube: CARD_Mount failed: %ld\n",
-            (long)result
-        );
-
-        freeWorkBuffers();
+            (long)result);
 
         return false;
     }
 
-    cardMounted = true;
+    cardMounted =
+        true;
 
-    DC_INFO(
-        "DoomCube: Memory Card A mounted\n"
-    );
+    DC_DEBUG(
+        "DoomCube: Memory Card A mounted\n");
 
-#ifdef DOOMCUBE_REGRESSION
-    if (!regressionV3CardContainerProbe())
-    {
-        DC_ERROR(
-            "DoomCube: V3 CARD PROBE FAILED\n"
-        );
-
-        return false;
-    }
-#endif
-
-    {
-        bool productionContainerExists = false;
-
-        if (!productionV3ContainerFilesExist(
-                &productionContainerExists))
-        {
-            DC_WARN(
-                "DoomCube: could not determine whether a v3 "
-                "save file exists\n"
-            );
-
-            return false;
-        }
-
-        if (!productionContainerExists)
-        {
-            memoryCardStatus =
-                GC_MEMCARD_STATUS_NEEDS_CREATE;
-
-            DC_INFO(
-                "DoomCube: no DoomCube v3 save file found; "
-                "awaiting player choice\n"
-            );
-        }
-        else if (!ensureProductionV3Container())
-        {
-            DC_WARN(
-                "DoomCube: v3 save container unavailable; "
-                "continuing without saves\n"
-            );
-
-            return false;
-        }
-    }
-
-    /*
-     * Migration rule: never recreate, resize or delete legacy DOOMCUBE.
-     *
-     * It may still contain v2 saves/configuration. Later migration code
-     * can inspect it deliberately; init merely preserves it.
-     */
     result =
         CARD_Open(
             CARD_SLOT,
-            CARD_FILENAME,
-            &legacyFile
-        );
+            CARD_V3_FILENAME_A,
+            &file);
 
     if (result ==
-        CARD_ERROR_READY)
-    {
-        long legacySize =
-            (long)legacyFile.len;
-
-        CARD_Close(
-            &legacyFile
-        );
-
-        DC_INFO(
-            "DoomCube: legacy v2 container preserved: "
-            "%s size=%ld bytes\n",
-            CARD_FILENAME,
-            legacySize
-        );
-    }
-    else if (result ==
         CARD_ERROR_NOFILE)
     {
-        DC_DEBUG(
-            "DoomCube: legacy v2 container not present\n"
-        );
-    }
-    else
-    {
-        /*
-         * The production v3 container is already valid, so failure to
-         * inspect legacy data must not destroy current save availability.
-         */
-        DC_WARN(
-            "DoomCube: legacy %s inspection failed: %ld\n",
-            CARD_FILENAME,
-            (long)result
-        );
+        memoryCardStatus =
+            GC_MEMCARD_STATUS_NEEDS_CREATE;
+
+        DC_INFO(
+            "DoomCube: no fixed 64-block DOOMCUBE0 container found\n");
+
+        return true;
     }
 
-    if (memoryCardStatus !=
-        GC_MEMCARD_STATUS_NEEDS_CREATE)
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Open DOOMCUBE0 failed: %ld\n",
+            (long)result);
+
+        GC_MemoryCardShutdown();
+
+        return false;
+    }
+
+    if (sectorSize <= 0 ||
+        file.len !=
+            sectorSize * 64)
+    {
+        DC_INFO(
+            "DoomCube: existing DOOMCUBE0 is obsolete/incompatible: "
+            "bytes=%ld expected=%ld; CREATE required\n",
+            (long)file.len,
+            (long)(sectorSize * 64));
+
+        (void)CARD_Close(
+            &file);
+
+        memoryCardStatus =
+            GC_MEMCARD_STATUS_NEEDS_CREATE;
+
+        return true;
+    }
+
+    sectorBuffer =
+        memalign(
+            32,
+            (size_t)sectorSize);
+
+    if (!sectorBuffer)
+    {
+        DC_WARN(
+            "DoomCube: failed to allocate %ld-byte CHTX probe sector\n",
+            (long)sectorSize);
+
+        (void)CARD_Close(
+            &file);
+
+        GC_MemoryCardShutdown();
+
+        return false;
+    }
+
+    result =
+        CARD_Read(
+            &file,
+            sectorBuffer,
+            (u32)sectorSize,
+            0);
+
+    if (result !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Read DOOMCUBE0 CHTX probe failed: %ld\n",
+            (long)result);
+
+        free(
+            sectorBuffer);
+
+        (void)CARD_Close(
+            &file);
+
+        GC_MemoryCardShutdown();
+
+        return false;
+    }
+
+    if (CH_TxDecodeContainerHeader(
+            &container,
+            sectorBuffer,
+            (size_t)sectorSize) &&
+        container.sector_size ==
+            (uint32_t)sectorSize &&
+        container.container_sectors ==
+            64u)
+    {
+        validContainer =
+            true;
+    }
+
+    closeResult =
+        CARD_Close(
+            &file);
+
+    free(
+        sectorBuffer);
+
+    sectorBuffer =
+        NULL;
+
+    if (closeResult !=
+        CARD_ERROR_READY)
+    {
+        DC_WARN(
+            "DoomCube: CARD_Close DOOMCUBE0 probe failed: %ld\n",
+            (long)closeResult);
+
+        GC_MemoryCardShutdown();
+
+        return false;
+    }
+
+    if (!validContainer)
     {
         memoryCardStatus =
-            GC_MEMCARD_STATUS_READY;
+            GC_MEMCARD_STATUS_NEEDS_CREATE;
+
+        DC_INFO(
+            "DoomCube: existing DOOMCUBE0 is not current CarryHandle "
+            "CHTX/64-block format; CREATE required\n");
+
+        return true;
     }
+
+    memoryCardStatus =
+        GC_MEMCARD_STATUS_READY;
+
+    DC_INFO(
+        "DoomCube: fixed CarryHandle DOOMCUBE0 validated: 64 blocks\n");
 
     return true;
 }

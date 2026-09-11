@@ -6099,7 +6099,7 @@ static bool GC_DoomMemCardUIShow(
         snprintf(
             line,
             sizeof(line),
-            "STARTS AT %u BLOCKS",
+            "THIS TAKES UP %u BLOCKS",
             (unsigned int)
                 info->initial_blocks);
 
@@ -6837,9 +6837,6 @@ void GC_LauncherRunStoragePreflight(
         info.initial_blocks =
             GC_MemoryCardSaveFileInitialBlocks();
 
-        info.maximum_blocks =
-            GC_MemoryCardSaveFileMaxBlocks();
-
         info.action_hint_count = 2;
 
         info.action_hints[0].glyph =
@@ -6859,11 +6856,9 @@ void GC_LauncherRunStoragePreflight(
 
         SYS_Report(
             "DoomCube: themed save-file creation prompt shown: "
-            "initial=%u maximum=%u blocks\n",
+            "fixed=%u blocks\n",
             (unsigned int)
-                GC_MemoryCardSaveFileInitialBlocks(),
-            (unsigned int)
-                GC_MemoryCardSaveFileMaxBlocks());
+                GC_MemoryCardSaveFileInitialBlocks());
 
         for (i = 0; i < 3; ++i)
         {

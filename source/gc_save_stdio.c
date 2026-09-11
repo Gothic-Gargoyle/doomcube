@@ -250,7 +250,7 @@ FILE *GC_SaveFOpen(
 
 
     /*
-     * Reading doomsav0.dsg ... doomsav5.dsg
+     * Reading the one supported Doom save: doomsav0.dsg
      */
     if (reading &&
         slot >= 0)
@@ -263,19 +263,11 @@ FILE *GC_SaveFOpen(
         if (!stream)
             return NULL;
 
-        if (!(
-                slot == 0
-                    ? GC_CHDogfoodReadSave(
-                        slot,
-                        stream->data,
-                        stream->capacity,
-                        &actualSize)
-                    : GC_MemoryCardReadSave(
-                        slot,
-                        stream->data,
-                        stream->capacity,
-                        &actualSize)
-             ))
+        if (!GC_CHDogfoodReadSave(
+                slot,
+                stream->data,
+                stream->capacity,
+                &actualSize))
         {
             destroyStream(
                 stream
@@ -613,17 +605,10 @@ int GC_SaveRename(
         (unsigned int)tempSaveSize
     );
 
-    if (!(
-            slot == 0
-                ? GC_CHDogfoodWriteSave(
-                    slot,
-                    tempSaveData,
-                    tempSaveSize)
-                : GC_MemoryCardWriteSave(
-                    slot,
-                    tempSaveData,
-                    tempSaveSize)
-         ))
+    if (!GC_CHDogfoodWriteSave(
+            slot,
+            tempSaveData,
+            tempSaveSize))
     {
         DC_WARN(
             "DoomCube: slot %d commit FAILED\n",

@@ -19,7 +19,7 @@
 
 
 #define GC_CH_DOGFOOD_SLOT          0
-#define GC_CH_DOGFOOD_FILENAME      "DCHDOG00"
+#define GC_CH_DOGFOOD_FILENAME      "DOOMCUBE0"
 #define GC_CH_DOGFOOD_SECTORS       64u
 
 #define GC_CH_DOGFOOD_PATH_MAX      256u
@@ -30,6 +30,17 @@ static const unsigned char dogfoodSaveKey[] =
 {
     'd', 'o', 'o', 'm', 's', 'a', 'v', '0', '.', 'd', 's', 'g'
 };
+
+static const unsigned char dogfoodConfigKey[] =
+{
+    'd', 'o', 'o', 'm', 'c', 'u', 'b', 'e', '.', 'c', 'f', 'g'
+};
+
+#define GC_CH_DOGFOOD_CONFIG_MAX 8192u
+
+static unsigned char dogfoodConfigCompareBuffer[
+    GC_CH_DOGFOOD_CONFIG_MAX
+] __attribute__((aligned(32)));
 
 
 static const CH_ApplicationSaveDescriptor dogfoodDescriptor =
@@ -95,6 +106,7 @@ static size_t dogfoodSaveCacheSize;
 static bool dogfoodSaveCacheValid;
 
 
+
 static void invalidateDogfoodSaveCache(void)
 {
     dogfoodSaveCacheSize =
@@ -117,23 +129,19 @@ static bool updateDogfoodSaveCache(
         return false;
     }
 
-
     /*
      * memmove also permits priming directly into dogfoodSaveCache.
      */
     memmove(
         dogfoodSaveCache,
         data,
-        size
-    );
-
+        size);
 
     dogfoodSaveCacheSize =
         size;
 
     dogfoodSaveCacheValid =
         true;
-
 
     return true;
 }
@@ -156,9 +164,8 @@ static bool updateDogfoodSaveCache(
  *     0x10  u32 BE  CRC32 of raw Doom save
  *     0x14  ...     zlib/DEFLATE stream
  *
- * Existing dogfood objects written before this framing contain the raw Doom
- * save directly. Reads retain that legacy path so DCHDOG00 does not need to
- * be deleted or recreated.
+ * Older framed/raw object decoding remains harmless internally, but the
+ * physical v1.1.2 card-file contract is the new 64-block DOOMCUBE0.
  */
 
 #define GC_CH_DOGFOOD_PAYLOAD_MAGIC       0x44434631u
@@ -609,12 +616,12 @@ static bool restoreLegacyCard(void)
      * DoomCube to reread and CRC the complete IWAD/PWAD after every
      * CarryHandle Get/Put, producing multi-second menu stalls.
      *
-     * Remount the legacy CARD backend only.  Keep the existing launch
+     * Remount the DoomCube preflight CARD backend only.  Keep the existing launch
      * identity in memory.
      */
     DC_DEBUG(
         "DoomCube: CarryHandle dogfood returned CARD A "
-        "to legacy backend without identity rebuild\n"
+        "to preflight backend without identity rebuild\n"
     );
 
 
@@ -629,14 +636,15 @@ static bool openDogfoodSave(
 
 
     if (!save ||
-        !dogfoodIdentityValid)
+        GC_MemoryCardGetStatus() !=
+            GC_MEMCARD_STATUS_READY)
     {
         return false;
     }
 
 
     /*
-     * Transitional dogfood ownership model.
+     * Single-container ownership hand-off.
      *
      * DoomCube's existing backend owns a long-lived mount on CARD A.
      * CH_ApplicationSaveOpen() intentionally owns its own mount lifecycle.
@@ -733,6 +741,328 @@ static bool closeDogfoodSave(
 
 
 /* ------------------------------------------------------------------------- */
+/* Physical single-container creation                                        */
+/* ------------------------------------------------------------------------- */
+
+bool GC_CHDogfoodCreateContainer(void)
+{
+    CH_ApplicationSaveSession save =
+        {0};
+
+    CH_ApplicationSaveResult openResult;
+    CH_ApplicationSaveResult closeResult;
+
+    bool created;
+    bool restored;
+
+
+    /*
+     * The player has already approved destructive CREATE in gc_memcard.c.
+     * Release the preflight mount and let CarryHandle own initialization.
+     */
+    GC_MemoryCardShutdown();
+
+    openResult =
+        CH_ApplicationSaveOpen(
+            &save,
+            CH_ApplicationGetInfo(),
+            &dogfoodDescriptor,
+            CARD_SLOTA);
+
+    if (openResult !=
+        CH_APPLICATION_SAVE_RESULT_OK)
+    {
+        DC_WARN(
+            "DoomCube: single-card CarryHandle create failed: "
+            "result=%d CARD=%ld TX=%d\n",
+            (int)openResult,
+            (long)save.card_result,
+            (int)save.tx_result);
+
+        (void)restoreLegacyCard();
+
+        return false;
+    }
+
+    created =
+        CH_ApplicationSaveWasCreated(
+            &save);
+
+    closeResult =
+        CH_ApplicationSaveClose(
+            &save);
+
+    restored =
+        restoreLegacyCard();
+
+    if (!created ||
+        closeResult !=
+            CH_APPLICATION_SAVE_RESULT_OK ||
+        !restored ||
+        GC_MemoryCardGetStatus() !=
+            GC_MEMCARD_STATUS_READY)
+    {
+        DC_WARN(
+            "DoomCube: single-card create verification failed: "
+            "created=%d close=%d restored=%d status=%d\n",
+            created ? 1 : 0,
+            (int)closeResult,
+            restored ? 1 : 0,
+            (int)GC_MemoryCardGetStatus());
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: single 64-block DOOMCUBE0 container created\n");
+
+    /*
+     * A brand-new application container has no config object yet.
+     *
+     * Seed one valid, intentionally empty text configuration exactly once
+     * during explicit CREATE. This lets launcher OPTIONS/CONTROLS become
+     * writable immediately, before Doom has ever run.
+     *
+     * The normal config writer owns the one logical PUT. We deliberately do
+     * not add another CH_ApplicationSavePut() call site here.
+     */
+    if (!GC_CHDogfoodWriteConfig(
+            "\n",
+            1u))
+    {
+        DC_WARN(
+            "DoomCube: failed to seed initial global config object\n");
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: initial global config object created\n");
+
+    return true;
+}
+
+
+/* ------------------------------------------------------------------------- */
+/* Global configuration object                                               */
+/* ------------------------------------------------------------------------- */
+
+bool GC_CHDogfoodReadConfig(
+    void *buffer,
+    size_t bufferSize,
+    size_t *actualSize)
+{
+    CH_ApplicationSaveSession save =
+        {0};
+
+    CH_PersistResult result;
+
+    size_t objectSize =
+        0u;
+
+    bool closeOk;
+
+
+    if (actualSize)
+    {
+        *actualSize =
+            0u;
+    }
+
+    if (!buffer ||
+        bufferSize == 0u ||
+        !actualSize)
+    {
+        return false;
+    }
+
+    if (!openDogfoodSave(
+            &save))
+    {
+        return false;
+    }
+
+    result =
+        CH_ApplicationSaveGet(
+            &save,
+            NULL,
+            0u,
+            dogfoodConfigKey,
+            sizeof(dogfoodConfigKey),
+            buffer,
+            bufferSize,
+            &objectSize);
+
+    closeOk =
+        closeDogfoodSave(
+            &save);
+
+    if (result ==
+        CH_PERSIST_RESULT_NOT_FOUND)
+    {
+        DC_DEBUG(
+            "DoomCube: CarryHandle global config not found\n");
+
+        return false;
+    }
+
+    if (result !=
+            CH_PERSIST_RESULT_OK ||
+        !closeOk)
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle global config GET failed: "
+            "result=%d close=%d\n",
+            (int)result,
+            closeOk ? 1 : 0);
+
+        return false;
+    }
+
+    *actualSize =
+        objectSize;
+
+    DC_DEBUG(
+        "DoomCube: CarryHandle global config GET PASS (%lu bytes)\n",
+        (unsigned long)objectSize);
+
+    return true;
+}
+
+
+bool GC_CHDogfoodWriteConfig(
+    const void *data,
+    size_t size)
+{
+    CH_ApplicationSaveSession save =
+        {0};
+
+    CH_PersistResult getResult;
+    CH_PersistResult putResult =
+        CH_PERSIST_RESULT_OK;
+
+    size_t existingSize =
+        0u;
+
+    bool unchanged =
+        false;
+
+    bool closeOk;
+
+
+    if (!data ||
+        size == 0u ||
+        size > GC_CH_DOGFOOD_CONFIG_MAX)
+    {
+        return false;
+    }
+
+    if (!openDogfoodSave(
+            &save))
+    {
+        return false;
+    }
+
+    /*
+     * Avoid wearing the card for an unchanged exit-time M_SaveDefaults().
+     * This GET is read-only. A physical PUT occurs only when bytes changed.
+     */
+    getResult =
+        CH_ApplicationSaveGet(
+            &save,
+            NULL,
+            0u,
+            dogfoodConfigKey,
+            sizeof(dogfoodConfigKey),
+            dogfoodConfigCompareBuffer,
+            sizeof(dogfoodConfigCompareBuffer),
+            &existingSize);
+
+    if (getResult ==
+            CH_PERSIST_RESULT_OK &&
+        existingSize == size &&
+        memcmp(
+            dogfoodConfigCompareBuffer,
+            data,
+            size) == 0)
+    {
+        unchanged =
+            true;
+    }
+    else if (getResult !=
+                 CH_PERSIST_RESULT_OK &&
+             getResult !=
+                 CH_PERSIST_RESULT_NOT_FOUND)
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle config compare GET failed: %d\n",
+            (int)getResult);
+
+        closeOk =
+            closeDogfoodSave(
+                &save);
+
+        (void)closeOk;
+
+        return false;
+    }
+
+    if (!unchanged)
+    {
+        /*
+         * Exactly one logical persistent PUT for one changed config commit.
+         */
+        putResult =
+            CH_ApplicationSavePut(
+                &save,
+                NULL,
+                0u,
+                dogfoodConfigKey,
+                sizeof(dogfoodConfigKey),
+                data,
+                size);
+    }
+
+    closeOk =
+        closeDogfoodSave(
+            &save);
+
+    if (unchanged)
+    {
+        if (!closeOk)
+        {
+            return false;
+        }
+
+        DC_DEBUG(
+            "DoomCube: global config unchanged; physical PUT skipped\n");
+
+        return true;
+    }
+
+    if (putResult !=
+            CH_PERSIST_RESULT_OK ||
+        !closeOk)
+    {
+        DC_WARN(
+            "DoomCube: CarryHandle global config PUT failed: "
+            "result=%d close=%d\n",
+            (int)putResult,
+            closeOk ? 1 : 0);
+
+        return false;
+    }
+
+    DC_INFO(
+        "DoomCube: CarryHandle global config PUT PASS (%lu bytes)\n",
+        (unsigned long)size);
+
+    return true;
+}
+
+
+
+/* ------------------------------------------------------------------------- */
 /* Slot 0 persistence                                                        */
 /* ------------------------------------------------------------------------- */
 
@@ -747,6 +1077,7 @@ bool GC_CHDogfoodReadSave(
 
     CH_PersistResult result;
 
+
     size_t storedSize =
         0u;
 
@@ -755,22 +1086,24 @@ bool GC_CHDogfoodReadSave(
         false;
 
 
-    if (actualSize)
+    if (slot !=
+            GC_CH_DOGFOOD_SLOT ||
+actualSize)
     {
         *actualSize =
             0u;
     }
 
 
-    if (slot !=
-            GC_CH_DOGFOOD_SLOT ||
-        !buffer ||
+    if (        !buffer ||
         bufferSize == 0u ||
         !actualSize ||
         !dogfoodIdentityValid)
     {
         return false;
     }
+
+
 
 
     /*
@@ -1106,6 +1439,7 @@ bool GC_CHDogfoodWriteSave(
 
     CH_PersistResult result;
 
+
     z_stream stream =
         {0};
 
@@ -1133,6 +1467,8 @@ bool GC_CHDogfoodWriteSave(
     {
         return false;
     }
+
+
 
 
     if (size >
