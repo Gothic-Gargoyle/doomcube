@@ -51,9 +51,155 @@ stop_dolphin()
 }
 
 
+prepare_isolated_user()
+{
+    local normal_card=""
+    local normal_config=""
+    local normal_gc=""
+    local base
+
+    USERDIR="$LOG_DIR/dolphin-user"
+
+    for base in \
+        "$HOME/.var/app/org.DolphinEmu.dolphin-emu/config/dolphin-emu" \
+        "$HOME/.local/share/dolphin-emu/Config"
+    do
+        if [[ -d "$base" && -f "$base/Dolphin.ini" ]]; then
+            normal_config="$base"
+            break
+        fi
+    done
+
+    if [[ -z "$normal_config" ]]; then
+        echo "ERROR: could not locate normal Dolphin Config directory"
+        return 1
+    fi
+
+    normal_card="$(
+        {
+            for base in \
+                "$HOME/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/GC" \
+                "$HOME/.local/share/dolphin-emu/GC"
+            do
+                if [[ -d "$base" ]]; then
+                    find "$base" \
+                        -maxdepth 2 \
+                        -type f \
+                        -name 'MemoryCardA*.raw' \
+                        -printf '%T@ %p\n' \
+                        2>/dev/null || true
+                fi
+            done
+        } \
+            | LC_ALL=C sort -nr \
+            | head -1 \
+            | cut -d' ' -f2-
+    )"
+
+    if [[ -z "$normal_card" || ! -f "$normal_card" ]]; then
+        echo "ERROR: could not locate source Memory Card A for isolated copy"
+        return 1
+    fi
+
+    NORMAL_CARD_SOURCE="$normal_card"
+    NORMAL_CARD_SOURCE_SHA="$(
+        sha256sum "$NORMAL_CARD_SOURCE" |
+        awk '{print $1}'
+    )"
+
+    normal_gc="$(dirname "$NORMAL_CARD_SOURCE")"
+
+    mkdir -p "$USERDIR"
+
+    cp -a \
+        "$normal_config" \
+        "$USERDIR/Config"
+
+    mkdir -p "$USERDIR/GC"
+
+    cp -f \
+        "$NORMAL_CARD_SOURCE" \
+        "$USERDIR/GC/$(basename "$NORMAL_CARD_SOURCE")"
+
+    ISOLATED_CARD="$USERDIR/GC/$(basename "$NORMAL_CARD_SOURCE")"
+
+    # Preserve the normal Dolphin frontend/logger/controller behaviour, but
+    # redirect any explicit reference to the normal GC directory into this
+    # disposable user. Default relative card paths automatically follow -u.
+    python3 -B - \
+        "$USERDIR/Config" \
+        "$normal_gc" \
+        "$USERDIR/GC" \
+        "$NORMAL_CARD_SOURCE" \
+        "$ISOLATED_CARD" <<'PYCFG'
+from pathlib import Path
+import sys
+
+config_dir = Path(sys.argv[1])
+normal_gc = sys.argv[2]
+isolated_gc = sys.argv[3]
+normal_card = sys.argv[4]
+isolated_card = sys.argv[5]
+
+for path in config_dir.rglob("*"):
+    if not path.is_file():
+        continue
+
+    try:
+        raw = path.read_text()
+    except (UnicodeDecodeError, OSError):
+        continue
+
+    rewritten = raw.replace(normal_card, isolated_card)
+    rewritten = rewritten.replace(normal_gc, isolated_gc)
+
+    if rewritten != raw:
+        path.write_text(rewritten)
+PYCFG
+
+    if grep -RIFq -- "$NORMAL_CARD_SOURCE" "$USERDIR/Config"; then
+        echo "ERROR: isolated Config still references normal Memory Card path"
+        return 1
+    fi
+
+    if grep -RIFq -- "$normal_gc" "$USERDIR/Config"; then
+        echo "ERROR: isolated Config still references normal GC directory"
+        return 1
+    fi
+
+    echo
+    echo "Isolated Dolphin user:"
+    echo "  $USERDIR"
+    echo "Normal Config copied from:"
+    echo "  $normal_config"
+    echo "Source Memory Card A (copy-only):"
+    echo "  $NORMAL_CARD_SOURCE"
+    echo "Disposable Memory Card A:"
+    echo "  $ISOLATED_CARD"
+    echo "Source SHA256:"
+    echo "  $NORMAL_CARD_SOURCE_SHA"
+    echo
+}
+
+REGRESSION_BUILD_STARTED=0
+
+
 cleanup()
 {
+    local rc=$?
+
     stop_dolphin
+
+    if ((REGRESSION_BUILD_STARTED)); then
+        echo
+        echo "Removing regression build products so normal builds cannot reuse"
+        echo "objects compiled with DOOMCUBE_REGRESSION..."
+
+        make --no-print-directory clean \
+            >/dev/null 2>&1 || true
+    fi
+
+    return "$rc"
 }
 
 
@@ -87,7 +233,9 @@ run_case()
 
     flatpak run \
         --filesystem="$ROOT:ro" \
+        --filesystem="$USERDIR" \
         "$DOLPHIN_APP_ID" \
+        -u "$USERDIR" \
         --audio_emulation=LLE \
         --batch \
         --config=Dolphin.Core.EnableCustomRTC=True \
@@ -164,6 +312,8 @@ LOG_DIR="$(
         "${TMPDIR:-/tmp}/doomcube-regression.XXXXXX"
 )"
 
+prepare_isolated_user || exit 1
+
 echo
 echo "DoomCube automated regression"
 echo "Logs: $LOG_DIR"
@@ -174,6 +324,8 @@ echo "============================================================"
 echo " Building single regression artifact"
 echo "============================================================"
 echo
+
+REGRESSION_BUILD_STARTED=1
 
 if ! make clean; then
     echo "ERROR: make clean failed"

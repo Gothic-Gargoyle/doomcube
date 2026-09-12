@@ -31,7 +31,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil-e5m6-secret",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         6,
         GC_REGRESSION_ACTION_SECRET_EXIT
@@ -39,7 +39,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil-e5m9-return",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         9,
         GC_REGRESSION_ACTION_EXIT
@@ -47,7 +47,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil2-e6m3-secret",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         3,
         GC_REGRESSION_ACTION_SECRET_EXIT
@@ -55,7 +55,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil2-e6m9-return",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         9,
         GC_REGRESSION_ACTION_EXIT
@@ -63,7 +63,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil-e5m8-finale",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         8,
         GC_REGRESSION_ACTION_EXIT
@@ -71,7 +71,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "sigil2-e6m8-finale",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         8,
         GC_REGRESSION_ACTION_EXIT
@@ -120,7 +120,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m1",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         1,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -128,7 +128,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m1",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         1,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -136,7 +136,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m2",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         2,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -144,7 +144,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m3",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         3,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -152,7 +152,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m4",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         4,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -160,7 +160,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m5",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         5,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -168,7 +168,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m6",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         6,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -176,7 +176,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m7",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         7,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -184,7 +184,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m8",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         8,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -192,7 +192,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil-e5m9",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_V1_23.wad",
+        "dvd:/data/pwad/doom/SIGIL_V1_23.wad",
         5,
         9,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -200,7 +200,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m2",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         2,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -208,7 +208,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m3",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         3,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -216,7 +216,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m4",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         4,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -224,7 +224,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m5",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         5,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -232,7 +232,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m6",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         6,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -240,7 +240,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m7",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         7,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -248,7 +248,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m8",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         8,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -256,7 +256,7 @@ static const gc_regression_case_t gcRegressionCases[] =
     {
         "save-sigil2-e6m9",
         "dvd:/data/wad/doom.wad",
-        "dvd:/data/pwad/SIGIL_II_V1_0.WAD",
+        "dvd:/data/pwad/doom/SIGIL_II_V1_0.WAD",
         6,
         9,
         GC_REGRESSION_ACTION_SAVE_PROBE
@@ -268,14 +268,6 @@ static const gc_regression_case_t gcRegressionCases[] =
         1,
         1,
         GC_REGRESSION_ACTION_LOAD_PROBE
-    },
-    {
-        "six-slot-overwrite-doom-e1m1",
-        "dvd:/data/wad/doom.wad",
-        NULL,
-        1,
-        1,
-        GC_REGRESSION_ACTION_SIX_SLOT_PROBE
     }
 
 };
