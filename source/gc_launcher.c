@@ -123,7 +123,6 @@ static void GC_LauncherProbeGlobalConfig(void)
 #define GC_DOOM_MENU_SKULL_PATH   "dvd:/launcher/m_skull1.bmp"
 #define GC_SPLASH_CUBE_PATH       "dvd:/launcher/doomcube_splash.bmp"
 #define GC_STUDIO_IDENT_PATH      "dvd:/launcher/sperge_brigade_studios.bmp"
-#define GC_STUDIO_IDENT_AUDIO_PATH "dvd:/launcher/audio/cybsit.wav"
 #define GC_CARRYHANDLE_IDENT_PATH "dvd:/launcher/carryhandle_powered_by.bmp"
 #define GC_CARRYHANDLE_IDENT_FADE_MS 500u
 #define GC_CARRYHANDLE_IDENT_HOLD_MS 1250u
@@ -6161,171 +6160,6 @@ static CH_MemCardUI GC_DoomMemCardMakeUI(
 }
 
 
-typedef struct GC_StudioIdentAudio
-{
-    Mix_Chunk *chunk;
-    int channel;
-    bool openedMixer;
-    bool initializedAudio;
-} GC_StudioIdentAudio;
-
-
-static void GC_StudioIdentAudioStop(
-    GC_StudioIdentAudio *audio)
-{
-    if (audio == NULL)
-        return;
-
-    if (audio->channel >= 0)
-    {
-        Mix_HaltChannel(
-            audio->channel);
-
-        audio->channel = -1;
-    }
-
-    if (audio->chunk != NULL)
-    {
-        Mix_FreeChunk(
-            audio->chunk);
-
-        audio->chunk = NULL;
-    }
-
-    if (audio->openedMixer)
-    {
-        Mix_CloseAudio();
-        audio->openedMixer = false;
-    }
-
-    if (audio->initializedAudio)
-    {
-        SDL_QuitSubSystem(
-            SDL_INIT_AUDIO);
-
-        audio->initializedAudio = false;
-    }
-}
-
-
-static bool GC_StudioIdentAudioStart(
-    GC_StudioIdentAudio *audio)
-{
-    int frequency;
-    int channels;
-    Uint16 format;
-    int mixerRate;
-
-    if (audio == NULL)
-        return false;
-
-    audio->chunk = NULL;
-    audio->channel = -1;
-    audio->openedMixer = false;
-    audio->initializedAudio = false;
-
-    if ((SDL_WasInit(SDL_INIT_AUDIO)
-         & SDL_INIT_AUDIO) == 0)
-    {
-        if (SDL_InitSubSystem(
-                SDL_INIT_AUDIO) < 0)
-        {
-            DC_WARN(
-                "DoomCube: studio ident SDL audio init failed: %s\n",
-                SDL_GetError());
-
-            return false;
-        }
-
-        audio->initializedAudio = true;
-    }
-
-    if (!Mix_QuerySpec(
-            &frequency,
-            &format,
-            &channels))
-    {
-        mixerRate =
-            snd_samplerate > 0
-            ? snd_samplerate
-            : 44100;
-
-        if (Mix_OpenAudio(
-                mixerRate,
-                AUDIO_S16SYS,
-                2,
-                1024) < 0)
-        {
-            DC_WARN(
-                "DoomCube: studio ident Mix_OpenAudio failed: %s\n",
-                Mix_GetError());
-
-            GC_StudioIdentAudioStop(
-                audio);
-
-            return false;
-        }
-
-        audio->openedMixer = true;
-
-        DC_DEBUG(
-            "DoomCube: studio ident opened temporary mixer "
-            "at %d Hz\n",
-            mixerRate);
-    }
-    else
-    {
-        DC_DEBUG(
-            "DoomCube: studio ident using existing mixer "
-            "freq=%d channels=%d format=0x%x\n",
-            frequency,
-            channels,
-            (unsigned int)format);
-    }
-
-    audio->chunk =
-        Mix_LoadWAV(
-            GC_STUDIO_IDENT_AUDIO_PATH);
-
-    if (audio->chunk == NULL)
-    {
-        DC_WARN(
-            "DoomCube: studio ident roar unavailable: %s\n",
-            Mix_GetError());
-
-        GC_StudioIdentAudioStop(
-            audio);
-
-        return false;
-    }
-
-    audio->channel =
-        Mix_PlayChannel(
-            -1,
-            audio->chunk,
-            0);
-
-    if (audio->channel < 0)
-    {
-        DC_WARN(
-            "DoomCube: studio ident roar playback failed: %s\n",
-            Mix_GetError());
-
-        GC_StudioIdentAudioStop(
-            audio);
-
-        return false;
-    }
-
-    DC_DEBUG(
-        "DoomCube: studio ident Cyberdemon roar started "
-        "on mixer channel %d\n",
-        audio->channel);
-
-    return true;
-}
-
-
 typedef struct GC_StudioIdentPresentation
 {
     SDL_Texture *texture;
@@ -6385,7 +6219,6 @@ void GC_LauncherRunStudioIdent(
     SDL_Renderer *renderer)
 {
     SDL_Texture *logo;
-    GC_StudioIdentAudio audio;
     GC_StudioIdentPresentation presentation;
     CH_SplashScreen screens[1];
     CH_SplashSequence sequence;
@@ -6475,9 +6308,6 @@ void GC_LauncherRunStudioIdent(
         (unsigned int)screens[0].hold_ms,
         (unsigned int)screens[0].fade_out_ms);
 
-    (void)GC_StudioIdentAudioStart(
-        &audio);
-
     if (!CH_SplashSequenceRun(
             &sequence,
             screens,
@@ -6486,9 +6316,6 @@ void GC_LauncherRunStudioIdent(
         DC_WARN(
             "DoomCube: CarryHandle studio ident sequence failed\n");
     }
-
-    GC_StudioIdentAudioStop(
-        &audio);
 
     SDL_SetRenderDrawColor(
         renderer,
