@@ -1,5 +1,7 @@
 #define SDL_MAIN_HANDLED
 
+#include <carryhandle/ch_remote_disc.h>
+#include <unistd.h>
 #include <SDL2/SDL.h>
 
 #include "gc_debug.h"
@@ -575,8 +577,111 @@ static void handleGameCubeInput(void)
 /* ISO9660                                                                   */
 /* ------------------------------------------------------------------------- */
 
+#ifdef DOOMCUBE_REMOTE_DISC_DEV
+
+static CH_RemoteDiscSession gcRemoteDiscSession = {0};
+static bool gcRemoteDiscSessionOpen;
+
+#endif
+
+
 static bool mountIsoFilesystem(void)
 {
+#ifdef DOOMCUBE_SD_DISC_DEV
+    /*
+     * DOOMCUBE_SD_DISC_DIRECTORY_V1
+     *
+     * Canonical development layout:
+     *
+     *     SD:/doomcube-files/
+     *
+     * CarryHandle aliases that directory to dvd:/ so all application asset
+     * paths remain identical to the native GCM/FST release build.
+     */
+    DC_INFO(
+        "DoomCube: SD-directory development mode\n");
+
+    DC_INFO(
+        "DoomCube: requiring SD:/doomcube-files\n");
+
+    if (!CH_DVDMountSDDirectory(
+            CH_DVD_SD_SLOT_A,
+            "/doomcube-files"))
+    {
+        DC_WARN(
+            "DoomCube: SD:/doomcube-files backing unavailable\n");
+
+        return false;
+    }
+
+    dvdMounted = true;
+
+    DC_INFO(
+        "DoomCube: SD:/doomcube-files mounted as dvd:/\n");
+
+    return true;
+#else
+
+#ifdef DOOMCUBE_REMOTE_DISC_DEV
+
+    CH_RemoteDiscResult remoteResult;
+
+    /*
+     * wiiload owns the USB Gecko while transferring this DOL.
+     *
+     * CarryHandle's hardware proofs use this hand-off window before the
+     * application takes ownership and starts issuing CHR3 requests.
+     */
+    DC_INFO(
+        "DoomCube: remote-disc development mode\n");
+
+    DC_INFO(
+        "DoomCube: waiting for USB Gecko handoff...\n");
+
+    usleep(3000000);
+
+    remoteResult = CH_RemoteDiscOpen(
+        &gcRemoteDiscSession,
+        1
+    );
+
+    if (remoteResult != CH_REMOTE_DISC_RESULT_OK)
+    {
+        DC_WARN(
+            "DoomCube: CH_RemoteDiscOpen FAILED (%d)\n",
+            (int)remoteResult);
+
+        return false;
+    }
+
+    gcRemoteDiscSessionOpen = true;
+
+    DC_INFO(
+        "DoomCube: mounting PC-hosted GameCube image...\n");
+
+    if (!CH_DVDMountRemote(
+            &gcRemoteDiscSession))
+    {
+        DC_WARN(
+            "DoomCube: remote dvd:/ mount FAILED\n");
+
+        CH_RemoteDiscClose(
+            &gcRemoteDiscSession);
+
+        gcRemoteDiscSessionOpen = false;
+
+        return false;
+    }
+
+    dvdMounted = true;
+
+    DC_INFO(
+        "DoomCube: mounted remote dvd:/ over USB Gecko\n");
+
+    return true;
+
+#else
+
     DC_DEBUG(
         "DoomCube: mounting native GameCube FST...\n");
 
@@ -594,6 +699,10 @@ static bool mountIsoFilesystem(void)
         "DoomCube: mounted native dvd:/\n");
 
     return true;
+
+#endif
+
+#endif
 }
 
 
@@ -920,6 +1029,25 @@ int main(int argc, char **argv)
      * The card itself is mounted during platform initialization, but
      * the IWAD/PWAD identity is not known until the launcher returns.
      */
+#ifdef DOOMCUBE_REMOTE_DISC_DEV
+    /*
+     * DOOMCUBE_REMOTE_DISC_SKIP_SAVES_V1
+     *
+     * The USB Gecko remote-disc development configuration currently occupies
+     * the hardware slot that would otherwise hold the real Memory Card.
+     *
+     * More importantly, GC_MemoryCardSetLaunchIdentity() fingerprints the
+     * complete IWAD/PWAD contents.  Over the deliberately conservative
+     * USB-Gecko remote transport that turns every launch into a full
+     * multi-megabyte disc transfer before Doom even starts.
+     *
+     * Save identity/cache setup is therefore irrelevant in this development
+     * configuration.  Normal disc/ISO builds retain the exact existing path.
+     */
+    DC_INFO(
+        "DoomCube: remote-disc dev: skipping Memory Card "
+        "launch identity and save-cache priming\n");
+#else
     GC_MemoryCardSetLaunchIdentity(
         selection.iwadPath,
         selection.pwadPath
@@ -936,6 +1064,8 @@ int main(int argc, char **argv)
      * operate from the verified in-memory slot image.
      */
     GC_CHDogfoodPrimeSaveCache();
+#endif
+
 
     doomArgv[0] =
         "doomcube";
@@ -1066,6 +1196,18 @@ int main(int argc, char **argv)
     {
         CH_DVDUnmount();
     }
+
+#ifdef DOOMCUBE_REMOTE_DISC_DEV
+
+    if (gcRemoteDiscSessionOpen)
+    {
+        CH_RemoteDiscClose(
+            &gcRemoteDiscSession);
+
+        gcRemoteDiscSessionOpen = false;
+    }
+
+#endif
 
     return 0;
 }

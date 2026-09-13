@@ -156,6 +156,33 @@ CFLAGS += \
     -I$(CARRYHANDLE_DIR)/include \
     -I$(DOOMCUBE_ROOT)/build
 
+# DoomCube PC-hosted remote-disc development mode.
+# Normal builds remain on the ordinary CH_DVDMount() path.
+DOOMCUBE_REMOTE_DISC ?= 0
+
+ifeq ($(DOOMCUBE_REMOTE_DISC),1)
+CFLAGS += -DDOOMCUBE_REMOTE_DISC_DEV=1
+endif
+
+
+# -----------------------------------------------------------------------------
+# Loose SD-root development backing
+# -----------------------------------------------------------------------------
+#
+# Explicit opt-in only.  Normal builds and remote-disc development are
+# unaffected.
+#
+DOOMCUBE_SD_DISC ?= 0
+
+ifeq ($(DOOMCUBE_SD_DISC),1)
+ifeq ($(DOOMCUBE_REMOTE_DISC),1)
+$(error DOOMCUBE_SD_DISC and DOOMCUBE_REMOTE_DISC are mutually exclusive)
+endif
+
+CFLAGS += -DDOOMCUBE_SD_DISC_DEV=1
+endif
+
+
 CXXFLAGS := $(CFLAGS)
 
 LDFLAGS := \
@@ -422,6 +449,7 @@ RUN_IMAGE := \
 APP_CFLAGS := \
 	$(CFLAGS)
 
+
 APP_INCLUDES := \
 	$(DOOMCUBE_ROOT)/source \
 	$(DEVKITPRO)/libogc2/gamecube/include/SDL2 \
@@ -429,6 +457,94 @@ APP_INCLUDES := \
 
 
 include $(CARRYHANDLE_DIR)/make/gamecube.mk
+
+
+# -----------------------------------------------------------------------------
+# DoomCube real-hardware development runners
+# -----------------------------------------------------------------------------
+#
+# CarryHandle owns the generic transport:
+#
+#     run
+#         DOL -> wiiload -> USB Gecko -> Swiss -> GameCube
+#
+#     run-remote
+#         same DOL transport plus CHR3 PC-hosted disc backing
+#
+# DoomCube owns the application-specific storage policy exposed here.
+#
+#     make run-hardware-sd
+#         DOL    : USB Gecko
+#         files  : SD:/doomcube-files/
+#
+#     make run-hardware-remote
+#         DOL    : USB Gecko
+#         files  : PC-hosted GameCube image via CHR3
+#
+# These targets deliberately use separate object directories so changing
+# development backing cannot accidentally reuse objects built with the other
+# backend's compile-time define.
+#
+
+DOOMCUBE_HARDWARE_SD_BUILD ?= build-sd
+DOOMCUBE_HARDWARE_REMOTE_BUILD ?= build-remote
+
+# Keep final DOL/ELF artifacts mode-specific too.  Separate BUILD directories
+# isolate objects, while separate TARGET names prevent the two modes from
+# overwriting the same root-level $(TARGET).dol.
+DOOMCUBE_HARDWARE_SD_TARGET ?= $(TARGET)-sd
+DOOMCUBE_HARDWARE_REMOTE_TARGET ?= $(TARGET)-remote
+
+#
+# By default the remote runner uses DoomCube's normal native GCM output.
+# Override when testing another image:
+#
+#     make run-hardware-remote \
+#         DOOMCUBE_REMOTE_IMAGE=/path/to/image.iso
+#
+DOOMCUBE_REMOTE_IMAGE ?= $(GCM_OUTPUT)
+
+
+.PHONY: run-hardware-sd
+.PHONY: run-hardware-remote
+
+
+run-hardware-sd:
+	@echo "DoomCube hardware mode: SD"
+	@echo "  executable : USB Gecko -> Swiss"
+	@echo "  filesystem : SD:/doomcube-files/"
+	$(MAKE) --no-print-directory \
+		TARGET="$(DOOMCUBE_HARDWARE_SD_TARGET)" \
+		BUILD="$(DOOMCUBE_HARDWARE_SD_BUILD)" \
+		DOOMCUBE_SD_DISC=1 \
+		DOOMCUBE_REMOTE_DISC=0 \
+		run
+
+
+run-hardware-remote:
+	@echo "DoomCube hardware mode: remote"
+	@echo "  executable : USB Gecko -> Swiss"
+	@echo "  filesystem : PC-hosted GameCube image"
+	@test -n "$(DOOMCUBE_REMOTE_IMAGE)" || { \
+		echo "ERROR: DOOMCUBE_REMOTE_IMAGE is empty"; \
+		exit 1; \
+	}
+	@test -f "$(DOOMCUBE_REMOTE_IMAGE)" || { \
+		echo "ERROR: remote image not found:"; \
+		echo "  $(DOOMCUBE_REMOTE_IMAGE)"; \
+		echo; \
+		echo "Build the native image first, or pass:"; \
+		echo "  DOOMCUBE_REMOTE_IMAGE=/path/to/image.iso"; \
+		exit 1; \
+	}
+	$(MAKE) --no-print-directory \
+		TARGET="$(DOOMCUBE_HARDWARE_REMOTE_TARGET)" \
+		BUILD="$(DOOMCUBE_HARDWARE_REMOTE_BUILD)" \
+		DOOMCUBE_SD_DISC=0 \
+		DOOMCUBE_REMOTE_DISC=1 \
+		run-remote \
+		REMOTE_IMAGE="$(DOOMCUBE_REMOTE_IMAGE)"
+
 # Final release orchestration is owned by CarryHandle.
 # DoomCube owns only the application-specific release-bundle contents and the
 # production build variables passed to that hook.
