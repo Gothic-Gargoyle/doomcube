@@ -59,6 +59,7 @@
 #include "m_menu.h"
 #include "gc_controls.h"
 #include "gc_rumble.h"
+#include "m_config.h"
 
 
 extern patch_t*		hu_font[HU_FONTSIZE];
@@ -616,6 +617,42 @@ menu_t  SoundDef =
     80,64,
     0
 };
+
+/*
+ * GC_OPTIONS_EXIT_PERSISTENCE_V2
+ *
+ * Persist current live Doom settings when the in-game Options hierarchy
+ * is exited.
+ *
+ * Entering Options or navigating between its children performs no
+ * persistence work.
+ */
+static boolean
+M_GameCubeIsOptionsMenu(
+    menu_t *menu)
+{
+    return
+        menu == &OptionsDef ||
+        menu == &SoundDef ||
+        menu == &GameCubeControlsDef ||
+        menu == &GameCubeMovementDef ||
+        menu == &GameCubeActionsDef;
+}
+
+
+static void
+M_GameCubeSaveOptionsOnExit(void)
+{
+    /*
+     * Serializes CURRENT bound Doom variables.
+     *
+     * On GameCube M_SaveDefaults() reaches GC_ConfigSave() and ultimately
+     * CH_ApplicationSavePutIfChanged(), so unchanged bytes cause no
+     * physical PUT.
+     */
+    M_SaveDefaults();
+}
+
 
 //
 // LOAD GAME MENU
@@ -2460,6 +2497,10 @@ if (GC_ControlsIsCapturing())
         // Go back to previous menu
 
 	currentMenu->lastOn = itemOn;
+	if (currentMenu == &OptionsDef)
+	{
+	    M_GameCubeSaveOptionsOnExit();
+	}
 	if (currentMenu->prevMenu)
 	{
 	    currentMenu = currentMenu->prevMenu;
@@ -2648,6 +2689,12 @@ void M_Drawer (void)
 //
 void M_ClearMenus (void)
 {
+    if (menuactive &&
+        M_GameCubeIsOptionsMenu(currentMenu))
+    {
+        M_GameCubeSaveOptionsOnExit();
+    }
+
     menuactive = 0;
     // if (!netgame && usergame && paused)
     //       sendpause = true;
