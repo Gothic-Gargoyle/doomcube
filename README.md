@@ -6,6 +6,36 @@
 
 **DOOM on the Nintendo GameCube.**
 
+<!-- DOOMCUBE_QUICK_HARDWARE_BEGIN -->
+## Real GameCube quick setup
+
+DoomCube is tested on real Nintendo GameCube hardware.
+
+For the fastest development loop, keep the executable and game files separate:
+
+```sh
+# Build and send the DOL to Swiss over USB Gecko.
+# Game files are read from SD:/doomcube-files/.
+make run-hardware-sd
+```
+
+Place the DoomCube files you want exposed as `dvd:/` in:
+
+```text
+SD:/doomcube-files/
+```
+
+For PC-hosted disc-image development instead:
+
+```sh
+make run-hardware-remote
+```
+
+Normal release builds still use the native GameCube disc/FST path.
+
+Configuration and save persistence use a real GameCube Memory Card when available.
+<!-- DOOMCUBE_QUICK_HARDWARE_END -->
+
 DoomCube is a Nintendo GameCube port of DOOM based on DoomGeneric and built
 with devkitPPC and libogc2.
 
@@ -83,7 +113,6 @@ You must supply your own legally obtained DOOM data files.
 
 SIGIL is supported as Episode 5 and SIGIL II as Episode 6. SIGIL compatibility
 WADs using Episode 3 are also supported.
-
 
 ## Player release
 
