@@ -937,16 +937,9 @@ bool GC_CHDogfoodWriteConfig(
     CH_ApplicationSaveSession save =
         {0};
 
-    CH_PersistResult getResult;
-    CH_PersistResult putResult =
-        CH_PERSIST_RESULT_OK;
-
-    size_t existingSize =
-        0u;
-
-    bool unchanged =
+    CH_PersistResult putResult;
+    bool wrote =
         false;
-
     bool closeOk;
 
 
@@ -963,94 +956,42 @@ bool GC_CHDogfoodWriteConfig(
         return false;
     }
 
-    /*
-     * Avoid wearing the card for an unchanged exit-time M_SaveDefaults().
-     * This GET is read-only. A physical PUT occurs only when bytes changed.
-     */
-    getResult =
-        CH_ApplicationSaveGet(
+    putResult =
+        CH_ApplicationSavePutIfChanged(
             &save,
             NULL,
             0u,
             dogfoodConfigKey,
             sizeof(dogfoodConfigKey),
+            data,
+            size,
             dogfoodConfigCompareBuffer,
             sizeof(dogfoodConfigCompareBuffer),
-            &existingSize);
-
-    if (getResult ==
-            CH_PERSIST_RESULT_OK &&
-        existingSize == size &&
-        memcmp(
-            dogfoodConfigCompareBuffer,
-            data,
-            size) == 0)
-    {
-        unchanged =
-            true;
-    }
-    else if (getResult !=
-                 CH_PERSIST_RESULT_OK &&
-             getResult !=
-                 CH_PERSIST_RESULT_NOT_FOUND)
-    {
-        DC_WARN(
-            "DoomCube: CarryHandle config compare GET failed: %d\n",
-            (int)getResult);
-
-        closeOk =
-            closeDogfoodSave(
-                &save);
-
-        (void)closeOk;
-
-        return false;
-    }
-
-    if (!unchanged)
-    {
-        /*
-         * Exactly one logical persistent PUT for one changed config commit.
-         */
-        putResult =
-            CH_ApplicationSavePut(
-                &save,
-                NULL,
-                0u,
-                dogfoodConfigKey,
-                sizeof(dogfoodConfigKey),
-                data,
-                size);
-    }
+            &wrote);
 
     closeOk =
         closeDogfoodSave(
             &save);
-
-    if (unchanged)
-    {
-        if (!closeOk)
-        {
-            return false;
-        }
-
-        DC_DEBUG(
-            "DoomCube: global config unchanged; physical PUT skipped\n");
-
-        return true;
-    }
 
     if (putResult !=
             CH_PERSIST_RESULT_OK ||
         !closeOk)
     {
         DC_WARN(
-            "DoomCube: CarryHandle global config PUT failed: "
+            "DoomCube: CarryHandle global config commit failed: "
             "result=%d close=%d\n",
             (int)putResult,
             closeOk ? 1 : 0);
 
         return false;
+    }
+
+    if (!wrote)
+    {
+        DC_DEBUG(
+            "DoomCube: global config unchanged; physical PUT skipped\n");
+
+        return true;
     }
 
     DC_INFO(

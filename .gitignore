@@ -5,12 +5,16 @@
 *.log
 *.user
 *~
+*.d
 .vs/
 .vscode/*
 Debug/
 Release/
 Build/
 build/
+build-remote/*
+build-sd/*
+experiments/*
 *.dol
 *.elf
 *.iso
